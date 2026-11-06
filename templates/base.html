@@ -11,12 +11,12 @@
 <nav>
 <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint=='dashboard' %}active{% endif %}">◈ &nbsp; Overview</a>
 <a href="#modules">⌕ &nbsp; Domain scanner</a><a href="#modules">✣ &nbsp; Subdomain intel</a>
-<a href="#modules">▣ &nbsp; Email security</a>{% if user.plan not in ('pro','pro_plus') %}<a href="#modules">♧ &nbsp; Phone intelligence <em>PRO</em></a>{% else %}<a href="#modules">♧ &nbsp; Phone intelligence</a>{% endif %}
-{% if user.plan not in ('pro','pro_plus') %}<a href="#modules">◎ &nbsp; Individual email <em>PRO</em></a><a href="#modules">● &nbsp; Breach exposure <em>PRO</em></a>{% else %}<a href="#modules">◎ &nbsp; Individual email</a><a href="#modules">● &nbsp; Breach exposure</a>{% endif %}
-{% if user.plan != 'pro_plus' %}<a href="#modules">✦ &nbsp; Attack surface map <em>PRO PLUS</em></a>{% else %}<a href="#modules">✦ &nbsp; Attack surface map</a>{% endif %}<a href="#modules">◉ &nbsp; IP intelligence</a>
-{% if user.plan != 'pro_plus' %}<a href="#modules">ϟ &nbsp; CVE intelligence <em>PRO PLUS</em></a><a href="#modules">⇄ &nbsp; Compare domains <em>PRO PLUS</em></a>{% else %}<a href="#modules">ϟ &nbsp; CVE intelligence</a><a href="#modules">⇄ &nbsp; Compare domains</a>{% endif %}
+<a href="#modules">▣ &nbsp; Email security</a>{% if not (user.premium and user.plan in ('pro','pro_plus')) %}<a href="#modules">♧ &nbsp; Phone intelligence <em>PRO</em></a>{% else %}<a href="#modules">♧ &nbsp; Phone intelligence</a>{% endif %}
+{% if not (user.premium and user.plan in ('pro','pro_plus')) %}<a href="#modules">◎ &nbsp; Individual email <em>PRO</em></a><a href="#modules">● &nbsp; Breach exposure <em>PRO</em></a>{% else %}<a href="#modules">◎ &nbsp; Individual email</a><a href="#modules">● &nbsp; Breach exposure</a>{% endif %}
+{% if not (user.premium and user.plan == 'pro_plus') %}<a href="#modules">✦ &nbsp; Attack surface map <em>PRO PLUS</em></a>{% else %}<a href="#modules">✦ &nbsp; Attack surface map</a>{% endif %}<a href="#modules">◉ &nbsp; IP intelligence</a>
+{% if not (user.premium and user.plan == 'pro_plus') %}<a href="#modules">ϟ &nbsp; CVE intelligence <em>PRO PLUS</em></a><a href="#modules">⇄ &nbsp; Compare domains <em>PRO PLUS</em></a>{% else %}<a href="#modules">ϟ &nbsp; CVE intelligence</a><a href="#modules">⇄ &nbsp; Compare domains</a>{% endif %}
 <a href="#modules">⌁ &nbsp; DNS intelligence</a><a href="#modules">▤ &nbsp; Technology fingerprint</a>
-{% if user.plan != 'pro_plus' %}<a href="#modules">⚑ &nbsp; Port scanner <em>PRO PLUS</em></a>{% else %}<a href="#modules">⚑ &nbsp; Port scanner</a>{% endif %}<a href="{{ url_for('history') }}">◷ &nbsp; Scan history</a>
+{% if not (user.premium and user.plan == 'pro_plus') %}<a href="#modules">⚑ &nbsp; Port scanner <em>PRO PLUS</em></a>{% else %}<a href="#modules">⚑ &nbsp; Port scanner</a>{% endif %}<a href="{{ url_for('history') }}">◷ &nbsp; Scan history</a>
 </nav>
 <div class="sidebar-bottom"><span class="status-dot"></span> All systems operational<br><small>CyberLord Intelligence v1.0</small></div>
 </aside>

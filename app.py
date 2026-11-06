@@ -607,7 +607,8 @@ def report(scan_id):
 @login_required
 def payment_initialize():
     if not PAYSTACK_SECRET_KEY:
-        return jsonify({"error":"Live Paystack secret key is not configured on the server."}),503
+        app.logger.error("Paystack initialization blocked: PAYSTACK_SECRET_KEY is missing.")
+        return jsonify({"error":"Paystack is not configured on the server. The site administrator must add PAYSTACK_SECRET_KEY in Render."}),503
     data = request.get_json(silent=True) or request.form
     plan_key = str(data.get("plan", "pro")).lower()
     plan = PRICING_PLANS.get(plan_key)
@@ -619,16 +620,30 @@ def payment_initialize():
              "metadata":{"user_id":current_user()["id"],"product":"CyberLord "+plan["name"],"plan":plan_key}}
     try:
         r=requests.post("https://api.paystack.co/transaction/initialize",json=payload,
-                        headers={"Authorization":"Bearer "+PAYSTACK_SECRET_KEY},timeout=15)
-        j=r.json()
+                        headers={"Authorization":"Bearer "+PAYSTACK_SECRET_KEY,"Content-Type":"application/json"},timeout=20)
+        try:
+            j=r.json()
+        except ValueError:
+            app.logger.error("Paystack initialization returned non-JSON response (HTTP %s).",r.status_code)
+            return jsonify({"error":"Paystack returned an unreadable response. Please check the Render logs."}),502
         if not r.ok or not j.get("status"):
-            return jsonify({"error":"Paystack could not initialize this payment."}),502
+            provider_message=str(j.get("message") or "Paystack rejected the initialization request.")
+            app.logger.error("Paystack initialization failed (HTTP %s): %s",r.status_code,provider_message[:300])
+            return jsonify({"error":"Paystack: "+provider_message[:220]}),502
+        checkout_url=(j.get("data") or {}).get("authorization_url")
+        if not checkout_url or not checkout_url.startswith("https://checkout.paystack.com/"):
+            app.logger.error("Paystack initialization response did not include a valid checkout URL.")
+            return jsonify({"error":"Paystack did not provide a valid checkout link. Please check the Render logs."}),502
         with db() as con:
             con.execute("INSERT INTO payments(user_id,reference,amount,status,provider,plan,created_at) VALUES(?,?,?,?,?,?,?)",
                         (current_user()["id"],reference,plan["price"],"pending","paystack",plan_key,datetime.utcnow().isoformat()+"Z"))
-        return jsonify({"url":j["data"]["authorization_url"]})
+        return jsonify({"url":checkout_url})
+    except requests.RequestException:
+        app.logger.exception("Network error while connecting to Paystack.")
+        return jsonify({"error":"The server could not reach Paystack. Please check the Render logs and try again."}),502
     except Exception:
-        return jsonify({"error":"Payment service is temporarily unavailable."}),502
+        app.logger.exception("Unexpected error while initializing Paystack payment.")
+        return jsonify({"error":"Payment initialization failed unexpectedly. Please check the Render logs."}),502
 
 def verify_paystack(reference, expected_amount):
     r=requests.get("https://api.paystack.co/transaction/verify/"+reference,
