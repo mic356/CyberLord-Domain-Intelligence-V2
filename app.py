@@ -1,6 +1,6 @@
 import os, re, json, hmac, hashlib, sqlite3, secrets, socket, ssl, ipaddress, time, smtplib
 import psycopg
-from psycopg.rows import dict_row
+from psycopg.rows import tuple_row
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 from email.message import EmailMessage
@@ -9,7 +9,7 @@ from functools import wraps
 import requests
 import dns.resolver
 import phonenumbers
-from phonenumbers import carrier as phone_carrier, geocoder, timezone
+from phonenumbers import carrier as phone_carrier, geocoder, timezone as phone_timezone
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, abort, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -55,6 +55,9 @@ class HybridRow(dict):
         return super().__getitem__(key)
 
 def hybrid_row_factory(cursor):
+    # DDL/UPDATE statements have no result description; use tuple rows for them.
+    if cursor.description is None:
+        return tuple_row(cursor)
     columns = [column.name for column in cursor.description]
     def make_row(values):
         return HybridRow(zip(columns, values))
@@ -291,7 +294,7 @@ def phone_check(raw):
         }
         country = geocoder.country_name_for_number(num, "en") or region
         carrier_name = phone_carrier.name_for_number(num, "en") or "Not available from numbering metadata"
-        zones = list(timezone.time_zones_for_number(num))
+        zones = list(phone_timezone.time_zones_for_number(num))
         return {
             "input": raw,
             "international_format": phonenumbers.format_number(num, phonenumbers.PhoneNumberFormat.INTERNATIONAL),
