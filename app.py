@@ -1,16 +1,19 @@
-import os, re, json, hmac, hashlib, sqlite3, secrets, socket, ssl, ipaddress, time
-from datetime import datetime, timedelta
+import os, re, json, hmac, hashlib, sqlite3, secrets, socket, ssl, ipaddress, time, smtplib
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
+from email.message import EmailMessage
 from functools import wraps
 
 import requests
 import dns.resolver
 import phonenumbers
+from phonenumbers import carrier, geocoder, timezone
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, abort, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("DATABASE_PATH", os.path.join(APP_DIR, "cyberlord.db"))
+os.makedirs(os.path.dirname(DB_PATH) or APP_DIR, exist_ok=True)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "CHANGE-THIS-BEFORE-DEPLOYMENT-" + secrets.token_hex(16))
 app.config.update(
@@ -23,7 +26,17 @@ app.config.update(
 PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
 PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY", "")
 HIBP_API_KEY = os.environ.get("HIBP_API_KEY", "")
-PREMIUM_PRICE_NGN = 5000
+PRICING_PLANS = {
+    "pro": {"name": "PRO", "price": 5000},
+    "pro_plus": {"name": "PRO PLUS", "price": 10000},
+}
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", SMTP_USERNAME)
+SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "false").lower() == "true"
+RESET_TOKEN_MINUTES = 30
 ALLOWED_PORTS = [21,22,25,53,80,110,143,443,445,587,993,995,1433,3306,3389,5432,8080,8443,9200]
 REQUEST_TIMEOUT = 7
 
@@ -37,14 +50,30 @@ def init_db():
         con.execute("""CREATE TABLE IF NOT EXISTS users(
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL, premium INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL)""")
+            plan TEXT NOT NULL DEFAULT 'free', created_at TEXT NOT NULL)""")
         con.execute("""CREATE TABLE IF NOT EXISTS scans(
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, module TEXT NOT NULL,
             target TEXT NOT NULL, result_json TEXT NOT NULL, risk TEXT, created_at TEXT NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id))""")
         con.execute("""CREATE TABLE IF NOT EXISTS payments(
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, reference TEXT UNIQUE NOT NULL,
-            amount INTEGER NOT NULL, status TEXT NOT NULL, provider TEXT NOT NULL, created_at TEXT NOT NULL)""")
+            amount INTEGER NOT NULL, status TEXT NOT NULL, provider TEXT NOT NULL, plan TEXT NOT NULL DEFAULT 'pro', created_at TEXT NOT NULL)""")
+        con.execute("""CREATE TABLE IF NOT EXISTS login_attempts(
+            email TEXT PRIMARY KEY, failed_count INTEGER NOT NULL DEFAULT 0,
+            window_started REAL NOT NULL, locked_until REAL NOT NULL DEFAULT 0)""")
+        con.execute("""CREATE TABLE IF NOT EXISTS password_resets(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+            token_hash TEXT UNIQUE NOT NULL, expires_at REAL NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id))""")
+        # Safe migrations for databases created by earlier project versions.
+        user_cols = {row[1] for row in con.execute("PRAGMA table_info(users)")}
+        if "plan" not in user_cols:
+            con.execute("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'")
+        payment_cols = {row[1] for row in con.execute("PRAGMA table_info(payments)")}
+        if "plan" not in payment_cols:
+            con.execute("ALTER TABLE payments ADD COLUMN plan TEXT NOT NULL DEFAULT 'pro'")
+        con.execute("UPDATE users SET plan='pro' WHERE premium=1 AND plan='free'")
 init_db()
 
 def current_user():
@@ -186,15 +215,53 @@ def individual_email_check(address):
 
 def phone_check(raw):
     try:
-        num=phonenumbers.parse((raw or "").strip(), None)
-        if not phonenumbers.is_possible_number(num): raise ValueError()
-        valid=phonenumbers.is_valid_number(num)
-        return {"input":raw,"international_format":phonenumbers.format_number(num,phonenumbers.PhoneNumberFormat.INTERNATIONAL),
-                "country_code":num.country_code,"region":phonenumbers.region_code_for_number(num),
-                "number_type":str(phonenumbers.number_type(num)),"valid_numbering_plan":valid,
-                "risk":"INFO","reputation":"No live scam-reputation provider is connected.",
-                "privacy_note":"No live location, subscriber identity, call records, or private account data is retrieved. Use reports from trusted carriers/regulators to assess scam claims."}
-    except Exception: raise ValueError("Enter a phone number with country code, e.g. +2348012345678.")
+        raw = (raw or "").strip()
+        num = phonenumbers.parse(raw, None)
+        if not phonenumbers.is_possible_number(num):
+            raise ValueError()
+        valid = phonenumbers.is_valid_number(num)
+        region = phonenumbers.region_code_for_number(num)
+        number_type = phonenumbers.number_type(num)
+        type_names = {
+            phonenumbers.PhoneNumberType.FIXED_LINE: "Landline",
+            phonenumbers.PhoneNumberType.MOBILE: "Mobile",
+            phonenumbers.PhoneNumberType.FIXED_LINE_OR_MOBILE: "Landline or mobile",
+            phonenumbers.PhoneNumberType.TOLL_FREE: "Toll-free",
+            phonenumbers.PhoneNumberType.PREMIUM_RATE: "Premium-rate",
+            phonenumbers.PhoneNumberType.SHARED_COST: "Shared-cost",
+            phonenumbers.PhoneNumberType.VOIP: "VoIP",
+            phonenumbers.PhoneNumberType.PERSONAL_NUMBER: "Personal number",
+            phonenumbers.PhoneNumberType.PAGER: "Pager",
+            phonenumbers.PhoneNumberType.UAN: "Universal access",
+            phonenumbers.PhoneNumberType.VOICEMAIL: "Voicemail",
+            phonenumbers.PhoneNumberType.UNKNOWN: "Unknown / not classified"
+        }
+        country = geocoder.country_name_for_number(num, "en") or region
+        carrier = carrier.name_for_number(num, "en") or "Not available from numbering metadata"
+        zones = list(timezone.time_zones_for_number(num))
+        return {
+            "input": raw,
+            "international_format": phonenumbers.format_number(num, phonenumbers.PhoneNumberFormat.INTERNATIONAL),
+            "national_format": phonenumbers.format_number(num, phonenumbers.PhoneNumberFormat.NATIONAL),
+            "e164_format": phonenumbers.format_number(num, phonenumbers.PhoneNumberFormat.E164),
+            "rfc3966_format": phonenumbers.format_number(num, phonenumbers.PhoneNumberFormat.RFC3966),
+            "country_calling_code": "+" + str(num.country_code),
+            "country_or_region": country,
+            "region_code": region,
+            "national_number": str(num.national_number),
+            "extension": num.extension or None,
+            "number_type": type_names.get(number_type, "Unknown / not classified"),
+            "possible_number": phonenumbers.is_possible_number(num),
+            "valid_numbering_plan": valid,
+            "carrier_from_numbering_metadata": carrier,
+            "time_zones_associated_with_number": zones,
+            "numbering_metadata_note": "Carrier and region labels come from numbering-plan metadata. They may not identify the current network after number portability and do not identify the subscriber.",
+            "reputation": "No live scam-reputation or complaint database is connected. No scam verdict can be confirmed from number format alone.",
+            "risk": "INFO",
+            "privacy_note": "This lookup does not track a live location or retrieve a person's identity, address, call records, messages, SIM registration, or private account data."
+        }
+    except Exception:
+        raise ValueError("Enter a valid international phone number with country code, e.g. +234 801 234 5678.")
 
 def ip_intel(raw):
     ip=clean_ip(raw)
@@ -266,6 +333,37 @@ def require_authorized():
     if request.form.get("authorized") != "yes" and (request.json or {}).get("authorized") != "yes":
         raise ValueError("Confirm that you own this target or have written permission to assess it.")
 
+LOGIN_MAX_FAILURES = 10
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_LOCK_SECONDS = 15 * 60
+
+def login_lock_remaining(email):
+    now = time.time()
+    with db() as con:
+        row = con.execute("SELECT locked_until FROM login_attempts WHERE email=?", (email,)).fetchone()
+        if row and row["locked_until"] > now:
+            return int(row["locked_until"] - now) + 1
+    return 0
+
+def record_login_failure(email):
+    now = time.time()
+    with db() as con:
+        row = con.execute("SELECT * FROM login_attempts WHERE email=?", (email,)).fetchone()
+        if not row or now - row["window_started"] > LOGIN_WINDOW_SECONDS:
+            count, started = 1, now
+        else:
+            count, started = row["failed_count"] + 1, row["window_started"]
+        locked_until = now + LOGIN_LOCK_SECONDS if count >= LOGIN_MAX_FAILURES else 0
+        con.execute("""INSERT INTO login_attempts(email,failed_count,window_started,locked_until)
+                       VALUES(?,?,?,?) ON CONFLICT(email) DO UPDATE SET
+                       failed_count=excluded.failed_count, window_started=excluded.window_started,
+                       locked_until=excluded.locked_until""",
+                    (email, count, started, locked_until))
+
+def clear_login_failures(email):
+    with db() as con:
+        con.execute("DELETE FROM login_attempts WHERE email=?", (email,))
+
 @app.route("/")
 def home():
     return redirect(url_for("dashboard") if current_user() else url_for("login"))
@@ -290,12 +388,93 @@ def register():
 def login():
     if request.method=="POST":
         email=request.form.get("email","").strip().lower(); password=request.form.get("password","")
-        with db() as con: user=con.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
-        if user and check_password_hash(user["password_hash"],password):
-            session.clear(); session["user_id"]=user["id"]; session.permanent=True
-            return redirect(request.args.get("next") or url_for("dashboard"))
-        flash("Email or password is incorrect.","error")
+        remaining = login_lock_remaining(email)
+        if remaining:
+            flash(f"This account's sign-in is temporarily paused after repeated failed attempts. Try again in about {max(1, remaining // 60)} minute(s). Your account and scan history are still saved.", "error")
+        else:
+            with db() as con: user=con.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
+            if user and check_password_hash(user["password_hash"],password):
+                clear_login_failures(email)
+                session.clear(); session["user_id"]=user["id"]; session.permanent=True
+                return redirect(request.args.get("next") or url_for("dashboard"))
+            record_login_failure(email)
+            flash("Email or password is incorrect. Your account has not been deleted; try again carefully or use the Forgot password link to reset it.", "error")
     return render_template("auth.html", mode="login", paystack_key=PAYSTACK_PUBLIC_KEY)
+
+def send_password_reset_email(email, reset_url):
+    if not all([SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_EMAIL]):
+        raise RuntimeError("Password-reset email is not configured on the server.")
+    msg = EmailMessage()
+    msg["Subject"] = "Reset your CyberLord password"
+    msg["From"] = SMTP_FROM_EMAIL
+    msg["To"] = email
+    msg.set_content(
+        "A password reset was requested for your CyberLord account.\n\n"
+        f"Use this one-time link within {RESET_TOKEN_MINUTES} minutes:\n{reset_url}\n\n"
+        "If you did not request this, ignore this email. Your password will not change."
+    )
+    if SMTP_USE_SSL:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(msg)
+    else:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+            server.ehlo(); server.starttls(); server.ehlo()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(msg)
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        # Always show the same response so account existence is not disclosed.
+        generic = "If an account exists for that email, a password-reset link will be sent shortly. Check your inbox and spam folder."
+        with db() as con:
+            user = con.execute("SELECT id,email FROM users WHERE email=?", (email,)).fetchone()
+        if user:
+            raw_token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+            expires = time.time() + RESET_TOKEN_MINUTES * 60
+            with db() as con:
+                con.execute("UPDATE password_resets SET used=1 WHERE user_id=? AND used=0", (user["id"],))
+                con.execute("INSERT INTO password_resets(user_id,token_hash,expires_at,created_at) VALUES(?,?,?,?)",
+                            (user["id"], token_hash, expires, time.time()))
+            reset_url = url_for("reset_password", token=raw_token, _external=True)
+            try:
+                send_password_reset_email(email, reset_url)
+            except Exception:
+                app.logger.exception("Could not send password reset email")
+        flash(generic, "success")
+        return redirect(url_for("login"))
+    return render_template("forgot_password.html")
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    with db() as con:
+        reset = con.execute("SELECT * FROM password_resets WHERE token_hash=? AND used=0 AND expires_at>?",
+                            (token_hash, time.time())).fetchone()
+    if not reset:
+        flash("This password-reset link is invalid, expired, or already used. Request a new one.", "error")
+        return redirect(url_for("forgot_password"))
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        if len(password) < 10:
+            flash("Choose a password with at least 10 characters.", "error")
+        elif password != confirm:
+            flash("The passwords do not match.", "error")
+        else:
+            with db() as con:
+                con.execute("UPDATE users SET password_hash=? WHERE id=?",
+                            (generate_password_hash(password), reset["user_id"]))
+                con.execute("UPDATE password_resets SET used=1 WHERE id=?", (reset["id"],))
+                con.execute("DELETE FROM login_attempts WHERE email=(SELECT email FROM users WHERE id=?)",
+                            (reset["user_id"],))
+                con.execute("UPDATE password_resets SET used=1 WHERE user_id=?", (reset["user_id"],))
+            flash("Your password has been reset. You can now sign in with your new password.", "success")
+            return redirect(url_for("login"))
+    return render_template("reset_password.html")
 
 @app.route("/logout")
 @login_required
@@ -309,7 +488,7 @@ def dashboard():
     with db() as con:
         history=con.execute("SELECT * FROM scans WHERE user_id=? ORDER BY id DESC LIMIT 8",(user["id"],)).fetchall()
         total=con.execute("SELECT COUNT(*) FROM scans WHERE user_id=?",(user["id"],)).fetchone()[0]
-    return render_template("dashboard.html",user=user,history=history,total=total,price=PREMIUM_PRICE_NGN)
+    return render_template("dashboard.html",user=user,history=history,total=total,plans=PRICING_PLANS)
 
 @app.route("/scan/<module>", methods=["POST"])
 @login_required
@@ -318,9 +497,12 @@ def scan(module):
     try:
         data=request.get_json(silent=True) or request.form
         result=None; target=""
-        premium_modules={"attack-map","port-scanner","cve","compare","phone","individual-email","breach"}
-        if module in premium_modules and not user["premium"]:
-            return jsonify({"error":"Premium access required","upgrade":True}),402
+        pro_modules={"phone","individual-email","breach"}
+        pro_plus_modules={"attack-map","port-scanner","cve","compare"}
+        if module in pro_modules and user["plan"] not in ("pro", "pro_plus"):
+            return jsonify({"error":"PRO access required","upgrade":True,"required_plan":"pro"}),402
+        if module in pro_plus_modules and user["plan"] != "pro_plus":
+            return jsonify({"error":"PRO PLUS access required","upgrade":True,"required_plan":"pro_plus"}),402
         if module in ("domain","dns","email-security","subdomains","technology","attack-map","port-scanner"):
             target=clean_domain(data.get("target",""))
             if module in ("domain","port-scanner"): require_authorized()
@@ -370,62 +552,83 @@ def report(scan_id):
 @app.route("/payment/initialize",methods=["POST"])
 @login_required
 def payment_initialize():
-    if not PAYSTACK_SECRET_KEY: return jsonify({"error":"Live Paystack secret key is not configured on the server."}),503
+    if not PAYSTACK_SECRET_KEY:
+        return jsonify({"error":"Live Paystack secret key is not configured on the server."}),503
+    data = request.get_json(silent=True) or request.form
+    plan_key = str(data.get("plan", "pro")).lower()
+    plan = PRICING_PLANS.get(plan_key)
+    if not plan:
+        return jsonify({"error":"Choose a valid payment plan."}),400
     reference="CLD-"+secrets.token_hex(12)
-    payload={"email":current_user()["email"],"amount":PREMIUM_PRICE_NGN*100,"reference":reference,
-             "callback_url":url_for("payment_callback",_external=True),"metadata":{"user_id":current_user()["id"],"product":"CyberLord Premium"}}
+    payload={"email":current_user()["email"],"amount":plan["price"]*100,"reference":reference,
+             "callback_url":url_for("payment_callback",_external=True),
+             "metadata":{"user_id":current_user()["id"],"product":"CyberLord "+plan["name"],"plan":plan_key}}
     try:
         r=requests.post("https://api.paystack.co/transaction/initialize",json=payload,
                         headers={"Authorization":"Bearer "+PAYSTACK_SECRET_KEY},timeout=15)
         j=r.json()
-        if not r.ok or not j.get("status"): return jsonify({"error":"Paystack could not initialize this payment."}),502
+        if not r.ok or not j.get("status"):
+            return jsonify({"error":"Paystack could not initialize this payment."}),502
         with db() as con:
-            con.execute("INSERT INTO payments(user_id,reference,amount,status,provider,created_at) VALUES(?,?,?,?,?,?)",
-                        (current_user()["id"],reference,PREMIUM_PRICE_NGN,"pending","paystack",datetime.utcnow().isoformat()+"Z"))
+            con.execute("INSERT INTO payments(user_id,reference,amount,status,provider,plan,created_at) VALUES(?,?,?,?,?,?,?)",
+                        (current_user()["id"],reference,plan["price"],"pending","paystack",plan_key,datetime.utcnow().isoformat()+"Z"))
         return jsonify({"url":j["data"]["authorization_url"]})
-    except Exception: return jsonify({"error":"Payment service is temporarily unavailable."}),502
+    except Exception:
+        return jsonify({"error":"Payment service is temporarily unavailable."}),502
 
-def verify_paystack(reference):
+def verify_paystack(reference, expected_amount):
     r=requests.get("https://api.paystack.co/transaction/verify/"+reference,
                    headers={"Authorization":"Bearer "+PAYSTACK_SECRET_KEY},timeout=15)
     j=r.json()
-    if not r.ok or not j.get("status"): return False
+    if not r.ok or not j.get("status"):
+        return False
     data=j.get("data",{})
-    return data.get("status")=="success" and data.get("amount")==PREMIUM_PRICE_NGN*100 and data.get("reference")==reference
+    return data.get("status")=="success" and data.get("amount")==expected_amount*100 and data.get("reference")==reference
+
+def activate_payment(reference, payment):
+    with db() as con:
+        con.execute("UPDATE payments SET status='success' WHERE reference=?", (reference,))
+        con.execute("UPDATE users SET premium=1, plan=CASE WHEN plan='pro_plus' THEN 'pro_plus' ELSE ? END WHERE id=?",
+                    (payment["plan"], payment["user_id"]))
 
 @app.route("/payment/callback")
 @login_required
 def payment_callback():
-    ref=request.args.get("reference","")
-    if not ref or not PAYSTACK_SECRET_KEY: flash("Payment could not be verified.","error"); return redirect(url_for("dashboard"))
+    ref=request.args.get("reference", "")
+    if not ref or not PAYSTACK_SECRET_KEY:
+        flash("Payment could not be verified.","error")
+        return redirect(url_for("dashboard"))
     try:
         with db() as con:
-            p=con.execute("SELECT * FROM payments WHERE reference=? AND user_id=?",(ref,current_user()["id"])).fetchone()
-        if p and verify_paystack(ref):
-            with db() as con:
-                con.execute("UPDATE payments SET status='success' WHERE reference=?",(ref,))
-                con.execute("UPDATE users SET premium=1 WHERE id=?",(current_user()["id"],))
-            flash("Payment verified. Premium access is now active.","success")
-        else: flash("Payment is not confirmed. Premium remains locked until verification succeeds.","error")
-    except Exception: flash("Verification is temporarily unavailable. Premium remains locked.","error")
+            payment=con.execute("SELECT * FROM payments WHERE reference=? AND user_id=?",(ref,current_user()["id"])).fetchone()
+        if payment and payment["status"] != "success" and verify_paystack(ref, payment["amount"]):
+            activate_payment(ref, payment)
+            flash(payment["plan"].replace("_", " ").upper()+" payment verified. Your access is now active.","success")
+        elif payment and payment["status"] == "success":
+            flash("This payment has already been applied to your account.","success")
+        else:
+            flash("Payment is not confirmed. Your paid plan remains locked until verification succeeds.","error")
+    except Exception:
+        flash("Verification is temporarily unavailable. Your paid plan remains locked.","error")
     return redirect(url_for("dashboard"))
 
 @app.route("/payment/webhook",methods=["POST"])
 def payment_webhook():
-    body=request.get_data(); signature=request.headers.get("x-paystack-signature","")
+    body=request.get_data()
+    signature=request.headers.get("x-paystack-signature","")
     expected=hmac.new(PAYSTACK_SECRET_KEY.encode(),body,hashlib.sha512).hexdigest() if PAYSTACK_SECRET_KEY else ""
-    if not signature or not hmac.compare_digest(signature,expected): return "invalid signature",401
+    if not signature or not hmac.compare_digest(signature,expected):
+        return "invalid signature",401
     event=request.get_json(silent=True) or {}
     if event.get("event")=="charge.success":
         data=event.get("data",{}); ref=data.get("reference","")
         try:
-            if data.get("status")=="success" and data.get("amount")==PREMIUM_PRICE_NGN*100:
-                with db() as con:
-                    p=con.execute("SELECT user_id FROM payments WHERE reference=?",(ref,)).fetchone()
-                    if p:
-                        con.execute("UPDATE payments SET status='success' WHERE reference=?",(ref,))
-                        con.execute("UPDATE users SET premium=1 WHERE id=?",(p["user_id"],))
-        except Exception: pass
+            with db() as con:
+                payment=con.execute("SELECT * FROM payments WHERE reference=?",(ref,)).fetchone()
+            if payment and payment["status"] != "success" and data.get("status")=="success" and data.get("amount")==payment["amount"]*100:
+                activate_payment(ref, payment)
+        except Exception:
+            app.logger.exception("Could not process verified payment webhook")
     return "ok",200
 
 @app.errorhandler(404)

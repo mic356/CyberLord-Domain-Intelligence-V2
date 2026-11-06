@@ -4,7 +4,8 @@ function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;',
 document.querySelectorAll('[data-module]').forEach(btn=>btn.addEventListener('click',()=>{
  activeModule=btn.dataset.module; document.getElementById('modal-title').textContent=btn.dataset.title;
  const fields=(btn.dataset.fields||'target').split(','); const labels=[btn.dataset.label||'Domain name',btn.dataset.label2||'Second domain'];
- document.getElementById('modal-fields').innerHTML=fields.map((f,i)=>`<label>${f==='ports'?'TCP ports (comma separated)':labels[i]||f}<input name="${f}" ${f==='ports'?'value="80,443,22,8080"':'placeholder="'+(f==='target'?'example.com':'example.org')+'"'} required></label>`).join('');
+ const examples={'phone':'+234 801 234 5678','ip':'8.8.8.8','individual-email':'security@example.com','breach':'security@example.com','cve':'Apache HTTP Server','compare':'example.com','port-scanner':'example.com'};
+ document.getElementById('modal-fields').innerHTML=fields.map((f,i)=>{const ph=f==='ports'?'80,443,22,8080':(examples[activeModule]||(f==='second'?'example.org':'example.com'));const tel=activeModule==='phone'?' inputmode="tel" autocomplete="tel"':'';return `<label>${f==='ports'?'TCP ports (comma separated)':labels[i]||f}<input name="${f}" ${f==='ports'?'value="80,443,22,8080"':'placeholder="'+ph+'"'+tel} required></label>`}).join('');
  document.getElementById('auth-line').style.display=btn.dataset.auth==='yes'?'flex':'none';
  document.getElementById('authorized').checked=false;
  document.getElementById('scan-output').classList.add('hidden'); document.getElementById('scan-output').innerHTML='';
@@ -29,9 +30,8 @@ if(form) form.addEventListener('submit',async e=>{
  }catch(err){out.innerHTML='<div class="result-error">'+escapeHtml(err.message)+'</div>';}
  finally{btn.disabled=false;btn.innerHTML='Run analysis <b>↗</b>';}
 });
-const pay=document.getElementById('paystack-button');
-if(pay)pay.addEventListener('click',async()=>{
- pay.disabled=true;pay.textContent='Connecting to Paystack…';
- try{const r=await fetch('/payment/initialize',{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||'Payment initialization failed');window.location.href=j.url;}
- catch(e){alert(e.message);pay.disabled=false;pay.textContent='Unlock Premium · ₦5,000';}
-});
+document.querySelectorAll('.paystack-plan').forEach(pay=>pay.addEventListener('click',async()=>{
+ const plan=pay.dataset.plan; const original=pay.textContent; pay.disabled=true; pay.textContent='Connecting to Paystack…';
+ try{const r=await fetch('/payment/initialize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Payment initialization failed');window.location.href=j.url;}
+ catch(e){alert(e.message);pay.disabled=false;pay.textContent=original;}
+}));
