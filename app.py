@@ -1,4 +1,6 @@
 import os, re, json, hmac, hashlib, sqlite3, secrets, socket, ssl, ipaddress, time, smtplib
+import psycopg
+from psycopg.rows import dict_row
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 from email.message import EmailMessage
@@ -7,13 +9,17 @@ from functools import wraps
 import requests
 import dns.resolver
 import phonenumbers
-from phonenumbers import carrier, geocoder, timezone
+from phonenumbers import carrier as phone_carrier, geocoder, timezone
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, abort, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 DB_PATH = os.environ.get("DATABASE_PATH", os.path.join(APP_DIR, "cyberlord.db"))
-os.makedirs(os.path.dirname(DB_PATH) or APP_DIR, exist_ok=True)
+if not DATABASE_URL:
+    os.makedirs(os.path.dirname(DB_PATH) or APP_DIR, exist_ok=True)
+ID_COLUMN = "BIGSERIAL PRIMARY KEY" if DATABASE_URL else "INTEGER PRIMARY KEY AUTOINCREMENT"
+DB_INTEGRITY_ERROR = psycopg.IntegrityError if DATABASE_URL else sqlite3.IntegrityError
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "CHANGE-THIS-BEFORE-DEPLOYMENT-" + secrets.token_hex(16))
 app.config.update(
@@ -40,37 +46,82 @@ RESET_TOKEN_MINUTES = 30
 ALLOWED_PORTS = [21,22,25,53,80,110,143,443,445,587,993,995,1433,3306,3389,5432,8080,8443,9200]
 REQUEST_TIMEOUT = 7
 
+
+class HybridRow(dict):
+    """PostgreSQL row supporting both named and legacy numeric indexing."""
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return list(self.values())[key]
+        return super().__getitem__(key)
+
+def hybrid_row_factory(cursor):
+    columns = [column.name for column in cursor.description]
+    def make_row(values):
+        return HybridRow(zip(columns, values))
+    return make_row
+
+class DatabaseConnection:
+    """Small adapter so existing SQLite-style queries work with PostgreSQL."""
+    def __init__(self, connection, postgres=False):
+        self.connection = connection
+        self.postgres = postgres
+    def execute(self, query, params=()):
+        if self.postgres:
+            query = query.replace("?", "%s")
+        return self.connection.execute(query, params)
+    def __enter__(self):
+        self.connection.__enter__()
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        return self.connection.__exit__(exc_type, exc, tb)
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
 def db():
+    if DATABASE_URL:
+        database_url = DATABASE_URL
+        if database_url.startswith("postgres://"):
+            database_url = "postgresql://" + database_url[len("postgres://"):]
+        if "sslmode=" not in database_url:
+            database_url += ("&" if "?" in database_url else "?") + "sslmode=require"
+        conn = psycopg.connect(database_url, row_factory=hybrid_row_factory, connect_timeout=10)
+        return DatabaseConnection(conn, postgres=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    return conn
+    return DatabaseConnection(conn, postgres=False)
 
 def init_db():
     with db() as con:
-        con.execute("""CREATE TABLE IF NOT EXISTS users(
-            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
+        con.execute(f"""CREATE TABLE IF NOT EXISTS users(
+            id {ID_COLUMN}, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL, premium INTEGER NOT NULL DEFAULT 0,
             plan TEXT NOT NULL DEFAULT 'free', created_at TEXT NOT NULL)""")
-        con.execute("""CREATE TABLE IF NOT EXISTS scans(
-            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, module TEXT NOT NULL,
+        con.execute(f"""CREATE TABLE IF NOT EXISTS scans(
+            id {ID_COLUMN}, user_id BIGINT NOT NULL, module TEXT NOT NULL,
             target TEXT NOT NULL, result_json TEXT NOT NULL, risk TEXT, created_at TEXT NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id))""")
-        con.execute("""CREATE TABLE IF NOT EXISTS payments(
-            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, reference TEXT UNIQUE NOT NULL,
+        con.execute(f"""CREATE TABLE IF NOT EXISTS payments(
+            id {ID_COLUMN}, user_id BIGINT NOT NULL, reference TEXT UNIQUE NOT NULL,
             amount INTEGER NOT NULL, status TEXT NOT NULL, provider TEXT NOT NULL, plan TEXT NOT NULL DEFAULT 'pro', created_at TEXT NOT NULL)""")
         con.execute("""CREATE TABLE IF NOT EXISTS login_attempts(
             email TEXT PRIMARY KEY, failed_count INTEGER NOT NULL DEFAULT 0,
             window_started REAL NOT NULL, locked_until REAL NOT NULL DEFAULT 0)""")
-        con.execute("""CREATE TABLE IF NOT EXISTS password_resets(
-            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+        con.execute(f"""CREATE TABLE IF NOT EXISTS password_resets(
+            id {ID_COLUMN}, user_id BIGINT NOT NULL,
             token_hash TEXT UNIQUE NOT NULL, expires_at REAL NOT NULL,
             used INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id))""")
         # Safe migrations for databases created by earlier project versions.
-        user_cols = {row[1] for row in con.execute("PRAGMA table_info(users)")}
+        if DATABASE_URL:
+            user_cols = {row["column_name"] for row in con.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users'")}
+            payment_cols = {row["column_name"] for row in con.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='payments'")}
+        else:
+            user_cols = {row[1] for row in con.execute("PRAGMA table_info(users)")}
+            payment_cols = {row[1] for row in con.execute("PRAGMA table_info(payments)")}
         if "plan" not in user_cols:
             con.execute("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'")
-        payment_cols = {row[1] for row in con.execute("PRAGMA table_info(payments)")}
         if "plan" not in payment_cols:
             con.execute("ALTER TABLE payments ADD COLUMN plan TEXT NOT NULL DEFAULT 'pro'")
         con.execute("UPDATE users SET plan='pro' WHERE premium=1 AND plan='free'")
@@ -216,6 +267,8 @@ def individual_email_check(address):
 def phone_check(raw):
     try:
         raw = (raw or "").strip()
+        if not raw or not raw.startswith("+"):
+            raise ValueError("missing international country code")
         num = phonenumbers.parse(raw, None)
         if not phonenumbers.is_possible_number(num):
             raise ValueError()
@@ -237,7 +290,7 @@ def phone_check(raw):
             phonenumbers.PhoneNumberType.UNKNOWN: "Unknown / not classified"
         }
         country = geocoder.country_name_for_number(num, "en") or region
-        carrier = carrier.name_for_number(num, "en") or "Not available from numbering metadata"
+        carrier_name = phone_carrier.name_for_number(num, "en") or "Not available from numbering metadata"
         zones = list(timezone.time_zones_for_number(num))
         return {
             "input": raw,
@@ -253,15 +306,15 @@ def phone_check(raw):
             "number_type": type_names.get(number_type, "Unknown / not classified"),
             "possible_number": phonenumbers.is_possible_number(num),
             "valid_numbering_plan": valid,
-            "carrier_from_numbering_metadata": carrier,
+            "carrier_from_numbering_metadata": carrier_name,
             "time_zones_associated_with_number": zones,
             "numbering_metadata_note": "Carrier and region labels come from numbering-plan metadata. They may not identify the current network after number portability and do not identify the subscriber.",
             "reputation": "No live scam-reputation or complaint database is connected. No scam verdict can be confirmed from number format alone.",
             "risk": "INFO",
             "privacy_note": "This lookup does not track a live location or retrieve a person's identity, address, call records, messages, SIM registration, or private account data."
         }
-    except Exception:
-        raise ValueError("Enter a valid international phone number with country code, e.g. +234 801 234 5678.")
+    except (phonenumbers.NumberParseException, ValueError):
+        raise ValueError("Enter a valid international phone number beginning with + and its country code, e.g. +234 801 234 5678.")
 
 def ip_intel(raw):
     ip=clean_ip(raw)
@@ -381,7 +434,7 @@ def register():
                     con.execute("INSERT INTO users(name,email,password_hash,created_at) VALUES(?,?,?,?)",
                                 (name,email,generate_password_hash(password),datetime.utcnow().isoformat()+"Z"))
                 flash("Account created. Sign in to continue.","success"); return redirect(url_for("login"))
-            except sqlite3.IntegrityError: flash("An account with that email already exists.","error")
+            except DB_INTEGRITY_ERROR: flash("An account with that email already exists.","error")
     return render_template("auth.html", mode="register", paystack_key=PAYSTACK_PUBLIC_KEY)
 
 @app.route("/login", methods=["GET","POST"])
