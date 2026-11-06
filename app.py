@@ -36,12 +36,8 @@ PRICING_PLANS = {
     "pro": {"name": "PRO", "price": 5000},
     "pro_plus": {"name": "PRO PLUS", "price": 10000},
 }
-SMTP_HOST = os.environ.get("SMTP_HOST", "")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
-SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", SMTP_USERNAME)
-SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "false").lower() == "true"
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev").strip()
 RESET_TOKEN_MINUTES = 30
 ALLOWED_PORTS = [21,22,25,53,80,110,143,443,445,587,993,995,1433,3306,3389,5432,8080,8443,9200]
 REQUEST_TIMEOUT = 7
@@ -458,26 +454,28 @@ def login():
     return render_template("auth.html", mode="login", paystack_key=PAYSTACK_PUBLIC_KEY)
 
 def send_password_reset_email(email, reset_url):
-    if not all([SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_EMAIL]):
-        raise RuntimeError("Password-reset email is not configured on the server.")
-    msg = EmailMessage()
-    msg["Subject"] = "Reset your CyberLord password"
-    msg["From"] = SMTP_FROM_EMAIL
-    msg["To"] = email
-    msg.set_content(
-        "A password reset was requested for your CyberLord account.\n\n"
-        f"Use this one-time link within {RESET_TOKEN_MINUTES} minutes:\n{reset_url}\n\n"
-        "If you did not request this, ignore this email. Your password will not change."
+    if not RESEND_API_KEY:
+        raise RuntimeError("Password-reset email is not configured: RESEND_API_KEY is missing.")
+    payload = {
+        "from": RESEND_FROM_EMAIL,
+        "to": [email],
+        "subject": "Reset your CyberLord password",
+        "text": (
+            "A password reset was requested for your CyberLord account.\n\n"
+            f"Use this one-time link within {RESET_TOKEN_MINUTES} minutes:\n{reset_url}\n\n"
+            "If you did not request this, ignore this email. Your password will not change."
+        ),
+    }
+    response = requests.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=20,
     )
-    if SMTP_USE_SSL:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.send_message(msg)
-    else:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.ehlo(); server.starttls(); server.ehlo()
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.send_message(msg)
+    if not response.ok:
+        # Keep provider response in server logs for diagnosis, without exposing the API key.
+        app.logger.error("Resend email API returned HTTP %s: %s", response.status_code, response.text[:1000])
+        raise RuntimeError(f"Resend email API rejected the request (HTTP {response.status_code}).")
 
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
