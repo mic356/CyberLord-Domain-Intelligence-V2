@@ -31,35 +31,41 @@ if(form) form.addEventListener('submit',async e=>{
  finally{btn.disabled=false;btn.innerHTML='Run analysis <b>↗</b>';}
 });
 document.querySelectorAll('.paystack-plan').forEach(pay=>pay.addEventListener('click',async()=>{
- if(pay.disabled)return;
+ if(pay.dataset.busy==='true')return;
  const plan=pay.dataset.plan;
- const original=pay.textContent.trim();
+ const original=pay.dataset.originalText||pay.textContent.trim();
+ pay.dataset.originalText=original;
+ pay.dataset.busy='true';
  pay.disabled=true;
- pay.setAttribute('aria-busy','true');
- pay.textContent='Connecting to Paystack…';
+ pay.textContent='Please wait…';
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),25000);
+ const timeout=setTimeout(()=>controller.abort(),30000);
  try{
-  const r=await fetch('/payment/initialize',{
-   method:'POST',credentials:'same-origin',
+  const response=await fetch('/payment/initialize',{
+   method:'POST',
+   credentials:'same-origin',
+   redirect:'follow',
    headers:{'Content-Type':'application/json','Accept':'application/json'},
-   body:JSON.stringify({plan}),signal:controller.signal
+   body:JSON.stringify({plan}),
+   signal:controller.signal
   });
-  const contentType=r.headers.get('content-type')||'';
-  const j=contentType.includes('application/json')
-   ? await r.json()
-   : {error:r.redirected?'Your session may have expired. Sign in again and retry.':'The server did not return a payment response. Please check the Render logs.'};
-  if(!r.ok)throw new Error(j.error||'Payment initialization failed. Please try again.');
-  if(!j.url||typeof j.url!=='string'||!/^https:\/\/checkout\.paystack\.com\//i.test(j.url))
+  const contentType=response.headers.get('content-type')||'';
+  if(!contentType.includes('application/json')){
+   if(response.redirected||/\/login/.test(response.url))throw new Error('Your login session has expired. Sign in again, then retry payment.');
+   throw new Error('The payment service returned an unexpected response. Please try again.');
+  }
+  const result=await response.json();
+  if(!response.ok)throw new Error(result.error||'Payment could not be initialized. Please try again.');
+  if(typeof result.url!=='string'||!/^https:\/\/checkout\.paystack\.com\//i.test(result.url))
    throw new Error('Paystack did not return a valid secure checkout link. Please try again.');
-  window.location.assign(j.url);
- }catch(e){
-  const message=e.name==='AbortError'
-   ? 'Paystack did not respond within 25 seconds. Please check the payment service and try again.'
-   : (e.message||'Payment could not be started. Please try again.');
+  window.location.href=result.url;
+ }catch(error){
+  const message=error.name==='AbortError'?'Paystack took too long to respond. Please try again.':(error.message||'Payment could not be started. Please try again.');
   alert(message);
   pay.disabled=false;
-  pay.removeAttribute('aria-busy');
+  pay.dataset.busy='false';
   pay.textContent=original;
- }finally{clearTimeout(timeout);}
+ }finally{
+  clearTimeout(timeout);
+ }
 }));
