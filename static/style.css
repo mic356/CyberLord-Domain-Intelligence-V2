@@ -8,3 +8,12 @@
 
 /* Subscription tiers */
 .payment-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}.payment-option{display:flex;flex-direction:column;gap:9px;padding:17px;border:1px solid #2b7094;background:linear-gradient(145deg,#0a2946,#091a30);border-radius:12px;min-width:0}.payment-option>b{font:700 15px 'Space Grotesk';letter-spacing:1px;color:#54e9f3}.payment-option>span{color:#a9bfd7;font-size:11px;line-height:1.55;min-height:38px}.payment-option>strong{font:700 25px 'Space Grotesk';color:#fff}.payment-option .btn{margin-top:5px;justify-content:center;font-size:11px}.featured-plan{border-color:#d0a34e88;box-shadow:inset 0 0 24px #d0a34e0c}.featured-plan>b{color:#f5cf7d}.payment-option-disabled{margin-top:12px;opacity:.72}.payment-option-disabled strong{font-size:15px;color:#9ab0c7}@media(max-width:520px){.payment-options{grid-template-columns:1fr}}
+
+/* Payment layout and disabled-button cursor refinement */
+.btn:disabled,button:disabled{cursor:not-allowed!important}
+.payment-panel-full{min-width:0;overflow:hidden}
+.payment-options{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+.payment-option{min-width:0;overflow-wrap:anywhere}
+.payment-option .btn{width:100%;min-width:0;white-space:normal;line-height:1.35;padding:12px 10px}
+.payment-option-disabled{max-width:100%}
+@media(max-width:520px){.payment-options{grid-template-columns:1fr;gap:10px}.payment-option{padding:14px}.payment-option>strong{font-size:22px}.payment-panel-full{padding:16px}.payment-option>span{min-height:0}}

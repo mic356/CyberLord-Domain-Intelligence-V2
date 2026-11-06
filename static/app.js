@@ -31,7 +31,18 @@ if(form) form.addEventListener('submit',async e=>{
  finally{btn.disabled=false;btn.innerHTML='Run analysis <b>↗</b>';}
 });
 document.querySelectorAll('.paystack-plan').forEach(pay=>pay.addEventListener('click',async()=>{
- const plan=pay.dataset.plan; const original=pay.textContent; pay.disabled=true; pay.textContent='Connecting to Paystack…';
- try{const r=await fetch('/payment/initialize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Payment initialization failed');window.location.href=j.url;}
- catch(e){alert(e.message);pay.disabled=false;pay.textContent=original;}
+ if(pay.disabled)return;
+ const plan=pay.dataset.plan; const original=pay.textContent.trim();
+ pay.disabled=true; pay.textContent='Connecting to Paystack…';
+ const controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),20000);
+ try{
+  const r=await fetch('/payment/initialize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan}),signal:controller.signal});
+  const j=await r.json().catch(()=>({error:'The payment server returned an unreadable response.'}));
+  if(!r.ok)throw new Error(j.error||'Payment initialization failed. Please try again.');
+  if(!j.url||typeof j.url!=='string')throw new Error('Paystack did not return a checkout link. Please try again.');
+  window.location.assign(j.url);
+ }catch(e){
+  const message=e.name==='AbortError'?'Paystack is taking too long to respond. Please try again.':(e.message||'Payment could not be started. Please try again.');
+  alert(message); pay.disabled=false; pay.textContent=original;
+ }finally{clearTimeout(timeout);}
 }));
