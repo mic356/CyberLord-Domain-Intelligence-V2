@@ -1,17 +1,5 @@
-{% extends "base.html" %}{% block title %}{{ 'Create account' if mode=='register' else 'Sign in' }} | CyberLord{% endblock %}
-{% block authcontent %}
-<div class="auth-screen"><div class="auth-visual"><div class="auth-brand"><span class="brand-mark">C</span><b>CYBERLORD</b></div>
-<div class="orbital"><div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="core">CL<small>INTEL CORE</small></div><span class="node n1">DNS</span><span class="node n2">TLS</span><span class="node n3">WEB</span></div>
-<div class="auth-copy"><span class="eyebrow">NEXT-GEN DOMAIN INTELLIGENCE</span><h1>See your digital<br><strong>attack surface.</strong></h1><p>Understand your public-facing security posture with powerful, non-intrusive intelligence tools.</p><div class="auth-stats"><span>PASSIVE-FIRST INTELLIGENCE</span><span>SECURITY REPORTS</span><span>BUILT FOR DEFENDERS</span></div></div></div>
-<div class="auth-panel"><div class="auth-form-wrap"><div class="mini-brand">CYBERLORD <span> / DOMAIN INTELLIGENCE</span></div><span class="eyebrow">{{ 'GET STARTED' if mode=='register' else 'SECURE WORKSPACE ACCESS' }}</span>
-<h2>{{ 'Create your account' if mode=='register' else 'Welcome back.' }}</h2><p class="muted">{{ 'Set up your intelligence workspace.' if mode=='register' else 'Sign in to continue to your security workspace.' }}</p>
-{% with messages=get_flashed_messages(with_categories=true) %}{% for category,message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
-<form method="post" class="auth-form">
-{% if mode=='register' %}<label>Full name<input name="name" placeholder="Your name" required maxlength="80"></label>{% endif %}
-<label>Email address<input type="email" name="email" placeholder="you@example.com" required autocomplete="email"></label>
-<label>Password<input type="password" name="password" placeholder="{{ 'At least 10 characters' if mode=='register' else 'Your password' }}" required minlength="{{ 10 if mode=='register' else 1 }}" autocomplete="{{ 'new-password' if mode=='register' else 'current-password' }}"></label>
-<button class="btn primary full" type="submit"><span>{{ 'Create account' if mode=='register' else 'Sign in to workspace' }}</span><b>→</b></button></form>
-{% if mode=='login' %}<div class="auth-switch"><a href="{{ url_for('forgot_password') }}">Forgot password?</a></div>{% endif %}
-<div class="auth-switch">{{ "Already have an account?" if mode=='register' else "New to CyberLord?" }} <a href="{{ url_for('login' if mode=='register' else 'register') }}">{{ 'Sign in' if mode=='register' else 'Create account' }}</a></div>
-<div class="auth-foot">Protected workspace · Your scans stay associated with your account</div></div></div></div>
-{% endblock %}
+{% extends "base.html" %}{% block content %}<section class="auth panel"><div class="eyebrow">SECURE ACCESS</div>
+{% if mode=="register" %}<h1>Create account</h1><form method="post"><label>Email<input name="email" type="email" required autocomplete="email"></label><label>Password<input name="password" type="password" minlength="10" required autocomplete="new-password"></label><button class="btn primary">Create account</button></form><p>Already registered? <a href="{{ url_for('login') }}">Sign in</a></p>
+{% elif mode=="login" %}<h1>Welcome back</h1><form method="post"><label>Email<input name="email" type="email" required autocomplete="email"></label><label>Password<input name="password" type="password" required autocomplete="current-password"></label><button class="btn primary">Sign in</button></form><p><a href="{{ url_for('forgot_password') }}">Forgot password?</a> · <a href="{{ url_for('register') }}">Create account</a></p>
+{% elif mode=="forgot" %}<h1>Reset password</h1><p>Enter the email address on your account. If it exists, a reset link will be sent.</p><form method="post"><label>Email<input name="email" type="email" required></label><button class="btn primary">Send reset link</button></form>
+{% else %}<h1>Choose a new password</h1><form method="post"><label>New password<input name="password" type="password" minlength="10" required autocomplete="new-password"></label><button class="btn primary">Update password</button></form>{% endif %}</section>{% endblock %}
