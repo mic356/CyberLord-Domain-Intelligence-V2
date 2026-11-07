@@ -17,3 +17,7 @@ services:
         sync: false
       - key: RESEND_FROM
         sync: false
+      - key: KALI_WORKER_URL
+        sync: false
+      - key: KALI_WORKER_TOKEN
+        sync: false
