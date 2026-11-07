@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{% block title %}CyberLord | Domain Intelligence{% endblock %}</title>
-<link rel="stylesheet" href="{{ url_for('static',filename='style.css',v='20261107-payment-fix') }}"></head>
+<link rel="stylesheet" href="{{ url_for('static',filename='style.css',v='20261107-payment-fix-v4') }}"></head>
 <body>
 {% if user is defined and user %}
 <div class="app-shell">
@@ -28,4 +28,4 @@
 <footer>CYBERLORD DOMAIN INTELLIGENCE <span>AUTHORIZED SECURITY TESTING ONLY</span></footer>
 </main></div>
 {% else %}{% block authcontent %}{% endblock %}{% endif %}
-<script src="{{ url_for('static',filename='app.js',v='20261107-payment-fix') }}"></script></body></html>
+<script src="{{ url_for('static',filename='app.js',v='20261107-payment-fix-v4') }}"></script></body></html>

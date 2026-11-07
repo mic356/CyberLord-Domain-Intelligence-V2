@@ -16,13 +16,12 @@
 .payment-option>b{font:700 13px 'Space Grotesk';letter-spacing:.8px;color:#54e9f3}
 .payment-option>span{color:#a9bfd7;font-size:10px;line-height:1.4;min-height:0}
 .payment-option>strong{font:700 21px 'Space Grotesk';color:#fff;white-space:nowrap}
-.payment-option .btn{width:100%;min-width:0;min-height:38px;margin-top:3px;padding:8px 6px;justify-content:center;white-space:normal;overflow-wrap:anywhere;line-height:1.2;font-size:10px}
+.payment-option .btn{width:100%;min-width:0;min-height:38px;margin-top:3px;padding:8px 6px;justify-content:center;white-space:normal;overflow-wrap:anywhere;line-height:1.2;font-size:10px;cursor:pointer}
+.paystack-form{width:100%;margin:0}.paystack-form .btn{display:flex}
 .featured-plan{border-color:#d0a34e88;box-shadow:inset 0 0 18px #d0a34e0c}
 .featured-plan>b{color:#f5cf7d}
 .payment-option-disabled{max-width:100%;margin-top:8px;gap:5px;padding:10px 12px;opacity:.72}
 .payment-option-disabled strong{font-size:14px;color:#9ab0c7}
-.payment-option button,.payment-option button:disabled,.payment-option .btn:disabled{cursor:default!important}
-.payment-option .paystack-plan{cursor:default!important}
 .payment-panel-full>.muted{display:block;font-size:9px;line-height:1.5;margin-top:8px}
 @media(max-width:520px){
  .payment-panel-full{padding:13px}
@@ -32,3 +31,8 @@
  .payment-option>strong{font-size:19px}
  .payment-option .btn{min-height:36px;font-size:10px}
 }
+
+/* Premium plan labels stay beside their tool titles and disappear after verified access. */
+.tool-title-row{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex-wrap:wrap;min-height:22px;margin:0 0 8px}
+.tool-title-row h3{margin:0!important}
+.tool-title-row .premium-tag{position:static;display:inline-flex;align-items:center;border:1px solid #d6ad5b66;background:#493b2038;border-radius:5px;padding:4px 6px;font-size:8px;line-height:1;white-space:nowrap}

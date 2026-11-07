@@ -603,86 +603,106 @@ def report(scan_id):
     response.headers["Content-Disposition"]=f'attachment; filename="cyberlord-report-{scan_id}.json"'
     return response
 
-@app.route("/payment/initialize",methods=["POST"])
+@app.route("/payment/initialize", methods=["POST"])
 @login_required
 def payment_initialize():
-    secret_key = PAYSTACK_SECRET_KEY.strip()
+    """Create a Paystack checkout. Browser forms use a direct redirect;
+    JSON clients receive the checkout URL. The secret key never reaches the browser.
+    """
+    wants_json = request.is_json
+
+    def payment_error(message, status=400):
+        if wants_json:
+            return jsonify({"error": message}), status
+        flash(message, "error")
+        return redirect(url_for("dashboard") + "#payment-section")
+
+    secret_key = (PAYSTACK_SECRET_KEY or "").strip()
     if not secret_key:
         app.logger.error("Paystack initialization blocked: PAYSTACK_SECRET_KEY is missing.")
-        return jsonify({"error":"Paystack is not configured on the server. The site administrator must add PAYSTACK_SECRET_KEY in Render."}),503
+        return payment_error("Paystack is not configured yet. The site administrator must add PAYSTACK_SECRET_KEY in Render Environment.", 503)
 
-    data = request.get_json(silent=True) or request.form
-    plan_key = str(data.get("plan", "pro")).lower().strip()
+    data = request.get_json(silent=True) if wants_json else request.form
+    data = data or {}
+    plan_key = str(data.get("plan", "")).lower().strip()
     plan = PRICING_PLANS.get(plan_key)
     if not plan:
-        return jsonify({"error":"Choose a valid payment plan."}),400
+        return payment_error("Please select a valid payment plan.", 400)
+
+    user = current_user()
+    if not user or not user.get("email"):
+        return payment_error("Your account email is missing. Sign in again and contact support if this continues.", 400)
 
     reference = "CLD-" + secrets.token_hex(12)
     payload = {
-        "email": current_user()["email"],
+        "email": user["email"],
         "amount": int(plan["price"]) * 100,
+        "currency": "NGN",
         "reference": reference,
         "callback_url": url_for("payment_callback", _external=True),
         "metadata": {
-            "user_id": current_user()["id"],
+            "user_id": user["id"],
             "product": "CyberLord " + plan["name"],
             "plan": plan_key,
         },
     }
 
-    # Record the reference before contacting Paystack so every initialized
-    # transaction can be matched to this account during callback/webhook.
     try:
+        # Store the pending reference first so callback/webhook can always match it.
         with db() as con:
             con.execute(
                 "INSERT INTO payments(user_id,reference,amount,status,provider,plan,created_at) VALUES(?,?,?,?,?,?,?)",
-                (current_user()["id"], reference, plan["price"], "pending", "paystack", plan_key, datetime.utcnow().isoformat()+"Z"),
+                (user["id"], reference, plan["price"], "pending", "paystack", plan_key, datetime.utcnow().isoformat()+"Z"),
             )
     except Exception:
         app.logger.exception("Could not create pending payment record.")
-        return jsonify({"error":"Your payment could not be prepared. Please try again."}),500
+        return payment_error("We couldn't prepare your payment record. Please try again.", 500)
 
     try:
         response = requests.post(
             "https://api.paystack.co/transaction/initialize",
             json=payload,
-            headers={"Authorization":"Bearer " + secret_key, "Content-Type":"application/json"},
-            timeout=25,
+            headers={"Authorization": "Bearer " + secret_key, "Content-Type": "application/json", "Accept": "application/json"},
+            timeout=(10, 30),
         )
         try:
             result = response.json()
         except ValueError:
-            app.logger.error("Paystack initialization returned non-JSON response (HTTP %s).", response.status_code)
-            raise ValueError("Paystack returned an unreadable response. Please try again later.")
+            result = {}
 
         if not response.ok or not result.get("status"):
-            provider_message = str(result.get("message") or "Paystack rejected the initialization request.")
+            provider_message = str(result.get("message") or "Paystack rejected the request. Check that the Render secret key is correct and matches the account mode.")
             app.logger.error("Paystack initialization failed (HTTP %s): %s", response.status_code, provider_message[:300])
             with db() as con:
                 con.execute("UPDATE payments SET status='failed' WHERE reference=?", (reference,))
-            return jsonify({"error":"Paystack: " + provider_message[:220]}),502
+            return payment_error("Paystack couldn't start checkout: " + provider_message[:180], 502)
 
         checkout_url = (result.get("data") or {}).get("authorization_url")
-        if not checkout_url or not checkout_url.startswith("https://checkout.paystack.com/"):
-            app.logger.error("Paystack did not return a valid checkout URL.")
+        if not isinstance(checkout_url, str) or not checkout_url.startswith("https://checkout.paystack.com/"):
+            app.logger.error("Paystack initialization response did not contain a secure checkout URL.")
             with db() as con:
                 con.execute("UPDATE payments SET status='failed' WHERE reference=?", (reference,))
-            return jsonify({"error":"Paystack did not provide a valid secure checkout link. Please try again."}),502
+            return payment_error("Paystack did not return a secure checkout link. Please try again.", 502)
 
-        return jsonify({"url":checkout_url})
+        if wants_json:
+            return jsonify({"url": checkout_url})
+        return redirect(checkout_url, code=303)
+
     except requests.Timeout:
         app.logger.exception("Paystack initialization timed out.")
-        return jsonify({"error":"Paystack took too long to respond. Please try again."}),504
-    except requests.RequestException:
-        app.logger.exception("Network error while connecting to Paystack.")
-        return jsonify({"error":"The server could not reach Paystack. Please try again later."}),502
-    except ValueError as exc:
         with db() as con:
             con.execute("UPDATE payments SET status='failed' WHERE reference=?", (reference,))
-        return jsonify({"error":str(exc)}),502
+        return payment_error("Paystack took too long to respond. Please try again.", 504)
+    except requests.RequestException:
+        app.logger.exception("Network error while connecting to Paystack.")
+        with db() as con:
+            con.execute("UPDATE payments SET status='failed' WHERE reference=?", (reference,))
+        return payment_error("The server could not connect to Paystack. Please try again later.", 502)
     except Exception:
         app.logger.exception("Unexpected error while initializing Paystack payment.")
-        return jsonify({"error":"Payment initialization failed unexpectedly. Please try again."}),500
+        with db() as con:
+            con.execute("UPDATE payments SET status='failed' WHERE reference=?", (reference,))
+        return payment_error("Payment initialization failed unexpectedly. Please try again.", 500)
 
 def verify_paystack(reference, expected_amount):
     r=requests.get("https://api.paystack.co/transaction/verify/"+reference,
