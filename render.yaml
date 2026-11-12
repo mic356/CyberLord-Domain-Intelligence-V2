@@ -29,3 +29,20 @@ services:
         sync: false
       - key: KALI_WORKER_TOKEN
         sync: false
+
+  - type: worker
+    name: cyberlord-monitoring-worker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python monitor_worker.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        sync: false

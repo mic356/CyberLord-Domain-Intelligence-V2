@@ -98,3 +98,25 @@ When outbound network access is available, it can retrieve a requested CVE recor
 - CyberLord AI's built-in knowledge includes additional CyberLord product/tool guidance and payment/subscription explanations. It does not require a paid OpenAI API key. Live public-source lookups still depend on the external NIST/CISA services being reachable.
 
 **Important capability note:** Security Centre currently summarises saved scan history. It does not run background monitoring or scheduled scans. Do not advertise automatic 24/7 monitoring until a separately deployed scheduler/worker has been implemented and verified.
+
+
+## Clear monetization and monitoring status
+
+- FREE is the entry plan: core domain/DNS intelligence, Cyber Academy learning guides and the built-in CyberLord knowledge assistant.
+- PRO is NGN 6,300 or 4.50 USDT for 30 days after independently verified payment.
+- PRO PLUS is NGN 12,600 or 9.00 USDT for 30 days after independently verified payment.
+- Public pricing information explains that paid plans unlock additional tools; server-side tool access remains governed by the existing plan checks.
+- Individual/manual checks are available according to the user's plan. Continuous background monitoring with scheduled rechecks and notifications is a planned paid add-on, not an active feature in this release. Do not advertise it as currently available until a scheduler, persistent monitoring configuration, safe scan queue, and notification delivery have been implemented and tested.
+
+
+## Automated domain monitoring
+
+- Domain ownership is verified by a unique DNS TXT record at `_cyberlord-verification.<domain>`.
+- PRO: one verified domain, checks every 24 hours.
+- PRO PLUS: up to five verified domains, checks every 6 hours.
+- Scheduled checks use public DNS and TLS certificate observations only; no exploit attempts, brute force or port scans are part of monitoring.
+- The first successful check establishes a baseline. Later changes to observed DNS/TLS/HTTP data create in-app alerts. Email alerts are attempted when `RESEND_API_KEY` and `RESEND_FROM` are configured.
+- Expired subscriptions stop monitoring when the worker processes the account again.
+- Deploy `cyberlord-monitoring-worker` as a persistent Render worker. Set its `DATABASE_URL` to the exact same persistent PostgreSQL connection string as the web service, and set the same `SECRET_KEY` on both. Configure Resend variables for email delivery.
+- Back up the persistent database. The worker must remain running; the web `/health` route does not confirm worker status.
+- Only register domains you own or are authorized to monitor.

@@ -10,6 +10,7 @@ import phonenumbers.carrier
 import phonenumbers.timezone
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_file, abort
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import or_
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -93,6 +94,32 @@ class ScanHistory(db.Model):
     target = db.Column(db.String(255), nullable=False)
     result_json = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class MonitoredDomain(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    domain = db.Column(db.String(253), nullable=False)
+    verification_token = db.Column(db.String(80), nullable=False)
+    verified = db.Column(db.Boolean, default=False, nullable=False)
+    enabled = db.Column(db.Boolean, default=True, nullable=False)
+    last_fingerprint = db.Column(db.String(64))
+    last_checked_at = db.Column(db.DateTime)
+    next_check_at = db.Column(db.DateTime, index=True)
+    last_status = db.Column(db.String(40), default="awaiting_verification")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint("user_id", "domain", name="uq_monitored_domain_user_domain"),)
+
+class MonitoringAlert(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    monitored_domain_id = db.Column(db.Integer, db.ForeignKey("monitored_domain.id"), nullable=False, index=True)
+    domain = db.Column(db.String(253), nullable=False)
+    title = db.Column(db.String(180), nullable=False)
+    detail = db.Column(db.Text, nullable=False)
+    severity = db.Column(db.String(20), default="info", nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    read_at = db.Column(db.DateTime)
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -792,6 +819,171 @@ def ai_assistant():
     except Exception:
         app.logger.exception("CyberLord built-in assistant error")
         return jsonify(error="CyberLord Assistant hit an unexpected problem. Please try again shortly."), 500
+
+
+
+def monitoring_limits(user):
+    refresh_subscription(user)
+    rank = PLANS.get(user.plan, PLANS["free"])["rank"]
+    if rank < 1:
+        return 0, None
+    return (1, 24) if rank == 1 else (5, 6)
+
+def send_monitoring_email(to_email, subject, body):
+    api_key, sender = os.getenv("RESEND_API_KEY", ""), os.getenv("RESEND_FROM", "")
+    if not api_key or not sender:
+        return False
+    try:
+        response = requests.post("https://api.resend.com/emails",
+            headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+            json={"from": sender, "to": [to_email], "subject": subject, "text": body}, timeout=15)
+        response.raise_for_status()
+        return True
+    except Exception:
+        app.logger.exception("Monitoring email delivery failed")
+        return False
+
+@app.route("/monitoring", methods=["GET", "POST"])
+@login_required
+def monitoring():
+    limit, interval_hours = monitoring_limits(current_user)
+    if request.method == "POST":
+        if limit == 0:
+            flash("Automated monitoring requires PRO or PRO PLUS.", "warning")
+            return redirect(url_for("dashboard") + "#plans")
+        try:
+            domain = normalize_domain(request.form.get("domain", ""))
+            existing = MonitoredDomain.query.filter_by(user_id=current_user.id, domain=domain).first()
+            if existing:
+                flash("That domain is already in your monitoring list.", "warning")
+            else:
+                count = MonitoredDomain.query.filter_by(user_id=current_user.id).count()
+                if count >= limit:
+                    flash(f"Your {PLANS[current_user.plan]['name']} plan allows {limit} monitored domain(s).", "warning")
+                else:
+                    token = "cyberlord-verify=" + secrets.token_urlsafe(24)
+                    db.session.add(MonitoredDomain(user_id=current_user.id, domain=domain,
+                        verification_token=token, verified=False, enabled=True))
+                    db.session.commit()
+                    flash("Domain added. Publish the DNS TXT record shown below, then verify ownership.", "success")
+        except ValueError as exc:
+            flash(str(exc), "error")
+    items = MonitoredDomain.query.filter_by(user_id=current_user.id).order_by(MonitoredDomain.created_at.desc()).all()
+    alerts = MonitoringAlert.query.filter_by(user_id=current_user.id).order_by(MonitoringAlert.created_at.desc()).limit(30).all()
+    return render_template("monitoring.html", items=items, alerts=alerts, limit=limit,
+        interval_hours=interval_hours, plan_name=PLANS.get(current_user.plan, PLANS["free"])["name"])
+
+@app.route("/monitoring/<int:item_id>/verify", methods=["POST"])
+@login_required
+def verify_monitored_domain(item_id):
+    item = MonitoredDomain.query.filter_by(id=item_id, user_id=current_user.id).first_or_404()
+    try:
+        answers = dns.resolver.resolve("_cyberlord-verification." + item.domain, "TXT", lifetime=5)
+        found = any(item.verification_token in "".join(
+            part.decode() if isinstance(part, bytes) else str(part) for part in answer.strings
+        ) for answer in answers)
+        if not found:
+            flash("Verification TXT record was not found. Check the record name and value, then retry.", "warning")
+        else:
+            item.verified = True
+            item.last_status = "verified_waiting_for_first_check"
+            item.next_check_at = datetime.utcnow()
+            db.session.commit()
+            flash("Domain ownership verified. Scheduled monitoring is enabled.", "success")
+    except Exception:
+        flash("Could not verify the TXT record yet. DNS may need time to propagate.", "warning")
+    return redirect(url_for("monitoring"))
+
+@app.route("/monitoring/<int:item_id>/delete", methods=["POST"])
+@login_required
+def delete_monitored_domain(item_id):
+    item = MonitoredDomain.query.filter_by(id=item_id, user_id=current_user.id).first_or_404()
+    MonitoringAlert.query.filter_by(monitored_domain_id=item.id, user_id=current_user.id).delete()
+    db.session.delete(item)
+    db.session.commit()
+    flash("Domain removed from monitoring.", "success")
+    return redirect(url_for("monitoring"))
+
+@app.route("/monitoring/alerts/<int:alert_id>/read", methods=["POST"])
+@login_required
+def read_monitoring_alert(alert_id):
+    alert = MonitoringAlert.query.filter_by(id=alert_id, user_id=current_user.id).first_or_404()
+    alert.read_at = datetime.utcnow()
+    db.session.commit()
+    return redirect(url_for("monitoring") + "#alerts")
+
+
+def monitoring_snapshot(domain):
+    """Collect passive DNS and TLS observations only; no port scan, exploit, or redirect following."""
+    addresses = public_domain_addresses(domain)
+    snapshot = {"target": domain, "dns": {}, "tls": None}
+    for record in ("A", "AAAA", "MX", "NS", "TXT", "CAA"):
+        snapshot["dns"][record] = dns_records(domain, record)
+    snapshot["resolved_public_addresses"] = addresses
+    try:
+        snapshot["tls"] = tls_details(domain)
+    except Exception as exc:
+        snapshot["tls"] = {"status": "not_verified", "reason": str(exc)[:160]}
+    return snapshot
+
+def monitoring_fingerprint(scan_result):
+    normalized = json.loads(json.dumps(scan_result, default=str))
+    normalized.pop("checked_at", None)
+    evidence = normalized.get("evidence", {})
+    if isinstance(evidence.get("tls"), dict):
+        evidence["tls"].pop("days_until_expiry", None)
+    if isinstance(evidence.get("http"), dict):
+        evidence["http"].pop("html_sample_length", None)
+    return hashlib.sha256(json.dumps(normalized, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+def run_due_monitoring_checks(batch_size=10):
+    now = datetime.utcnow()
+    due = MonitoredDomain.query.filter_by(verified=True, enabled=True).filter(
+        or_(MonitoredDomain.next_check_at.is_(None), MonitoredDomain.next_check_at <= now)
+    ).order_by(MonitoredDomain.next_check_at.asc()).limit(batch_size).all()
+    for item in due:
+        user = db.session.get(User, item.user_id)
+        if not user:
+            item.enabled = False
+            continue
+        allowance, interval_hours = monitoring_limits(user)
+        if allowance == 0:
+            item.enabled = False
+            item.last_status = "plan_expired"
+            db.session.commit()
+            continue
+        active_domains = MonitoredDomain.query.filter_by(user_id=user.id, verified=True, enabled=True).order_by(MonitoredDomain.created_at.asc(), MonitoredDomain.id.asc()).all()
+        allowed_ids = {domain_row.id for domain_row in active_domains[:allowance]}
+        if item.id not in allowed_ids:
+            item.enabled = False
+            item.last_status = "plan_limit_exceeded"
+            db.session.commit()
+            continue
+        try:
+            result = monitoring_snapshot(item.domain)
+            fingerprint = monitoring_fingerprint(result)
+            old = item.last_fingerprint
+            item.last_fingerprint = fingerprint
+            item.last_checked_at = now
+            item.next_check_at = now + timedelta(hours=interval_hours)
+            item.last_status = "checked" if result.get("tls", {}).get("status") == "verified" else "checked_with_warnings"
+            if old and old != fingerprint:
+                alert = MonitoringAlert(user_id=user.id, monitored_domain_id=item.id,
+                    domain=item.domain, title="Public security configuration changed",
+                    detail="CyberLord observed a change in DNS, TLS or HTTP security data. Review the latest Domain Security Scan and compare it with previous results. A change alone does not prove an attack.",
+                    severity="medium")
+                db.session.add(alert)
+                db.session.flush()
+                send_monitoring_email(user.email, "CyberLord monitoring alert: " + item.domain,
+                    alert.title + "\n" + alert.detail)
+            db.session.commit()
+        except Exception as exc:
+            app.logger.warning("Scheduled monitoring failed for %s: %s", item.domain, str(exc)[:180])
+            item.last_checked_at = now
+            item.next_check_at = now + timedelta(hours=min(interval_hours, 6))
+            item.last_status = "check_failed"
+            db.session.commit()
+
 
 @app.route("/health")
 def health(): return jsonify(status="ok",service="CyberLord Domain Intelligence")
