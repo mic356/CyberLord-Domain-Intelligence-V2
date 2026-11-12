@@ -72,3 +72,26 @@ select{display:block;width:100%;margin-top:7px;padding:12px 13px;border-radius:8
 @media(max-width:850px){.guide-steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.guide-heading{flex-direction:column}.guide-steps{grid-template-columns:1fr 1fr}.guide-step{padding:10px}}
 @media(prefers-reduced-motion:reduce){.guide-pulse,.tool-card,.btn{animation:none;transition:none}}
+
+
+/* CyberLord AI support assistant */
+.cl-ai-launcher-wrap{position:fixed;right:22px;bottom:22px;z-index:1000}
+.cl-ai-launcher{display:flex;align-items:center;gap:10px;padding:11px 16px;border:1px solid #3e8794;border-radius:16px;background:linear-gradient(135deg,#12364a,#102235);color:#efffff;box-shadow:0 12px 38px #0008;cursor:pointer;text-align:left}
+.cl-ai-launcher b,.cl-ai-launcher small{display:block}.cl-ai-launcher b{font-size:12px}.cl-ai-launcher small{font-size:10px;color:#9bb8c8;margin-top:2px}
+.cl-ai-spark{font-size:23px;color:#62e7d8}
+.cl-ai-panel{position:fixed;right:22px;bottom:88px;width:min(390px,calc(100vw - 28px));height:min(590px,calc(100dvh - 120px));z-index:1001;display:flex;flex-direction:column;border:1px solid #34536a;border-radius:17px;overflow:hidden;background:#0b1625;box-shadow:0 22px 70px #000b;color:#edf6ff}
+.cl-ai-panel[hidden]{display:none}
+.cl-ai-head{display:flex;justify-content:space-between;align-items:center;padding:14px;background:linear-gradient(110deg,#14374b,#122235);border-bottom:1px solid #2c465b}
+.cl-ai-head>div{display:flex;align-items:center;gap:10px}.cl-ai-head b,.cl-ai-head small{display:block}.cl-ai-head b{font-size:13px}.cl-ai-head small{font-size:10px;color:#a8c0ce;margin-top:3px}
+.cl-ai-avatar{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:#1d5963;color:#8ff6e8;font-size:12px;font-weight:900}
+.cl-ai-head>button{border:0;background:transparent;color:#d9e9f4;font-size:25px;cursor:pointer}
+.cl-ai-body{padding:14px;overflow:auto;flex:1}.cl-ai-message{max-width:94%;padding:11px 12px;margin:0 0 10px;border-radius:12px;font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.cl-ai-message.bot{background:#17283a;border:1px solid #2a4055}.cl-ai-message.user{margin-left:auto;background:#14515a;border:1px solid #27717a}
+.cl-ai-options{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:10px 0 14px}
+.cl-ai-options button{padding:9px 8px;border:1px solid #2e5267;border-radius:9px;background:#102235;color:#cce9f1;font-size:10px;cursor:pointer;text-align:left}
+.cl-ai-options button:hover{border-color:#60d9ce;background:#153247}
+.cl-ai-compose{display:flex;gap:8px;padding:11px;border-top:1px solid #263c50}
+.cl-ai-compose input{flex:1;min-width:0;padding:11px;border:1px solid #355169;border-radius:10px;background:#101f30;color:#fff;font-size:12px}
+.cl-ai-compose button{width:42px;border:0;border-radius:10px;background:#1d7779;color:#fff;font-size:18px;cursor:pointer}
+.cl-ai-foot{padding:0 12px 12px;color:#849caf;font-size:9px;line-height:1.5}.cl-ai-foot a{color:#78e5d9}
+@media(max-width:560px){.cl-ai-launcher-wrap{right:12px;bottom:12px}.cl-ai-panel{right:8px;bottom:76px;width:calc(100vw - 16px);height:min(620px,calc(100dvh - 95px))}}

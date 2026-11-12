@@ -1,4 +1,29 @@
-{% extends "base.html" %}{% block title %}Dashboard · CyberLord{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}Dashboard · CyberLord
+<!-- CyberLord AI customer-support assistant -->
+<div class="cl-ai-launcher-wrap">
+  <button type="button" class="cl-ai-launcher" id="cl-ai-open" aria-controls="cl-ai-panel" aria-expanded="false">
+    <span class="cl-ai-spark">✦</span><span><b>CyberLord AI</b><small>Need help? Chat with us</small></span>
+  </button>
+</div>
+<aside class="cl-ai-panel" id="cl-ai-panel" aria-label="CyberLord AI assistant" hidden>
+  <div class="cl-ai-head"><div><span class="cl-ai-avatar">CL</span><span><b>CyberLord AI</b><small>Product guide &amp; support</small></span></div>
+    <button type="button" id="cl-ai-close" aria-label="Close assistant">×</button></div>
+  <div class="cl-ai-body" id="cl-ai-messages" aria-live="polite">
+    <div class="cl-ai-message bot">Welcome to CyberLord! 👋 I'm your AI support assistant. What would you like help with today?</div>
+    <div class="cl-ai-options">
+      <button type="button" data-question="How do I get started with CyberLord?">Getting started</button>
+      <button type="button" data-question="Explain the CyberLord cybersecurity tools.">Cybersecurity tools</button>
+      <button type="button" data-question="Explain Pro and Pro Plus subscriptions.">Plans &amp; subscriptions</button>
+      <button type="button" data-question="How do I pay using USDT or bank transfer?">Payment help</button>
+      <button type="button" data-question="How do I download PDF reports and manage scan history?">Reports &amp; history</button>
+      <button type="button" data-question="I need help with my account or login.">Account help</button>
+    </div>
+  </div>
+  <form class="cl-ai-compose" id="cl-ai-form"><input id="cl-ai-input" maxlength="1800" placeholder="Ask CyberLord AI…" autocomplete="off" required><button type="submit" aria-label="Send message">➤</button></form>
+  <div class="cl-ai-foot">AI answers can be imperfect. Payment approvals are never handled by chat. <a href="mailto:michaelelvistito@gmail.com">Contact human support</a>.</div>
+</aside>
+
+{% endblock %}{% block content %}
 <div class="dash-head"><div><div class="eyebrow">OPERATIONS CENTER</div><h1>Security dashboard</h1><p class="muted">{{ current_user.email }} · Current plan: <strong>{{ plans[current_user.plan].name }}</strong>{% if current_user.plan_expires_at %} · Expires: {{ current_user.plan_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}</p></div><span class="status">● SYSTEM READY</span></div>
 <section class="welcome-guide panel" aria-label="Getting started">
 <div class="guide-heading"><div><div class="eyebrow">QUICK START</div><h2>Run your first security check</h2>
@@ -49,4 +74,29 @@
 </div></details>
 <p class="muted">For bank transfers, select your plan and transfer the exact naira amount to either account shown above. Then submit your bank transfer reference. A receipt or reference alone does not activate a plan; bank transfers remain pending until independently confirmed. Only send USDT on the network you selected. Blockchain transactions are checked against the CyberLord receiving address, token contract, amount and confirmation status.</p></section>
 <section class="panel" id="activity"><div class="eyebrow">RECENT ACTIVITY</div><h2>Scan history</h2><p class="muted">Showing your latest 5 scans. Use See all to expand the list. You can download or delete your own scan records.</p>{% if history %}<div class="history" id="scan-history">{% for item in history %}<div class="history-item{% if loop.index > 5 %} history-extra{% endif %}"><span>{{ item.tool|replace('_',' ')|title }}</span><b>{{ item.target }}</b><small>{{ item.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</small><span class="history-download"><a class="btn small ghost" href="{{ url_for('download_scan', scan_id=item.id, format='json') }}">Download JSON</a><a class="btn small ghost" href="{{ url_for('download_scan', scan_id=item.id, format='txt') }}">Download TXT</a><a class="btn small ghost" href="{{ url_for('download_scan', scan_id=item.id, format='pdf') }}">Download PDF</a><form method="post" action="{{ url_for('delete_scan', scan_id=item.id) }}" class="delete-history-form" onsubmit="return confirm('Delete this scan activity? This cannot be undone.');"><button class="btn small danger" type="submit">Delete</button></form></span></div>{% endfor %}</div>{% if history|length > 5 %}<button type="button" class="btn small ghost" id="history-toggle" aria-expanded="false">See all {{ history|length }} activities</button>{% endif %}{% else %}<p class="muted">Your completed checks will appear here.</p>{% endif %}</section>
+
+<!-- CyberLord AI customer-support assistant -->
+<div class="cl-ai-launcher-wrap">
+  <button type="button" class="cl-ai-launcher" id="cl-ai-open" aria-controls="cl-ai-panel" aria-expanded="false">
+    <span class="cl-ai-spark">✦</span><span><b>CyberLord AI</b><small>Need help? Chat with us</small></span>
+  </button>
+</div>
+<aside class="cl-ai-panel" id="cl-ai-panel" aria-label="CyberLord AI assistant" hidden>
+  <div class="cl-ai-head"><div><span class="cl-ai-avatar">CL</span><span><b>CyberLord AI</b><small>Product guide &amp; support</small></span></div>
+    <button type="button" id="cl-ai-close" aria-label="Close assistant">×</button></div>
+  <div class="cl-ai-body" id="cl-ai-messages" aria-live="polite">
+    <div class="cl-ai-message bot">Welcome to CyberLord! 👋 I'm your AI support assistant. What would you like help with today?</div>
+    <div class="cl-ai-options">
+      <button type="button" data-question="How do I get started with CyberLord?">Getting started</button>
+      <button type="button" data-question="Explain the CyberLord cybersecurity tools.">Cybersecurity tools</button>
+      <button type="button" data-question="Explain Pro and Pro Plus subscriptions.">Plans &amp; subscriptions</button>
+      <button type="button" data-question="How do I pay using USDT or bank transfer?">Payment help</button>
+      <button type="button" data-question="How do I download PDF reports and manage scan history?">Reports &amp; history</button>
+      <button type="button" data-question="I need help with my account or login.">Account help</button>
+    </div>
+  </div>
+  <form class="cl-ai-compose" id="cl-ai-form"><input id="cl-ai-input" maxlength="1800" placeholder="Ask CyberLord AI…" autocomplete="off" required><button type="submit" aria-label="Send message">➤</button></form>
+  <div class="cl-ai-foot">AI answers can be imperfect. Payment approvals are never handled by chat. <a href="mailto:michaelelvistito@gmail.com">Contact human support</a>.</div>
+</aside>
+
 {% endblock %}

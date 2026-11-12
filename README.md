@@ -81,3 +81,15 @@ Users can download each of their own saved scan records from the dashboard as JS
 - `BSC_RPC_URL` (optional; defaults to a public BNB Smart Chain mainnet RPC)
 
 The app includes an additive startup database migration for the new subscription-expiry and payment-verification fields. Always back up the production database before deploying schema changes. Test a small payment first on the intended mainnet network; do not use testnet transfers for production activation.
+
+
+## CyberLord AI Assistant setup
+
+The dashboard includes a floating AI support assistant. To enable live AI replies:
+1. Create an API key in your OpenAI Platform account.
+2. In Render, open your CyberLord web service → Environment.
+3. Add `OPENAI_API_KEY` with the secret key value.
+4. Add `OPENAI_MODEL` with `gpt-5.5` (or another model enabled for your API project).
+5. Save changes and redeploy.
+
+Keep the API key only in Render environment variables. Never put it in `static/`, HTML, JavaScript, GitHub, or a public ZIP. API usage is billed separately by OpenAI. The assistant can explain product/payment steps but cannot approve payments or change subscriptions.
