@@ -104,6 +104,12 @@ TOPICS = [
 ("what is tls handshake", "THE TLS HANDSHAKE is how a browser and server agree on a protocol, verify the server certificate, and create shared encryption keys. After the handshake, traffic is encrypted and authenticated. Problems usually show as certificate errors, expired certificates, or mismatched names, which you should investigate rather than click through."),
 ("what is a certificate authority", "A CERTIFICATE AUTHORITY (CA) is an organization trusted to issue digital certificates that bind a name to a public key. Browsers trust a set of root CAs; a site certificate chains up to one of them. Short-lived, automated certificates such as those from Let's Encrypt have made HTTPS the default."),
 ("what is a digital certificate", "A DIGITAL CERTIFICATE is a signed statement that binds a name or key to an owner, used for HTTPS server identity, code signing, and email signing. It has an expiry date and a chain of trust. An expired or mismatched certificate is a warning to investigate, not something to bypass on systems you care about."),
+# Added on pro-redesign branch: cheap, high-frequency topics the assistant was missing.
+("email exposure breach leaked what to do", "EMAIL EXPOSURE, WHAT TO DO NEXT: if your email appears in infostealer or breach data, treat the passwords saved on that device as exposed. From a clean device, change them starting with your email account and banking, turn on two-factor authentication, and check active sessions for sign-outs. Then run CyberLord Email Exposure Check again after the changes to confirm new exposure is not still reported. A listing means credentials were recovered from an infected computer, it is not proof someone has used them yet."),
+("what is spf dkim dmarc", "SPF, DKIM, DMARC IN ONE MINUTE: SPF lists which servers may send mail for your domain. DKIM signs each message so the receiver can verify it was not altered. DMARC tells receivers what to do when SPF and DKIM fail alignment, and where to send reports. Together they cut spoofing hard. None of them stop a compromised real account sending real mail, so MFA still matters."),
+("how to check if my domain email is spoofed", "CHECKING DOMAIN SPOOFABILITY: confirm SPF and DMARC exist at the domain and at _dmarc, look for a p=none policy you can tighten later, and make sure DKIM is signing real mail. Run CyberLord Email Security Review for the posture view. Then send a test message to an external address and inspect the Authentication-Results header. If DMARC reports reach you, read them weekly, they show who is really sending as you."),
+("what is a passkey", "PASSKEYS: a passkey is a phishing-resistant sign-in where your device proves it holds a private key, instead of you typing a password that can be copied. The site never sees a password to steal. Set one up on your main accounts where offered, keep a second device or recovery method as backup, and still use a strong password as the fallback. FIDO2 and WebAuthn are the standards underneath."),
+("what is security txt", "SECURITY.TXT: a plain text file at https://yourdomain/.well-known/security.txt that tells researchers how to report a vulnerability. Include a contact, an expiry date, and a signed copy if you want it verifiable. It costs nothing and signals you take reports seriously. CyberLord checks domain posture, remember a missing security.txt is a small hygiene gap, not a breach."),
 ]
 
 SOURCES = [
@@ -171,7 +177,25 @@ SOURCES = [
 
 
 _GREETINGS = ["Hey there!", "Hello!", "Hi!", "Hey, welcome back!", "Hello, good to see you!"]
-_VARIANT_OPENERS = ["Sure thing, here's a clear rundown:", "Got it, let's break this down:", "Happy to help. Here's the practical version:", "Good question. Here's how it works:", "No problem, let's go through this step by step:", "Absolutely, here's the gist:"]
+_VARIANT_OPENERS = ["Short version:", "Here's the practical read:", "Plainly:", "Start here:", "What matters:", "Quick answer:"]
+# Senior-operator voice: short openings, concrete commands, honest limits.
+# Generic one-line field notes, framed as experience, never as a named case.
+_WAR_STORIES = {
+ "phishing": "Seen this one in the wild: a 'delivery' SMS with a lookalike domain. Open your banking app directly, never the link.",
+ "nmap": "Rule I use in labs: one host, one scan, read the output before you widen scope.",
+ "password": "Most takeovers I have read about started with a reused password, not a clever exploit.",
+ "ransomware": "If a machine is encrypted, pull the plug, literally. A reboot can finish the job for the attacker.",
+ "dns": "When a site will not load, check DNS first. It is the most boring culprit and the most common.",
+ "linux": "Run `ls -l` before you chmod anything. Half of Linux breakage is a permission you did not check.",
+ "owasp": "In reviews I do, broken access control turns up far more often than exotic injection.",
+ "cve": "A CVE id alone tells you almost nothing. Match product, version and exposure, or you patch the wrong thing.",
+}
+
+def _war_story(low, title):
+    for k, v in _WAR_STORIES.items():
+        if k in low or k in title:
+            return v
+    return ""
 _FOLLOWUPS = {
  "phishing": "Want a quick checklist for spotting a phishing email, or help with what to do if you already clicked?",
  "nmap": "Want the beginner Nmap commands for your own lab, or help reading a scan result you already have?",
@@ -291,6 +315,9 @@ def answer(query, history=None):
         out = [opener]
         for i, (_, title, body) in enumerate(matches, 1):
             out.append(f"{i}. {title.title()}\n{body}")
+        story = _war_story(low, matches[0][1])
+        if story:
+            out.append("FIELD NOTE\n" + story)
         out.append("\nPRACTICAL NEXT STEP\n" + _followup_for(low, matches[0][1]) + "\n\nTell me your operating system, tool, exact error or sanitized scan output and I can make the explanation more specific. Remove passwords, tokens, personal data and private keys before sharing.")
         out.append("\nREFERENCE LIBRARY\n" + "\n".join(f"- {name}: {url}" for name, url in SOURCES[:5]))
         return "\n\n".join(out)
