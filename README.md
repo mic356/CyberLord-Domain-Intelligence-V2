@@ -88,3 +88,13 @@ The app includes an additive startup database migration for the new subscription
 
 When outbound network access is available, it can retrieve a requested CVE record from the public NIST National Vulnerability Database API and recent entries from CISA's Known Exploited Vulnerabilities feed. These are public data lookups, not a general-purpose live web search or a generative language model. The built-in knowledge is extensive but finite and is updated when the project knowledge module is updated. If it cannot confidently match a question, it asks for more detail rather than inventing an answer.
 
+
+## New workspace experience
+
+- The public landing page now uses a bright, responsive violet/aqua/mint design with custom inline security illustrations, product explanations, onboarding workflow and clear account-creation calls to action.
+- Signed-in users can open **Cyber Academy** at `/academy` for short learning paths. Each lesson opens the dashboard and starts CyberLord AI with a relevant learning prompt.
+- Signed-in users can open **Security Centre** at `/security-centre` to review recent saved scan activity and export reports.
+- The dashboard includes direct CyberLord AI guide prompts for domain scans, Nmap, scan interpretation, subscriptions and learning roadmaps.
+- CyberLord AI's built-in knowledge includes additional CyberLord product/tool guidance and payment/subscription explanations. It does not require a paid OpenAI API key. Live public-source lookups still depend on the external NIST/CISA services being reachable.
+
+**Important capability note:** Security Centre currently summarises saved scan history. It does not run background monitoring or scheduled scans. Do not advertise automatic 24/7 monitoring until a separately deployed scheduler/worker has been implemented and verified.

@@ -386,6 +386,27 @@ def dashboard():
     history = ScanHistory.query.filter_by(user_id=current_user.id).order_by(ScanHistory.created_at.desc()).limit(50).all()
     return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS)
 
+@app.route("/academy")
+@login_required
+def academy():
+    lessons = [
+        {"level":"FOUNDATION", "title":"Networking essentials", "time":"12 min", "desc":"Understand IP addresses, ports, TCP, UDP, DNS and how devices communicate.", "prompt":"Teach me networking basics step by step, starting with IP addresses and ports."},
+        {"level":"LINUX & TOOLS", "title":"Getting comfortable with Kali Linux", "time":"15 min", "desc":"Learn the terminal, folders, permissions and safe lab habits.", "prompt":"Teach me Kali Linux terminal basics with simple commands and explain each one."},
+        {"level":"RECONNAISSANCE", "title":"Nmap fundamentals", "time":"18 min", "desc":"Learn host discovery, ports, service detection and how to interpret scan states.", "prompt":"Teach me Nmap from beginner level, including -sV, -p, -p- and -O."},
+        {"level":"WEB SECURITY", "title":"HTTP, TLS and security headers", "time":"16 min", "desc":"Understand requests, responses, HTTPS, certificates and browser security headers.", "prompt":"Explain HTTP requests, responses, TLS and important security headers step by step."},
+        {"level":"VULNERABILITY", "title":"CVE and vulnerability triage", "time":"14 min", "desc":"Learn how to validate product versions, severity, exploitability and remediation.", "prompt":"Teach me how to investigate a CVE without assuming a product is vulnerable."},
+        {"level":"REPORTING", "title":"Writing a professional security report", "time":"10 min", "desc":"Turn evidence into clear impact, limitations and practical recommendations.", "prompt":"Show me how to write a professional cybersecurity assessment report."},
+    ]
+    return render_template("academy.html", lessons=lessons)
+
+@app.route("/security-centre")
+@login_required
+def security_centre():
+    items = ScanHistory.query.filter_by(user_id=current_user.id).order_by(ScanHistory.created_at.desc()).limit(12).all()
+    total = ScanHistory.query.filter_by(user_id=current_user.id).count()
+    domains = len({x.target.lower() for x in items if "." in x.target and "@" not in x.target})
+    return render_template("security_centre.html", items=items, total=total, domains=domains)
+
 @app.route("/history/<int:scan_id>/delete", methods=["POST"])
 @login_required
 def delete_scan(scan_id):

@@ -1,6 +1,8 @@
 {% extends "base.html" %}{% block title %}Dashboard · CyberLord
 {% endblock %}{% block content %}
 <div class="dash-head"><div><div class="eyebrow">OPERATIONS CENTER</div><h1>Security dashboard</h1><p class="muted">{{ current_user.email }} · Current plan: <strong>{{ plans[current_user.plan].name }}</strong>{% if current_user.plan_expires_at %} · Expires: {{ current_user.plan_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}</p></div><span class="status">● SYSTEM READY</span></div>
+<div class="app-shortcuts"><a href="{{ url_for('security_centre') }}">◈ Security Centre</a><a href="{{ url_for('academy') }}">✦ Cyber Academy</a><a href="#activity">▤ My reports &amp; history</a></div>
+<section class="panel ai-guide-panel"><div class="eyebrow">CYBERLORD AI · QUICK GUIDES</div><h2>What would you like help with?</h2><p class="muted">Choose a guide to open CyberLord AI with a useful starting question. You can continue the conversation in your own words.</p><div class="cl-ai-guide"><button type="button" data-ai-guide="Show me how to use the Domain Security Scan step by step.">Domain scan guide</button><button type="button" data-ai-guide="Teach me Nmap from beginner level with safe examples.">Learn Nmap</button><button type="button" data-ai-guide="Explain my scan results in simple language and show me what to do next.">Understand scan results</button><button type="button" data-ai-guide="Explain my Pro and Pro Plus features and how payment verification works.">Plans &amp; payment guide</button><button type="button" data-ai-guide="Create a beginner cybersecurity learning roadmap for me.">Learning roadmap</button></div></section>
 <section class="welcome-guide panel" aria-label="Getting started">
 <div class="guide-heading"><div><div class="eyebrow">QUICK START</div><h2>Run your first security check</h2>
 <p class="muted">A simple workflow to help you use CyberLord confidently and responsibly.</p></div><span class="guide-pulse">● READY</span></div>
@@ -69,6 +71,9 @@
       <button type="button" data-question="How do I pay using USDT or bank transfer?">Payment help</button>
       <button type="button" data-question="How do I download PDF reports and manage scan history?">Reports &amp; history</button>
       <button type="button" data-question="I need help with my account or login.">Account help</button>
+      <button type="button" data-question="Teach me Nmap step by step as a beginner.">Nmap learning guide</button>
+      <button type="button" data-question="How do I understand and prioritise a security scan report?">Report interpretation</button>
+      <button type="button" data-question="Create a beginner-friendly cybersecurity learning roadmap.">My learning roadmap</button>
     </div>
   </div>
   <form class="cl-ai-compose" id="cl-ai-form"><input id="cl-ai-input" maxlength="1800" placeholder="Ask about any cybersecurity topic…" autocomplete="off" required><button type="submit" aria-label="Send message">➤</button></form>

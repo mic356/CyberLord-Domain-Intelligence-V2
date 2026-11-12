@@ -80,6 +80,9 @@ document.querySelectorAll(".copy-value").forEach(button=>{
   document.querySelectorAll(".cl-ai-options button").forEach(btn=>{
     btn.addEventListener("click",()=>send(btn.dataset.question||btn.textContent));
   });
+  document.querySelectorAll("[data-ai-guide]").forEach(btn=>{
+    btn.addEventListener("click",()=>{toggle(true);send(btn.dataset.aiGuide||btn.textContent);});
+  });
   async function send(text){
     text=(text||"").trim();if(!text)return;
     bubble(text,"user");history.push({role:"user",content:text});
@@ -95,4 +98,6 @@ document.querySelectorAll(".copy-value").forEach(button=>{
     finally{submit.disabled=false;scroll();}
   }
   form.addEventListener("submit",e=>{e.preventDefault();const value=input.value;input.value="";send(value);});
+  const launchQuestion=new URLSearchParams(window.location.search).get("ask");
+  if(launchQuestion){toggle(true);send(launchQuestion);window.history.replaceState({},document.title,window.location.pathname+window.location.hash);}
 })();
