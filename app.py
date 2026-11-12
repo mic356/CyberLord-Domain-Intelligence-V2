@@ -744,6 +744,10 @@ def sitemap():
     lines.append("</urlset>")
     return app.response_class("\n".join(lines), mimetype="application/xml")
 
+@app.route("/googlef3dfcc0a523f9481.html")
+def google_search_console_verification():
+    return send_file(os.path.join(app.root_path, "googlef3dfcc0a523f9481.html"))
+
 @app.route("/robots.txt")
 def robots():
     return app.response_class("User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /academy\nDisallow: /admin\nDisallow: /api/\nDisallow: /scan/\nDisallow: /history/\nDisallow: /payment/\nDisallow: /monitoring\nDisallow: /advanced-intelligence\nDisallow: /security-centre\nDisallow: /interaction-board\n\nSitemap: https://cyberlord.name.ng/sitemap.xml\n", mimetype="text/plain")
