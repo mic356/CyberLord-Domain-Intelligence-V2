@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% block title %}How to Check If Your Email Is Compromised | CyberLord{% endblock %}{% block description %}Learn how to check if your email has been compromised, what signs to watch for and the exact steps to take if hackers have your password.{% endblock %}{% block content %}
+<section class="policy-page">
+<div class="eyebrow">GUIDE</div>
+<h1>How to check if your email has been compromised</h1>
+<p class="muted">Updated: November 2026 · CyberLord Domain Intelligence</p>
+
+<p>Almost every serious account hack starts the same way: someone found a leaked email and password, tried them somewhere important, and got in. The hard part is that most people find out months later, after money has moved. This guide walks you through how to check if your email has been compromised, how to read the result, and what to do next, whether the answer is good news or bad news. It is written for non-technical readers, and every step here is something you can do from your phone.</p>
+
+<h2>Step 1: Run a free exposure check</h2>
+<p>Start with the <a href="{{ url_for('email_exposure_check') }}">CyberLord email exposure check</a>. Enter the email address you care about and submit. The tool checks infostealer-compromise intelligence, which is built from credentials stolen by malware from real computers. If your email appears there, it means a computer holding your saved passwords was infected, and criminals have the data. You will see a clear verdict, not a vague score. No account is needed, and the email you type is not stored unless you are signed in.</p>
+
+<h2>Step 2: Understand what the result means</h2>
+<p>If the check comes back clean, good. It means your email did not appear in the infostealer data checked. That is reassuring, but honest limits matter: this source covers infostealer infections, not every breach in history, so a clean result is not a lifetime guarantee. If the check finds exposure, the record will show when it was first seen and roughly how many saved accounts were tied to that email on the infected computer. The older the leak and the more accounts listed, the faster you should move. Either way, you now have facts instead of worry.</p>
+
+<h2>Step 3: Look for warning signs in your inbox</h2>
+<p>Even without a tool, your inbox usually tells a story. Watch for password reset emails you did not request, since attackers test leaked passwords by requesting resets. Watch for login alerts from cities or countries you have never visited. Watch for sent mail you did not send, or friends telling you they received odd messages from you. Check your mailbox settings for forwarding addresses and filters you do not recognise, because attackers add a quiet forwarding rule so they keep reading your mail after you change the password. If any of these show up, treat the email as compromised immediately.</p>
+
+<h2>Step 4: Secure the email account itself</h2>
+<p>Your email is the master key. Every bank, fintech app and social account can be reset through it. Change the email password to something long and unique, at least sixteen characters, and never use it anywhere else. Turn on two-factor authentication, which asks for a code from your phone even if someone has the password. Then open your account settings and sign out of all other sessions, delete unknown forwarding rules, and review the list of devices with access. Do this from a clean device, not from a phone or laptop you suspect is infected.</p>
+
+<h2>Step 5: Change passwords everywhere else, in order</h2>
+<p>Next, change passwords on every account that shared the leaked one, in this order: banks and payment apps first, then email-linked services like social media and messaging, then everything else. The reason is simple: criminals try leaked passwords against money first, and they do it automatically at scale. While you are changing passwords, turn on two-factor authentication on each service. If a service still uses questions like your mother's maiden name, replace them with better answers or a passphrase only you know.</p>
+
+<h2>Step 6: Check your money and tell people if needed</h2>
+<p>Review recent bank and wallet activity for anything you do not recognise, and report it to your bank the same day. If the compromised email belonged to a business, consider who else might be affected, and communicate honestly with customers, since the Nigeria Data Protection Act expects transparency about breaches. Small businesses in Lagos lose more money to quiet compromises than they admit, often because nobody wants to say it out loud. Saying it early is what limits the damage.</p>
+
+<h2>Common mistakes to avoid</h2>
+<p>Do not change passwords from a device you believe is infected, or the new passwords get stolen too. Do not reuse the same password on the replacement accounts, or the next leak unlocks everything again. Do not ignore a clean result forever: recheck every few months, because new infostealer data arrives constantly. And do not pay anyone who promises to remove your email from breach databases. Nobody can do that. What you can do is cut the value of the leak by changing passwords and turning on two-factor authentication.</p>
+
+<h2>Preventing the next compromise</h2>
+<p>Use a password manager so every account gets a unique password without memorising them. Keep your phone and computer updated, and only install apps from official stores. Treat unexpected links and attachments with suspicion, since phishing still wins more often than clever malware. And if you run a website, check that it is not being used to phish your customers by reading our <a href="{{ url_for('guide_website_security') }}">free website security check guide</a>, and protect your own mail by following our <a href="{{ url_for('guide_spf_dmarc') }}">SPF and DMARC setup guide</a>.</p>
+
+<h2>Check your email now</h2>
+<p>You already know the hardest part is deciding to look. The check itself takes under a minute. Do it, read the result, and follow the steps above.</p>
+<p><a class="btn primary" href="{{ url_for('email_exposure_check') }}">Run the free email exposure check</a></p>
+<p class="muted">Related: <a href="{{ url_for('faq') }}">Is my email leaked? FAQ</a> · <a href="{{ url_for('guide_website_security') }}">Free website security check</a> · <a href="{{ url_for('guide_spf_dmarc') }}">SPF and DMARC setup guide</a></p>
+</section>
+{% endblock %}

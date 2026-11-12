@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% block title %}Free Website Security Check: What to Look For{% endblock %}{% block description %}Run a free website security check and learn what to look for: TLS, headers, DNS, email records and exposed technologies explained simply.{% endblock %}{% block content %}
+<section class="policy-page">
+<div class="eyebrow">GUIDE</div>
+<h1>Free website security check: what to look for</h1>
+<p class="muted">Updated: November 2026 · CyberLord Domain Intelligence</p>
+
+<p>Your website is often the most public thing your business owns, and sometimes the least checked. A site can look fine to visitors while quietly leaking customer data, redirecting to scam pages, or sending invoices that never reach the customer. You do not need to be a security expert to spot the danger signs. This guide explains what a free website security check actually looks at, what each result means in plain English, and which fixes matter first, using the same checks CyberLord runs in its own tools.</p>
+
+<h2>Start with the basics: is the site even reachable and honest?</h2>
+<p>A house with the front door open invites trouble. For a website, that means checking whether the site loads over HTTPS by default, whether old HTTP pages redirect safely, and whether the domain resolves to a server you recognise. A site that fails to load, or loads over plain HTTP with no redirect, tells you something is misconfigured at the most basic level. CyberLord's domain intelligence tools check exactly this, including DNS records and IP intelligence, so you can see what the internet sees when it looks up your domain. If the basics are wrong, fix them before worrying about anything advanced.</p>
+
+<h2>Check your TLS certificate</h2>
+<p>TLS is the padlock in the browser address bar, and it encrypts traffic between your visitors and your site. A free website security check looks at whether a certificate exists, whether it is valid today, whether it covers your domain, and when it expires. An expired certificate breaks checkout flows and scares customers away, and a certificate for the wrong domain does the same. If your certificate expires in the next thirty days, renew it now. Most hosts automate this, so an expired certificate usually means the automation stopped, which itself is worth investigating.</p>
+
+<h2>Look at HTTP security headers</h2>
+<p>Security headers are small instructions your site sends to browsers telling them how to behave. A good check reports on the ones that matter: Strict-Transport-Security, which forces HTTPS; Content-Security-Policy, which limits where scripts can load from; X-Frame-Options, which stops your site being framed inside a scam page; and Referrer-Policy, which limits how much information leaks to third parties. Missing headers are not an emergency by themselves, but a site missing all of them usually means nobody has reviewed its security posture in a while. CyberLord's HTTP security module lists each header, what was found, and the fix in plain language.</p>
+
+<h2>Check your email records: SPF, DKIM and DMARC</h2>
+<p>Your domain can be used to send email even if you never touch a mail server. Attackers look for domains with no SPF, DKIM or DMARC records and send fake invoices and payment requests that appear to come from you. A website security check should confirm these records exist and are sane. If they are missing, you are leaving your customers exposed to impersonation. Our dedicated <a href="{{ url_for('guide_spf_dmarc') }}">SPF and DMARC setup guide</a> walks Nigerian business owners through fixing this step by step, with examples for common mail providers.</p>
+
+<h2>See what technology you are exposing</h2>
+<p>Every website announces itself. Server headers, scripts and file paths reveal whether you run WordPress, a specific theme, a particular web server and more. Attackers use this fingerprinting to match your site against known vulnerabilities automatically. A technology check shows you what is public, so you can decide whether to hide it and, more importantly, whether your software is patched. An outdated WordPress or plugin is one of the commonest ways Nigerian small business sites get defaced or used to host scams, because the exploit is published and the fix is free.</p>
+
+<h2>Ask what the check cannot tell you</h2>
+<p>Every scanner has limits, and honesty about them matters. A check tells you about configuration and public signals at one moment in time. It cannot find every bug in your code, cannot prove you have not been breached, and cannot see inside your database. Treat a clean result as a good start, not a certificate. What it does give you is a prioritised list of real fixes, which is exactly what most sites need.</p>
+
+<h2>What to fix first</h2>
+<p>In order: make sure the site loads over HTTPS and the certificate is valid. Update outdated software and plugins. Add the missing security headers your host can configure. Confirm SPF, DKIM and DMARC records exist for your domain. Then recheck. Most of the risk on typical small business sites comes from these ordinary misconfigurations, not from exotic attacks, and all of them can be fixed in an afternoon.</p>
+
+<h2>Run your own check</h2>
+<p>Sign up for a free CyberLord account and run the domain, TLS and HTTP security modules against your own domain, then read the evidence and fixes each one returns. If you want a second opinion on your email exposure at the same time, run the free <a href="{{ url_for('email_exposure_check') }}">email exposure check</a> as well.</p>
+<p><a class="btn primary" href="{{ url_for('register') }}">Create a free account and scan your domain</a></p>
+<p class="muted">Related: <a href="{{ url_for('guide_spf_dmarc') }}">SPF and DMARC setup guide</a> · <a href="{{ url_for('guide_email_compromised') }}">How to check if your email has been compromised</a> · <a href="{{ url_for('faq') }}">Is my email leaked? FAQ</a></p>
+</section>
+{% endblock %}

@@ -706,6 +706,49 @@ def kali_worker_phone_intel(phone_number):
 def index():
     return render_template("index.html")
 
+SEO_PUBLIC_PAGES = [
+    ("index", "https://cyberlord.name.ng/", "1.0", "daily"),
+    ("email_exposure_check", "https://cyberlord.name.ng/email-exposure-check", "1.0", "daily"),
+    ("faq", "https://cyberlord.name.ng/faq", "0.9", "weekly"),
+    ("guide_email_compromised", "https://cyberlord.name.ng/guides/check-if-email-is-compromised", "0.9", "weekly"),
+    ("guide_website_security", "https://cyberlord.name.ng/guides/website-security-check", "0.9", "weekly"),
+    ("guide_spf_dmarc", "https://cyberlord.name.ng/guides/spf-dmarc-setup", "0.9", "weekly"),
+    ("privacy", "https://cyberlord.name.ng/privacy", "0.5", "monthly"),
+    ("terms", "https://cyberlord.name.ng/terms", "0.5", "monthly"),
+    ("refund_policy", "https://cyberlord.name.ng/refund-policy", "0.5", "monthly"),
+    ("contact", "https://cyberlord.name.ng/contact", "0.6", "monthly"),
+]
+
+@app.route("/faq")
+def faq():
+    return render_template("faq.html")
+
+@app.route("/guides/check-if-email-is-compromised")
+def guide_email_compromised():
+    return render_template("guide_email_compromised.html")
+
+@app.route("/guides/website-security-check")
+def guide_website_security():
+    return render_template("guide_website_security.html")
+
+@app.route("/guides/spf-dmarc-setup")
+def guide_spf_dmarc():
+    return render_template("guide_spf_dmarc.html")
+
+@app.route("/sitemap.xml")
+def sitemap():
+    today = datetime.now(timezone.utc).date().isoformat()
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for endpoint, loc, priority, changefreq in SEO_PUBLIC_PAGES:
+        lines.append(f"  <url><loc>{loc}</loc><lastmod>{today}</lastmod><changefreq>{changefreq}</changefreq><priority>{priority}</priority></url>")
+    lines.append("</urlset>")
+    return app.response_class("\n".join(lines), mimetype="application/xml")
+
+@app.route("/robots.txt")
+def robots():
+    return app.response_class("User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /academy\nDisallow: /admin\nDisallow: /api/\nDisallow: /scan/\nDisallow: /history/\nDisallow: /payment/\nDisallow: /monitoring\nDisallow: /advanced-intelligence\nDisallow: /security-centre\nDisallow: /interaction-board\n\nSitemap: https://cyberlord.name.ng/sitemap.xml\n", mimetype="text/plain")
+
+
 @app.route("/privacy")
 def privacy():
     return render_template("privacy.html")
