@@ -15,6 +15,8 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from io import BytesIO
+from html.parser import HTMLParser
+from difflib import SequenceMatcher
 from xml.sax.saxutils import escape
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -692,10 +694,14 @@ def payment_bank_submit():
     if Payment.query.filter_by(reference=reference).first():
         flash("That bank transfer reference has already been submitted.", "error")
         return redirect(url_for("dashboard") + "#plans")
+    payment_method = request.form.get("payment_method", "opay").strip().lower()
+    if payment_method not in ("opay", "union_bank"):
+        flash("Select a valid bank payment method.", "error")
+        return redirect(url_for("dashboard") + "#plans")
     db.session.add(Payment(user_id=current_user.id, reference=reference, plan=plan, amount=PLANS[plan]["ngn"] * 100,
-        status="pending", currency="NGN", network="bank_transfer"))
+        status="pending", currency="NGN", network=payment_method))
     db.session.commit()
-    flash("Bank transfer submitted for manual verification. A receipt or reference alone will not activate your plan.", "warning")
+    flash("Payment request submitted successfully. Your subscription will activate after the payment is confirmed.", "success")
     return redirect(url_for("dashboard") + "#plans")
 
 # Paystack integration is retained for future reactivation, but disabled unless explicitly enabled.
@@ -769,21 +775,93 @@ def payment_webhook():
             if user: activate_subscription(user, payment)
     return jsonify(received=True)
 
+def _admin_csrf_token():
+    token = session.get("admin_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["admin_csrf_token"] = token
+    return token
+
+def _admin_authenticated():
+    return session.get("cyberlord_admin_authenticated") is True
+
+def _require_admin():
+    if not _admin_authenticated():
+        abort(403)
+    supplied = request.form.get("csrf_token", "")
+    expected = session.get("admin_csrf_token", "")
+    if not supplied or not expected or not hmac.compare_digest(supplied, expected):
+        abort(400, description="The security token expired. Refresh the page and try again.")
+
+@app.route("/admin", methods=["GET", "POST"])
+def admin_dashboard():
+    """Private payment administration; separate from customer accounts and login."""
+    if not _admin_authenticated() and request.method == "POST":
+        supplied_csrf = request.form.get("csrf_token", "")
+        expected_csrf = session.get("admin_csrf_token", "")
+        if not supplied_csrf or not expected_csrf or not hmac.compare_digest(supplied_csrf, expected_csrf):
+            abort(400, description="The security token expired. Refresh the page and try again.")
+        configured_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
+        configured_password = os.getenv("ADMIN_PASSWORD", "")
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        if not configured_email or not configured_password:
+            flash("Admin access is not configured yet. Add ADMIN_EMAIL and ADMIN_PASSWORD in Render Environment.", "error")
+        elif hmac.compare_digest(email, configured_email) and hmac.compare_digest(password, configured_password):
+            session.clear()
+            session["cyberlord_admin_authenticated"] = True
+            session["admin_email"] = configured_email
+            session["admin_csrf_token"] = secrets.token_urlsafe(32)
+            return redirect(url_for("admin_dashboard"))
+        else:
+            flash("The administrator email or password is incorrect.", "error")
+    if not _admin_authenticated():
+        return render_template("admin_login.html", csrf_token=_admin_csrf_token())
+
+    status_filter = request.args.get("status", "pending")
+    query = db.session.query(Payment, User.email).join(User, User.id == Payment.user_id)
+    if status_filter in ("pending", "success", "rejected", "failed"):
+        query = query.filter(Payment.status == status_filter)
+    else:
+        status_filter = "all"
+    payments = query.order_by(Payment.created_at.desc()).limit(250).all()
+    counts = {status: Payment.query.filter_by(status=status).count() for status in ("pending", "success", "rejected", "failed")}
+    return render_template("admin_payments.html", payments=payments, counts=counts, status_filter=status_filter, csrf_token=_admin_csrf_token())
+
+@app.route("/admin/logout", methods=["POST"])
+def admin_logout():
+    _require_admin()
+    session.clear()
+    flash("You have signed out of the administrator area.", "success")
+    return redirect(url_for("admin_dashboard"))
+
 @app.route("/admin/payments/<int:payment_id>/approve", methods=["POST"])
 def admin_approve_bank_payment(payment_id):
-    """Manual bank confirmation endpoint; protect with a long random server-only token."""
-    admin_token = os.getenv("PAYMENT_ADMIN_TOKEN", "")
-    supplied = request.headers.get("Authorization", "")
-    if not admin_token or not hmac.compare_digest(supplied, "Bearer " + admin_token):
-        abort(401)
+    _require_admin()
     payment = db.session.get(Payment, payment_id)
-    if not payment or payment.currency != "NGN" or payment.network != "bank_transfer" or payment.status != "pending":
-        return jsonify(error="No eligible pending bank transfer was found."), 404
+    eligible_methods = {"bank_transfer", "opay", "union_bank"}
+    if not payment or payment.currency != "NGN" or payment.network not in eligible_methods or payment.status != "pending":
+        flash("This payment is not an eligible pending bank transfer.", "error")
+        return redirect(url_for("admin_dashboard"))
     user = db.session.get(User, payment.user_id)
     if not user:
-        return jsonify(error="Payment account was not found."), 404
+        flash("The customer account could not be found.", "error")
+        return redirect(url_for("admin_dashboard"))
     activate_subscription(user, payment)
-    return jsonify(status="approved", payment_id=payment.id, plan=payment.plan, expires_at=payment.expires_at.isoformat())
+    flash(f"Payment #{payment.id} approved. {PLANS[payment.plan]['name']} is now active for the customer.", "success")
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/payments/<int:payment_id>/reject", methods=["POST"])
+def admin_reject_bank_payment(payment_id):
+    _require_admin()
+    payment = db.session.get(Payment, payment_id)
+    if not payment or payment.status != "pending":
+        flash("This payment is not pending and cannot be rejected.", "error")
+        return redirect(url_for("admin_dashboard"))
+    payment.status = "rejected"
+    db.session.commit()
+    flash(f"Payment #{payment.id} has been rejected. No subscription was activated.", "success")
+    return redirect(url_for("admin_dashboard"))
 
 
 
@@ -984,6 +1062,161 @@ def run_due_monitoring_checks(batch_size=10):
             item.last_status = "check_failed"
             db.session.commit()
 
+
+
+# ---------------------------------------------------------------------------
+# CyberLord Advanced Intelligence: passive, public-data investigations
+# ---------------------------------------------------------------------------
+ADVANCED_TOOLS = {
+    "footprint": "Digital Footprint Investigator",
+    "api_hunter": "Shadow API Hunter",
+    "impersonation": "Website Impersonation Detector",
+}
+
+class _PublicPageParser(HTMLParser):
+    def __init__(self):
+        super().__init__(); self.title_parts=[]; self.in_title=False; self.scripts=[]; self.links=[]
+    def handle_starttag(self, tag, attrs):
+        a=dict(attrs)
+        if tag.lower()=="title": self.in_title=True
+        if tag.lower()=="script" and a.get("src"): self.scripts.append(a["src"])
+        if tag.lower()=="a" and a.get("href"): self.links.append(a["href"])
+    def handle_endtag(self, tag):
+        if tag.lower()=="title": self.in_title=False
+    def handle_data(self, data):
+        if self.in_title and data.strip(): self.title_parts.append(data.strip())
+
+def _safe_public_fetch(domain, path="/"):
+    """Fetch one public HTTPS resource without following redirects."""
+    addresses=public_domain_addresses(domain)
+    url="https://"+domain+path
+    try:
+        r=requests.get(url, timeout=6, allow_redirects=False, stream=True,
+            headers={"User-Agent":"CyberLord-Defensive-Intelligence/1.0"})
+        body=r.raw.read(180000, decode_content=True).decode(r.encoding or "utf-8", errors="replace")
+        return r, body, addresses
+    except requests.RequestException as exc:
+        return None, "", addresses
+
+def _passive_footprint(domain):
+    addresses=public_domain_addresses(domain)
+    records={kind:dns_records(domain,kind) for kind in ("A","AAAA","MX","NS","TXT","CAA")}
+    tls={"checked":False,"issuer":"Not inspected by this passive module"}
+    try:
+        r, body, resolved=_safe_public_fetch(domain)
+        page={"http_status":r.status_code if r else None,
+              "server_header":(r.headers.get("Server") if r else None),
+              "security_headers":({h:r.headers.get(h) for h in ("strict-transport-security","content-security-policy","x-content-type-options","x-frame-options","referrer-policy") if r.headers.get(h)} if r else {}),
+              "redirect_location":(r.headers.get("Location") if r else None)}
+    except Exception as exc:
+        page={"warning":str(exc)}
+    certs=[]
+    try:
+        q=requests.get("https://crt.sh/",params={"q":"%."+domain,"output":"json"},timeout=8,headers={"User-Agent":"CyberLord-Defensive-Intelligence/1.0"})
+        if q.ok:
+            seen=set()
+            for row in q.json()[:250]:
+                for name in str(row.get("name_value","")).splitlines():
+                    name=name.strip().lower().lstrip("*.")
+                    if name.endswith("."+domain) and name not in seen:
+                        seen.add(name); certs.append(name)
+            certs=sorted(certs)[:100]
+    except Exception: pass
+    return {"domain":domain,"resolved_ips":addresses,"dns_records":records,"certificate_transparency_subdomains":certs,
+            "http_observation":page,"scope_note":"Passive public DNS, certificate-transparency and one-page HTTP observations only. No port scan or exploitation was performed."}
+
+def _shadow_api_hunt(domain):
+    r, body, addresses=_safe_public_fetch(domain)
+    if not r:
+        raise ValueError("The public HTTPS page could not be fetched. Check the domain and try again.")
+    parser=_PublicPageParser(); parser.feed(body)
+    base="https://"+domain
+    candidates=["/openapi.json","/swagger.json","/api-docs","/api-docs/","/swagger/","/swagger-ui/","/docs","/openapi.yaml","/graphql","/.well-known/openapi.json"]
+    found=[]
+    for path in candidates:
+        try:
+            rr, content, _=_safe_public_fetch(domain,path)
+            if rr and rr.status_code in (200,401,403) and (path in ("/graphql",) or "openapi" in path or "swagger" in path or "graphql" in content[:3000].lower() or "swagger" in content[:3000].lower()):
+                found.append({"path":path,"status":rr.status_code,"content_type":rr.headers.get("Content-Type","unknown"),"note":"Endpoint responds; authentication and authorization were not tested."})
+        except Exception: pass
+    js_assets=[]
+    for src in parser.scripts[:25]:
+        if src.startswith("//"): continue
+        if src.startswith("/"): js_assets.append(base+src)
+        elif src.startswith("http://") or src.startswith("https://"): continue
+        else: js_assets.append(base+"/"+src.lstrip("./"))
+    api_hints=set()
+    # Report route-like strings only; never return token/secret values.
+    import re as _re
+    for match in _re.findall(r"[\"']((?:/api/|/v[0-9]+/)[A-Za-z0-9_./{}?=&-]{1,120})[\"']",body): api_hints.add(match[:120])
+    for asset in js_assets[:12]:
+        try:
+            u=urlparse(asset)
+            if u.hostname!=domain: continue
+            rr=requests.get(asset,timeout=5,allow_redirects=False,headers={"User-Agent":"CyberLord-Defensive-Intelligence/1.0"})
+            if rr.ok:
+                for match in _re.findall(r"[\"']((?:/api/|/v[0-9]+/)[A-Za-z0-9_./{}?=&-]{1,120})[\"']",rr.text[:250000]): api_hints.add(match[:120])
+        except requests.RequestException: pass
+    return {"domain":domain,"resolved_ips":addresses,"page_title":" ".join(parser.title_parts)[:180],
+            "api_documentation_or_routes":found,"public_javascript_assets":js_assets[:25],"route_hints_from_public_code":sorted(api_hints)[:80],
+            "scope_note":"Passive checks of public pages and common documentation paths. No authentication bypass, fuzzing, data access or exploit attempts."}
+
+def _impersonation_candidates(domain):
+    import itertools
+    # Treat the first DNS label as the brand, preserving multi-part suffixes such as name.ng.
+    parts=domain.split(".")
+    root=parts[0]
+    suffix=".".join(parts[1:])
+    variants=set()
+    for i in range(len(root)):
+        variants.add(root[:i]+root[i+1:])
+        if i+1<len(root): variants.add(root[:i]+root[i+1]+root[i]+root[i+2:])
+    for ch in "abcdefghijklmnopqrstuvwxyz0123456789":
+        variants.add(root+ch); variants.add(ch+root)
+    for old,new in (("o","0"),("i","1"),("l","1"),("e","3"),("a","4")):
+        if old in root: variants.add(root.replace(old,new,1))
+    candidates=[]
+    for v in sorted(variants):
+        if v and v!=root and len(v)<=63 and re.fullmatch(r"[a-z0-9-]+",v):
+            candidates.append(v+"."+suffix)
+    results=[]
+    for candidate in candidates[:35]:
+        try:
+            ips=public_domain_addresses(candidate)
+            results.append({"domain":candidate,"dns_resolves":True,"public_ips":ips,"name_similarity":round(SequenceMatcher(None,domain,candidate).ratio(),3),"risk":"Review"})
+        except Exception:
+            results.append({"domain":candidate,"dns_resolves":False,"public_ips":[],"name_similarity":round(SequenceMatcher(None,domain,candidate).ratio(),3),"risk":"No DNS response observed"})
+    results.sort(key=lambda x:(not x["dns_resolves"],-x["name_similarity"]))
+    return {"brand_domain":domain,"lookalike_candidates_checked":len(results),"potentially_registered_candidates":[x for x in results if x["dns_resolves"]],
+            "all_candidates":results,"scope_note":"Heuristic typo candidates checked through public DNS only. DNS resolution does not prove malicious intent, brand ownership or impersonation."}
+
+@app.route("/advanced-intelligence", methods=["GET"])
+@login_required
+def advanced_intelligence():
+    refresh_subscription(current_user)
+    unlocked=PLANS.get(current_user.plan,PLANS["free"])["rank"]>=2
+    return render_template("advanced_intelligence.html", tools=ADVANCED_TOOLS, unlocked=unlocked, plans=PLANS)
+
+@app.route("/advanced-intelligence/<tool>", methods=["POST"])
+@login_required
+def run_advanced_intelligence(tool):
+    if tool not in ADVANCED_TOOLS: abort(404)
+    if not allowed_tool("attack_surface"):
+        return jsonify(ok=False,error="These advanced investigations require PRO PLUS."),403
+    if request.form.get("authorized")!="yes":
+        return jsonify(ok=False,error="Confirm that you own this domain or have permission to investigate it."),400
+    try:
+        domain=normalize_domain(request.form.get("domain"))
+        if tool=="footprint": result=_passive_footprint(domain)
+        elif tool=="api_hunter": result=_shadow_api_hunt(domain)
+        else: result=_impersonation_candidates(domain)
+        save_scan("advanced_"+tool,domain,result)
+        return jsonify(ok=True,tool=ADVANCED_TOOLS[tool],target=domain,result=result)
+    except (ValueError, requests.RequestException) as exc:
+        return jsonify(ok=False,error=str(exc)),400
+    except Exception:
+        app.logger.exception("Advanced intelligence module failed")
+        return jsonify(ok=False,error="The investigation could not be completed. Please try again later."),500
 
 @app.route("/health")
 def health(): return jsonify(status="ok",service="CyberLord Domain Intelligence")
