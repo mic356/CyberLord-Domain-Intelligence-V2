@@ -3,3 +3,5 @@
 .authorization{display:flex;gap:8px;align-items:flex-start;font-size:11px;line-height:1.4;color:var(--muted);margin:8px 0}.authorization input{width:auto;margin:2px 0 0;flex:0 0 auto}.scan-form{display:flex;flex-direction:column;gap:8px}.scan-form button{align-self:flex-start}.result{white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto}
 
 .history-download{display:flex;gap:7px;flex-wrap:wrap;align-items:center}.history-download .btn{font-size:11px;padding:6px 9px}.history>div{align-items:center;gap:8px}
+
+select{display:block;width:100%;margin-top:7px;padding:12px 13px;border-radius:8px;border:1px solid #334764;background:#091321;color:white;outline:none}select:focus{border-color:var(--cyan)}.payment-usdt-form,.payment-bank-form{margin-top:15px;padding-top:10px;border-top:1px solid #ffffff12}.payment-usdt-form label,.payment-bank-form label{font-size:12px}.payment-usdt-form .btn,.payment-bank-form .btn{white-space:normal}

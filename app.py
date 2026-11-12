@@ -1,4 +1,5 @@
 import os, re, json, hmac, hashlib, secrets, socket, ssl, ipaddress, subprocess, shutil, time
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import urlparse
@@ -29,10 +30,19 @@ login_manager = LoginManager(app)
 login_manager.login_view = "login"
 serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
+# Fixed prices agreed for launch. NGN prices are fixed rather than live FX conversions.
 PLANS = {
-    "free": {"name": "FREE", "price": 0, "rank": 0},
-    "pro": {"name": "PRO", "price": 5000, "rank": 1},
-    "pro_plus": {"name": "PRO PLUS", "price": 10000, "rank": 2},
+    "free": {"name": "FREE", "price": 0, "ngn": 0, "usdt": "0.00", "rank": 0},
+    "pro": {"name": "PRO", "price": 6300, "ngn": 6300, "usdt": "4.50", "rank": 1},
+    "pro_plus": {"name": "PRO PLUS", "price": 12600, "ngn": 12600, "usdt": "9.00", "rank": 2},
+}
+USDT_WALLETS = {
+    "trc20": "TSLdKMFJB3pqWMkkZoUfdo5j2GVh2ANHSw",
+    "bep20": "0xab22fd86fbf75f7082436b25c0f851d4d7484e32",
+}
+USDT_CONTRACTS = {
+    "trc20": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+    "bep20": "0x55d398326f99059fF775485246999027B3197955",
 }
 PRO_TOOLS = {"phone", "email_review", "breach"}
 PLUS_TOOLS = {"attack_surface", "cve", "compare", "port"}
@@ -49,6 +59,7 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     plan = db.Column(db.String(20), default="free", nullable=False)
+    plan_expires_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -64,6 +75,10 @@ class Payment(db.Model):
     status = db.Column(db.String(20), default="pending", nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     verified_at = db.Column(db.DateTime)
+    currency = db.Column(db.String(10), default="NGN", nullable=False)
+    network = db.Column(db.String(20))
+    tx_hash = db.Column(db.String(140), unique=True, index=True)
+    expires_at = db.Column(db.DateTime)
 
 class ScanHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -86,7 +101,27 @@ def normalize_domain(value):
         raise ValueError("Enter a valid public domain name, e.g. example.com.")
     return value
 
+def refresh_subscription(user):
+    """Downgrade expired paid plans before checking access or showing the dashboard."""
+    if user and user.plan != "free" and user.plan_expires_at:
+        expiry = user.plan_expires_at
+        if expiry <= datetime.utcnow():
+            user.plan = "free"
+            user.plan_expires_at = None
+            db.session.commit()
+
+def activate_subscription(user, payment):
+    """Start a fresh 30-day term only after server-side payment verification."""
+    now = datetime.utcnow()
+    user.plan = payment.plan
+    user.plan_expires_at = now + timedelta(days=30)
+    payment.status = "success"
+    payment.verified_at = now
+    payment.expires_at = user.plan_expires_at
+    db.session.commit()
+
 def allowed_tool(tool):
+    refresh_subscription(current_user)
     rank = PLANS.get(current_user.plan, PLANS["free"])["rank"]
     if tool in PRO_TOOLS and rank < 1: return False
     if tool in PLUS_TOOLS and rank < 2: return False
@@ -341,8 +376,9 @@ def reset_password(token):
 @app.route("/dashboard")
 @login_required
 def dashboard():
+    refresh_subscription(current_user)
     history = ScanHistory.query.filter_by(user_id=current_user.id).order_by(ScanHistory.created_at.desc()).limit(50).all()
-    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history)
+    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS)
 
 @app.route("/history/<int:scan_id>/download")
 @login_required
@@ -439,16 +475,146 @@ def run_tool(tool):
         app.logger.exception("Tool execution failed")
         return jsonify(error="The check could not be completed. Verify the target and try again."),500
 
+def verify_tron_usdt(tx_hash, expected_amount):
+    """Verify a confirmed TRC20 USDT transfer using TronGrid's confirmed account history."""
+    wallet = USDT_WALLETS["trc20"]
+    params = {"limit": 200, "only_confirmed": "true", "contract_address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"}
+    headers = {}
+    api_key = os.getenv("TRONGRID_API_KEY")
+    if api_key:
+        headers["TRON-PRO-API-KEY"] = api_key
+    response = requests.get(f"https://api.trongrid.io/v1/accounts/{wallet}/transactions/trc20", params=params, headers=headers, timeout=20)
+    response.raise_for_status()
+    for transfer in response.json().get("data", []):
+        info = transfer.get("token_info", {})
+        if transfer.get("transaction_id", "").lower() != tx_hash.lower():
+            continue
+        if info.get("address") != "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t":
+            continue
+        if transfer.get("to", "").lower() != wallet.lower():
+            continue
+        decimals = int(info.get("decimals", 6))
+        received = Decimal(str(transfer.get("value", "0"))) / (Decimal(10) ** decimals)
+        if received != expected_amount:
+            return False, "The transaction amount does not match the selected plan."
+        return True, "Confirmed TRC20 USDT transfer verified."
+    return False, "No confirmed incoming USDT transfer matching this transaction hash was found yet. Check the network and try again later."
+
+def verify_bep20_usdt(tx_hash, expected_amount):
+    """Verify a BEP20 USDT transfer from a successful, sufficiently confirmed BSC receipt."""
+    rpc = os.getenv("BSC_RPC_URL") or "https://bsc-dataseed.binance.org/"
+    token = USDT_CONTRACTS["bep20"].lower()
+    recipient = USDT_WALLETS["bep20"].lower()
+    transfer_topic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    def rpc_call(method, params):
+        r = requests.post(rpc, json={"jsonrpc":"2.0","id":1,"method":method,"params":params}, timeout=20)
+        r.raise_for_status()
+        payload = r.json()
+        if payload.get("error"):
+            raise RuntimeError("BSC RPC returned an error")
+        return payload.get("result")
+    chain_id = rpc_call("eth_chainId", [])
+    if int(chain_id, 16) != 56:
+        raise RuntimeError("Configured RPC endpoint is not BNB Smart Chain mainnet")
+    receipt = rpc_call("eth_getTransactionReceipt", [tx_hash])
+    if not receipt:
+        return False, "Transaction not found on BNB Smart Chain yet."
+    if int(receipt.get("status", "0x0"), 16) != 1:
+        return False, "The blockchain transaction failed."
+    latest = rpc_call("eth_blockNumber", [])
+    confirmations = int(latest, 16) - int(receipt.get("blockNumber", "0x0"), 16) + 1
+    if confirmations < 12:
+        return False, f"Transaction has {confirmations} confirmations; at least 12 are required."
+    for log in receipt.get("logs", []):
+        topics = log.get("topics", [])
+        if log.get("address", "").lower() != token or len(topics) < 3 or topics[0].lower() != transfer_topic:
+            continue
+        to_address = "0x" + topics[2][-40:].lower()
+        if to_address != recipient:
+            continue
+        received = Decimal(int(log.get("data", "0x0"), 16)) / (Decimal(10) ** 18)
+        if received != expected_amount:
+            return False, "The transaction amount does not match the selected plan."
+        return True, "Confirmed BEP20 USDT transfer verified."
+    return False, "This transaction does not contain an incoming transfer of the supported USDT token to the CyberLord wallet."
+
+def verify_usdt(network, tx_hash, plan):
+    if network == "trc20":
+        return verify_tron_usdt(tx_hash, Decimal(PLANS[plan]["usdt"]))
+    if network == "bep20":
+        return verify_bep20_usdt(tx_hash, Decimal(PLANS[plan]["usdt"]))
+    return False, "Unsupported payment network."
+
+@app.route("/payment/usdt/submit", methods=["POST"])
+@login_required
+def payment_usdt_submit():
+    plan = request.form.get("plan", "")
+    network = request.form.get("network", "").lower()
+    tx_hash = request.form.get("tx_hash", "").strip()
+    if plan not in ("pro", "pro_plus") or network not in USDT_WALLETS:
+        flash("Select a valid plan and USDT network.", "error")
+        return redirect(url_for("dashboard") + "#plans")
+    valid_hash = (re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash) if network == "bep20" else re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash))
+    if not valid_hash:
+        flash("Enter the 64-character transaction hash from the selected blockchain.", "error")
+        return redirect(url_for("dashboard") + "#plans")
+    existing = Payment.query.filter_by(tx_hash=tx_hash).first()
+    if existing and (existing.status == "success" or existing.user_id != current_user.id or existing.plan != plan or existing.network != network):
+        flash("This transaction hash has already been submitted and cannot be reused.", "error")
+        return redirect(url_for("dashboard") + "#plans")
+    payment = existing or Payment(user_id=current_user.id, reference="USDT-" + secrets.token_urlsafe(16), plan=plan,
+        amount=int(Decimal(PLANS[plan]["usdt"]) * 100), status="pending", currency="USDT", network=network, tx_hash=tx_hash)
+    if not existing:
+        db.session.add(payment)
+        db.session.commit()
+    try:
+        verified, message = verify_usdt(network, tx_hash, plan)
+    except Exception:
+        app.logger.exception("USDT transaction verification provider failed")
+        verified, message = False, "The blockchain verification service is temporarily unavailable. Your payment remains pending; retry later."
+    if verified:
+        user = db.session.get(User, payment.user_id)
+        if payment.status != "success" and user:
+            activate_subscription(user, payment)
+        flash("Payment verified. " + PLANS[plan]["name"] + " is active for 30 days.", "success")
+    else:
+        payment.status = "pending"
+        db.session.commit()
+        flash(message + " Your submission is pending and no subscription has been activated.", "warning")
+    return redirect(url_for("dashboard") + "#plans")
+
+@app.route("/payment/bank/submit", methods=["POST"])
+@login_required
+def payment_bank_submit():
+    plan = request.form.get("plan", "")
+    bank_reference = request.form.get("bank_reference", "").strip()
+    if plan not in ("pro", "pro_plus") or not bank_reference or len(bank_reference) > 115:
+        flash("Select a plan and enter your bank transfer reference.", "error")
+        return redirect(url_for("dashboard") + "#plans")
+    reference = "BANK-" + bank_reference
+    if Payment.query.filter_by(reference=reference).first():
+        flash("That bank transfer reference has already been submitted.", "error")
+        return redirect(url_for("dashboard") + "#plans")
+    db.session.add(Payment(user_id=current_user.id, reference=reference, plan=plan, amount=PLANS[plan]["ngn"] * 100,
+        status="pending", currency="NGN", network="bank_transfer"))
+    db.session.commit()
+    flash("Bank transfer submitted for manual verification. A receipt or reference alone will not activate your plan.", "warning")
+    return redirect(url_for("dashboard") + "#plans")
+
+# Paystack integration is retained for future reactivation, but disabled unless explicitly enabled.
 @app.route("/payment/initialize", methods=["POST"])
 @login_required
 def payment_initialize():
+    if os.getenv("PAYSTACK_ENABLED", "false").lower() != "true":
+        flash("Paystack is temporarily disabled while the account is awaiting approval.", "warning")
+        return redirect(url_for("dashboard") + "#plans")
     plan=request.form.get("plan") or (request.get_json(silent=True) or {}).get("plan")
     if plan not in ("pro","pro_plus"): return jsonify(error="Invalid plan"), 400
     secret=os.getenv("PAYSTACK_SECRET_KEY")
     if not secret: return jsonify(error="Paystack is not configured on the server."), 503
     reference="CLD-"+secrets.token_urlsafe(18)
-    amount=PLANS[plan]["price"]*100
-    payment=Payment(user_id=current_user.id,reference=reference,plan=plan,amount=amount)
+    amount=PLANS[plan]["ngn"]*100
+    payment=Payment(user_id=current_user.id,reference=reference,plan=plan,amount=amount,currency="NGN")
     db.session.add(payment); db.session.commit()
     try:
         response=requests.post("https://api.paystack.co/transaction/initialize",
@@ -457,8 +623,7 @@ def payment_initialize():
                   "callback_url":url_for("payment_callback",_external=True),"metadata":{"user_id":current_user.id,"plan":plan}},timeout=15)
         data=response.json()
         if not response.ok or not data.get("status"): raise RuntimeError(data.get("message","Paystack initialization failed"))
-        checkout=data["data"]["authorization_url"]
-        return redirect(checkout,code=303)
+        return redirect(data["data"]["authorization_url"],code=303)
     except Exception:
         payment.status="failed"; db.session.commit()
         app.logger.exception("Paystack initialization failed")
@@ -470,49 +635,86 @@ def verify_paystack(reference):
     if not secret: return None
     r=requests.get("https://api.paystack.co/transaction/verify/"+reference,headers={"Authorization":"Bearer "+secret},timeout=15)
     data=r.json()
-    if r.ok and data.get("status") and data.get("data",{}).get("status")=="success":
-        return data["data"]
+    if r.ok and data.get("status") and data.get("data",{}).get("status")=="success": return data["data"]
     return None
 
 @app.route("/payment/callback")
 @login_required
 def payment_callback():
-    reference=request.args.get("reference","")
+    if os.getenv("PAYSTACK_ENABLED", "false").lower() != "true":
+        flash("Paystack is currently disabled.", "warning")
+        return redirect(url_for("dashboard"))
+    reference=request.args.get("reference", "")
     payment=Payment.query.filter_by(reference=reference,user_id=current_user.id).first()
     if not payment: flash("Payment reference was not found.", "error"); return redirect(url_for("dashboard"))
     try: data=verify_paystack(reference)
     except Exception: data=None
-    if data and data.get("amount")==payment.amount and data.get("currency")=="NGN":
-        payment.status="success"; payment.verified_at=datetime.utcnow()
-        current=current_user.plan
-        if PLANS[payment.plan]["rank"] > PLANS.get(current,PLANS["free"])["rank"]: current_user.plan=payment.plan
-        db.session.commit(); flash("Payment verified. Your plan is now "+PLANS[current_user.plan]["name"]+".","success")
+    if data and data.get("amount")==payment.amount and data.get("currency")=="NGN" and payment.status != "success":
+        activate_subscription(current_user, payment)
+        flash("Payment verified. Your plan is active for 30 days.", "success")
     else:
         flash("Payment is not yet verified. If you paid, wait briefly and refresh your dashboard.", "warning")
     return redirect(url_for("dashboard"))
 
 @app.route("/payment/webhook", methods=["POST"])
 def payment_webhook():
-    secret=os.getenv("PAYSTACK_SECRET_KEY","")
-    signature=request.headers.get("x-paystack-signature","")
+    if os.getenv("PAYSTACK_ENABLED", "false").lower() != "true": return "Paystack disabled", 404
+    secret=os.getenv("PAYSTACK_SECRET_KEY", "")
+    signature=request.headers.get("x-paystack-signature", "")
     expected=hmac.new(secret.encode(),request.get_data(),hashlib.sha512).hexdigest()
     if not secret or not hmac.compare_digest(signature,expected): return "invalid signature", 401
     event=request.get_json(silent=True) or {}
     if event.get("event")=="charge.success":
         data=event.get("data",{}); ref=data.get("reference")
         payment=Payment.query.filter_by(reference=ref).first()
-        if payment and data.get("status")=="success" and data.get("amount")==payment.amount and data.get("currency")=="NGN":
+        if payment and payment.status != "success" and data.get("status")=="success" and data.get("amount")==payment.amount and data.get("currency")=="NGN":
             user=db.session.get(User,payment.user_id)
-            payment.status="success"; payment.verified_at=datetime.utcnow()
-            if user and PLANS[payment.plan]["rank"]>PLANS.get(user.plan,PLANS["free"])["rank"]: user.plan=payment.plan
-            db.session.commit()
+            if user: activate_subscription(user, payment)
     return jsonify(received=True)
+
+@app.route("/admin/payments/<int:payment_id>/approve", methods=["POST"])
+def admin_approve_bank_payment(payment_id):
+    """Manual bank confirmation endpoint; protect with a long random server-only token."""
+    admin_token = os.getenv("PAYMENT_ADMIN_TOKEN", "")
+    supplied = request.headers.get("Authorization", "")
+    if not admin_token or not hmac.compare_digest(supplied, "Bearer " + admin_token):
+        abort(401)
+    payment = db.session.get(Payment, payment_id)
+    if not payment or payment.currency != "NGN" or payment.network != "bank_transfer" or payment.status != "pending":
+        return jsonify(error="No eligible pending bank transfer was found."), 404
+    user = db.session.get(User, payment.user_id)
+    if not user:
+        return jsonify(error="Payment account was not found."), 404
+    activate_subscription(user, payment)
+    return jsonify(status="approved", payment_id=payment.id, plan=payment.plan, expires_at=payment.expires_at.isoformat())
 
 @app.route("/health")
 def health(): return jsonify(status="ok",service="CyberLord Domain Intelligence")
 
 with app.app_context():
     db.create_all()
+    # Lightweight additive migration for existing installations (safe to run repeatedly).
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+    user_cols = {c["name"] for c in inspector.get_columns("user")}
+    payment_cols = {c["name"] for c in inspector.get_columns("payment")}
+    with db.engine.begin() as conn:
+        if "plan_expires_at" not in user_cols:
+            conn.execute(text('ALTER TABLE "user" ADD COLUMN plan_expires_at TIMESTAMP NULL'))
+        for name, definition in [("currency", "VARCHAR(10) NOT NULL DEFAULT 'NGN'"), ("network", "VARCHAR(20) NULL"), ("tx_hash", "VARCHAR(140) NULL"), ("expires_at", "TIMESTAMP NULL")]:
+            if name not in payment_cols:
+                conn.execute(text(f"ALTER TABLE payment ADD COLUMN {name} {definition}"))
+        # Unique index prevents one on-chain transaction from paying for multiple accounts.
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_tx_hash ON payment (tx_hash)"))
+    # Existing paid accounts without an expiry are backfilled from their latest verified payment.
+    for legacy_user in User.query.filter(User.plan != "free", User.plan_expires_at.is_(None)).all():
+        last_payment = Payment.query.filter_by(user_id=legacy_user.id, status="success").order_by(Payment.verified_at.desc()).first()
+        start = (last_payment.verified_at if last_payment and last_payment.verified_at else legacy_user.created_at) or datetime.utcnow()
+        legacy_user.plan_expires_at = start + timedelta(days=30)
+        if legacy_user.plan_expires_at <= datetime.utcnow():
+            legacy_user.plan = "free"
+            legacy_user.plan_expires_at = None
+    db.session.commit()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0",port=int(os.getenv("PORT",5000)),debug=os.getenv("FLASK_DEBUG")=="1")

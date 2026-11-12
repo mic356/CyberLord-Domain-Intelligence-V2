@@ -13,6 +13,14 @@ services:
         sync: false
       - key: PAYSTACK_SECRET_KEY
         sync: false
+      - key: PAYSTACK_ENABLED
+        value: "false"
+      - key: PAYMENT_ADMIN_TOKEN
+        sync: false
+      - key: TRONGRID_API_KEY
+        sync: false
+      - key: BSC_RPC_URL
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM
