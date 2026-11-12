@@ -161,3 +161,8 @@ body{background:radial-gradient(ellipse at 8% 0%,#e8e5ff 0,transparent 34%),radi
 .policy-page a{color:#5c4be0}
 .policy-page .muted{color:#8790a8;font-size:13px}
 .footer-links a{margin:0 8px}
+
+/* Deep Scan mode */
+.deep-scan-panel{border-color:#2a6b63}
+.deep-scan-sections{list-style:none;padding:0;margin:10px 0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.deep-scan-sections li{background:#0b1423;border:1px solid #263650;border-radius:9px;padding:10px 12px;font-size:12px;color:#b6c5da}

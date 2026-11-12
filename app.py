@@ -60,7 +60,7 @@ TOOL_NAMES = {
     "email": "Email Security", "dns": "DNS Intelligence", "technology": "Technology Fingerprint",
     "ip": "IP Intelligence", "phone": "Phone Intelligence", "email_review": "Individual Email Review",
     "breach": "Breach Exposure", "attack_surface": "Attack Surface Map",
-    "cve": "CVE Intelligence", "compare": "Compare Domains", "port": "Limited Port Scanner"
+    "cve": "CVE Intelligence", "compare": "Compare Domains", "port": "Limited Port Scanner", "deep_scan": "Deep Scan"
 }
 
 class User(UserMixin, db.Model):
@@ -344,6 +344,273 @@ def ip_intelligence(value):
     return {"ip":str(ip),"version":ip.version,"is_global":ip.is_global,"reverse_dns":ptr,
         "reverse_dns_names":socket.gethostbyaddr(str(ip))[2][:10] if ptr else [],
         "rdap_url":"https://rdap.org/ip/"+str(ip),"note":"RDAP link points to registration data; allocation data does not identify a device owner or prove malicious activity."}
+
+
+# ---------------------------------------------------------------------------
+# Deep Scan: passive public OSINT only (no intrusive scanning).
+# Keyless sources: RDAP (rdap.org), crt.sh JSON API, Internet Archive Wayback
+# availability API, and public DNS. No API keys required for these endpoints.
+# Anything that would need a key (e.g. a breach-intelligence provider) is
+# intentionally not implemented here; the breach tool already reports
+# provider status honestly.
+# ---------------------------------------------------------------------------
+
+def _rdap_whois(domain):
+    """Registration data via RDAP, keyless. Returns parsed summary."""
+    out = {"source": "RDAP (rdap.org)", "status": "not_available", "registrar": None,
+           "created": None, "expires": None, "updated": None, "status_flags": [],
+           "name_servers": [], "registrant_country": None, "registrar_country": None,
+           "note": "(parsed from public RDAP record; empty fields mean not published)"}
+    try:
+        r = requests.get("https://rdap.org/domain/" + domain,
+                         headers={"Accept": "application/json", "User-Agent": "CyberLord-Deep-Scan/1.0"},
+                         timeout=12)
+        if r.status_code == 404:
+            out["status"] = "no_rdap_record"
+            return out
+        r.raise_for_status()
+        data = r.json()
+    except Exception as exc:
+        out["reason"] = str(exc)[:180]
+        return out
+    out["status"] = "ok"
+    out["status_flags"] = data.get("status", []) or []
+    out["name_servers"] = [ns.get("ldhName") for ns in (data.get("nameservers") or []) if ns.get("ldhName")][:15]
+    for ev in data.get("events", []) or []:
+        name = (ev.get("eventAction") or "").lower()
+        date = ev.get("eventDate")
+        if name == "registration" and date: out["created"] = date
+        elif name == "expiration" and date: out["expires"] = date
+        elif name in ("last update of rdap database", "last changed", "updated") and date: out["updated"] = date
+    for ent in data.get("entities", []) or []:
+        roles = [str(x).lower() for x in (ent.get("roles") or [])]
+        vcard = ent.get("vcardArray")
+        country = None
+        if isinstance(vcard, list) and len(vcard) > 1:
+            for item in vcard[1] or []:
+                try:
+                    if item[0] == "adr" and isinstance(item[3], list) and item[3]:
+                        country = item[3][-1] or None
+                        break
+                except Exception:
+                    continue
+        if "registrar" in roles:
+            out["registrar"] = ent.get("handle") or None
+            out["registrar_country"] = country
+        if "registrant" in roles and country:
+            out["registrant_country"] = country
+    return out
+
+def _ct_history(domain):
+    """Certificate Transparency history + subdomain enumeration via crt.sh (keyless)."""
+    out = {"source": "crt.sh Certificate Transparency", "status": "not_available",
+           "total_entries": 0, "subdomains": [], "subdomain_count": 0,
+           "earliest_seen": None, "latest_seen": None,
+           "issuers": [], "note": "CT logs are public; absence of entries does not prove a certificate never existed."}
+    try:
+        r = requests.get("https://crt.sh/", params={"q": "%." + domain, "output": "json"},
+                         headers={"User-Agent": "CyberLord-Deep-Scan/1.0"}, timeout=15)
+        r.raise_for_status()
+        rows = r.json()
+        if not isinstance(rows, list):
+            out["status"] = "unexpected_response"
+            return out
+    except Exception as exc:
+        out["reason"] = str(exc)[:180]
+        return out
+    out["status"] = "ok"
+    out["total_entries"] = len(rows)
+    subs, issuers, dates = set(), set(), []
+    for row in rows[:1000]:
+        if not isinstance(row, dict): continue
+        for name in str(row.get("name_value", "")).splitlines():
+            name = name.strip().lower().lstrip("*.")
+            if name and (name == domain or name.endswith("." + domain)):
+                subs.add(name)
+        if row.get("issuer_name"): issuers.add(str(row["issuer_name"])[:120])
+        if row.get("not_before"): dates.append(str(row["not_before"])[:10])
+    out["subdomains"] = sorted(subs)[:500]
+    out["subdomain_count"] = len(subs)
+    out["issuers"] = sorted(issuers)[:25]
+    if dates:
+        out["earliest_seen"] = min(dates); out["latest_seen"] = max(dates)
+    return out
+
+def _deeper_dns(domain):
+    """Deeper DNS: MX/NS/TXT/CAA/SOA plus DMARC, SPF split, DKIM common selectors, DNSSEC."""
+    records = {kind: dns_records(domain, kind) for kind in ("MX", "NS", "TXT", "CAA", "SOA", "DNSKEY", "DS")}
+    txt = records["TXT"]
+    spf = [x for x in txt if "v=spf1" in x.lower()]
+    dmarc = dns_records("_dmarc." + domain, "TXT")
+    dmarc_policy = None
+    if dmarc:
+        m = re.search(r"(?:^|;)\s*p\s*=\s*(none|quarantine|reject)", ";".join(dmarc), re.I)
+        if m: dmarc_policy = m.group(1).lower()
+    dkim = {sel: dns_records(sel + "._domainkey." + domain, "TXT")
+            for sel in ("default", "google", "selector1", "selector2", "s1", "s2", "k1", "dkim")}
+    dkim_found = {k: v for k, v in dkim.items() if v}
+    soa = records["SOA"]
+    findings = []
+    if not records["CAA"]:
+        findings.append({"severity": "low", "title": "No CAA record", "detail": "No Certificate Authority Authorization record was returned; any CA may issue certificates for this domain.", "fix": "Publish a CAA record listing authorised CAs."})
+    if not records["DNSKEY"] and not records["DS"]:
+        findings.append({"severity": "low", "title": "No DNSSEC records observed", "detail": "No DNSKEY or DS record was returned at the apex.", "fix": "If your registrar supports it, sign the zone with DNSSEC."})
+    return {"records": records, "spf": spf, "dmarc": dmarc, "dmarc_policy": dmarc_policy,
+            "dkim_selectors_found": dkim_found,
+            "dkim_selectors_checked": list(dkim.keys()),
+            "dnssec_present": bool(records["DNSKEY"] or records["DS"]),
+            "soa": soa, "findings": findings,
+            "note": "DKIM uses common public selectors only; unknown selectors will not be found. DNS responses reflect the resolver used by this service."}
+
+def _http_security_report(domain):
+    """One polite GET: expanded security-header posture with per-header grades."""
+    try:
+        response, body, addresses = fetch_site(domain)
+    except Exception as exc:
+        return {"status": "unavailable", "reason": str(exc)[:180]}
+    headers = {k.lower(): v for k, v in response.headers.items()}
+    checks = {
+        "strict-transport-security": ("HSTS", "medium"),
+        "content-security-policy": ("Content-Security-Policy", "medium"),
+        "x-frame-options": ("X-Frame-Options / frame-ancestors", "low"),
+        "x-content-type-options": ("X-Content-Type-Options", "medium"),
+        "referrer-policy": ("Referrer-Policy", "low"),
+        "permissions-policy": ("Permissions-Policy", "low"),
+        "cross-origin-opener-policy": ("Cross-Origin-Opener-Policy", "low"),
+        "cross-origin-resource-policy": ("Cross-Origin-Resource-Policy", "low"),
+        "cross-origin-embedder-policy": ("Cross-Origin-Embedder-Policy", "low"),
+        "origin-agent-cluster": ("Origin-Agent-Cluster", "info"),
+        "x-permitted-cross-domain-policies": ("X-Permitted-Cross-Domain-Policies", "info"),
+    }
+    report, present = {}, 0
+    for key, (label, sev) in checks.items():
+        value = headers.get(key)
+        # CSP frame-ancestors also satisfies clickjacking protection.
+        if key == "x-frame-options" and not value and "frame-ancestors" in (headers.get("content-security-policy") or "").lower():
+            value = "via CSP frame-ancestors"
+        report[label] = {"present": bool(value), "value": value}
+        if value: present += 1
+    findings = []
+    for key, (label, sev) in checks.items():
+        if not report[label]["present"] and sev in ("medium", "low"):
+            findings.append({"severity": sev, "title": "Missing header: " + label,
+                             "detail": "The final HTTPS response did not include " + label + ".",
+                             "fix": "Configure the header at the web server, reverse proxy or application layer."})
+    # HSTS quality note
+    hsts = headers.get("strict-transport-security", "")
+    hsts_note = None
+    if hsts:
+        hsts_note = ("includes includeSubDomains and preload" if "includesubdomains" in hsts.replace(" ", "").lower() and "preload" in hsts.lower()
+                     else "present (check max-age >= 31536000 and includeSubDomains for full strength)")
+    return {"status": response.status_code, "final_url": response.url, "resolved_addresses": addresses,
+            "server": headers.get("server"), "x_powered_by": headers.get("x-powered-by"),
+            "headers": report, "present_count": present, "total_checked": len(checks),
+            "hsts_note": hsts_note, "findings": findings,
+            "note": "Based on one GET request to the site root (redirects followed to HTTPS only). Headers may vary by path."}
+
+DEEP_TECH_PATTERNS = [
+    ("WordPress", r"wp-content|wp-includes|wp-json"), ("Drupal", r"/sites/(?:default|all)/files|drupal"),
+    ("Joomla", r"/media/system/js/|joomla"), ("React", r"react(?:\.production)?\.min\.js|__react"), ("Next.js", r"/_next/static/"),
+    ("Nuxt", r"__nuxt"), ("Vue.js", r"vue(?:\.runtime)?(?:\.global)?\.js|__vue"), ("Angular", r"ng-version|angular"),
+    ("Svelte", r"svelte"), ("Laravel", r"laravel_session|XSRF-TOKEN"), ("Django", r"csrftoken|django"),
+    ("Ruby on Rails", r"csrf-param|rails-ujs"), ("ASP.NET", r"__viewstate|x-aspnet-version"), ("PHP", r"php(?:sess|version)"),
+    ("Shopify", r"cdn\.shopify\.com|Shopify\.theme"), ("WooCommerce", r"woocommerce"), ("Magento", r"mage/"),
+    ("Cloudflare", r"cloudflare|__cf_bm|cf-ray"), ("AWS / Amazon", r"server:.*(awselb|amazon)|x-amz-"),
+    ("Google Analytics", r"googletagmanager|google-analytics|gtag\(|ga\("), ("Google Tag Manager", r"googletagmanager\.com/gtm"),
+    ("Facebook Pixel", r"fbevents\.js|connect\.facebook\.net"), ("Bootstrap", r"bootstrap(?:\.min)?\.css"),
+    ("jQuery", r"jquery(?:\.min)?\.js"), ("Tailwind CSS", r"tailwind(?:css)?"), ("Font Awesome", r"font-?awesome"),
+    ("reCAPTCHA", r"recaptcha"), ("Stripe", r"js\.stripe\.com|stripe\.js"), ("PayPal", r"paypal"),
+    ("Mailchimp", r"mailchimp"), ("Intercom", r"intercom|widget\.intercom"), ("Hotjar", r"hotjar"),
+    ("New Relic", r"newrelic|nr-spa"), ("Datadog", r"datadog"), ("Sentry", r"sentry"),
+    ("Vercel", r"x-vercel|vercel"), ("Netlify", r"x-nf-request-id|netlify"), ("Heroku", r"x-heroku|herokuapp"),
+    ("Nginx", r"nginx"), ("Apache", r"apache"), ("LiteSpeed", r"litespeed"),
+    ("openresty", r"openresty"), ("IIS", r"microsoft-iis"), ("Express (Node)", r"x-powered-by:\s*express"),
+]
+
+def _deep_technology(domain):
+    """Expanded tech detection from response headers, cookies and page source of one GET."""
+    try:
+        response, body, addresses = fetch_site(domain)
+    except Exception as exc:
+        return {"status": "unavailable", "reason": str(exc)[:180]}
+    headers = {k.lower(): v for k, v in response.headers.items()}
+    haystack = body + " " + str(dict(response.headers)) + " " + " ".join(response.cookies.keys())
+    detected = []
+    for name, pattern in DEEP_TECH_PATTERNS:
+        if re.search(pattern, haystack, re.I):
+            detected.append(name)
+    generator = re.search(r'<meta[^>]+name=["\']generator["\'][^>]+content=["\']([^"\']+)', body, re.I)
+    if generator and generator.group(1) not in detected:
+        detected.append("Generator tag: " + generator.group(1)[:80])
+    scripts = re.findall(r'<script[^>]+src=["\']([^"\']+)', body, re.I)[:40]
+    styles = re.findall(r'<link[^>]+href=["\']([^"\']+\.css[^"\']*)', body, re.I)[:40]
+    js_libs = sorted(set(re.findall(r'(?:src|href)=["\'][^"\']*?(jquery|bootstrap|react|vue|angular|tailwind|font-?awesome)[^"\']*', body, re.I)))[:20]
+    cookie_names = sorted(response.cookies.keys())[:30]
+    return {"target": domain, "http_status": response.status_code, "resolved_addresses": addresses,
+            "detected_hints": sorted(set(detected)), "detected_count": len(set(detected)),
+            "generator_meta": generator.group(1) if generator else None,
+            "server": headers.get("server"), "x_powered_by": headers.get("x-powered-by"),
+            "via": headers.get("via"), "cookies": cookie_names,
+            "script_paths": scripts, "stylesheet_paths": styles, "common_js_libs": js_libs,
+            "confidence_note": "Heuristic fingerprints from headers, cookies and page source. They may be incomplete, outdated or spoofed; confirm versions from your own asset inventory before acting."}
+
+def _wayback_check(domain):
+    """Wayback Machine availability lookup (keyless Archive.org API)."""
+    out = {"source": "Internet Archive Wayback Machine", "status": "not_available",
+           "available": False, "closest_snapshot": None, "url": "https://archive.org/wayback/available?url=" + domain}
+    try:
+        r = requests.get("https://archive.org/wayback/available", params={"url": domain},
+                         headers={"User-Agent": "CyberLord-Deep-Scan/1.0"}, timeout=12)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as exc:
+        out["reason"] = str(exc)[:180]
+        return out
+    snap = data.get("archived_snapshots", {}).get("closest") if isinstance(data, dict) else None
+    out["status"] = "ok"
+    out["available"] = bool(snap)
+    if snap:
+        out["closest_snapshot"] = {"timestamp": snap.get("timestamp"), "url": snap.get("url"), "status": snap.get("status")}
+    out["note"] = "The availability API returns the closest capture; it is not a full history listing. Full history lives in the Wayback CDX index."
+    return out
+
+def deep_scan(domain):
+    """Deep Scan orchestrator. Every section is passive and independently
+    failure-tolerant: one source failing never blocks the others."""
+    public_domain_addresses(domain)  # enforces the public-IP safety rule up front
+    sections = {}
+    try:
+        sections["registration"] = _rdap_whois(domain)
+    except Exception as exc:
+        sections["registration"] = {"status": "error", "reason": str(exc)[:180]}
+    try:
+        sections["certificate_transparency"] = _ct_history(domain)
+    except Exception as exc:
+        sections["certificate_transparency"] = {"status": "error", "reason": str(exc)[:180]}
+    try:
+        sections["dns_deep"] = _deeper_dns(domain)
+    except Exception as exc:
+        sections["dns_deep"] = {"status": "error", "reason": str(exc)[:180]}
+    try:
+        sections["http_security"] = _http_security_report(domain)
+    except Exception as exc:
+        sections["http_security"] = {"status": "error", "reason": str(exc)[:180]}
+    try:
+        sections["technology"] = _deep_technology(domain)
+    except Exception as exc:
+        sections["technology"] = {"status": "error", "reason": str(exc)[:180]}
+    try:
+        sections["archive"] = _wayback_check(domain)
+    except Exception as exc:
+        sections["archive"] = {"status": "error", "reason": str(exc)[:180]}
+    findings = []
+    for key, section in sections.items():
+        if isinstance(section, dict):
+            for item in section.get("findings", []) or []:
+                item = dict(item); item["section"] = key; findings.append(item)
+    return {"target": domain, "tool": "deep_scan", "checked_at": datetime.now(timezone.utc).isoformat(),
+            "sections": sections, "findings": findings,
+            "scope_note": "Deep Scan uses only public, passive OSINT sources (RDAP, Certificate Transparency, public DNS, one polite HTTPS GET, Wayback availability API). No intrusive scanning, port probing, authentication attempts or brute force is performed. Results depend on third-party data availability and may be incomplete."}
 
 def kali_worker_scan(domain, modules):
     base=os.getenv("KALI_WORKER_URL","").rstrip("/"); token=os.getenv("KALI_WORKER_TOKEN","")
@@ -666,6 +933,9 @@ def run_tool(tool):
                 "kali_worker_deep_intelligence":kali_worker_phone_intel(normalized),
                 "coverage":"Passive numbering-plan metadata only. Carrier labels can be outdated, especially after number portability.",
                 "privacy_limit":"No subscriber identity, live location, WhatsApp lookup, call/SMS interception, account access or ownership lookup is performed."}
+        elif tool == "deep_scan":
+            domain=normalize_domain(target)
+            result=deep_scan(domain)
         elif tool in {"domain","dns","subdomains","technology","email","attack_surface","cve","port","breach","email_review"}:
             if tool == "email_review":
                 if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",target): raise ValueError("Enter a valid email address.")
