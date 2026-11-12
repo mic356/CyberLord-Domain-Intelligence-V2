@@ -5,3 +5,70 @@
 .history-download{display:flex;gap:7px;flex-wrap:wrap;align-items:center}.history-download .btn{font-size:11px;padding:6px 9px}.history>div{align-items:center;gap:8px}
 
 select{display:block;width:100%;margin-top:7px;padding:12px 13px;border-radius:8px;border:1px solid #334764;background:#091321;color:white;outline:none}select:focus{border-color:var(--cyan)}.payment-usdt-form,.payment-bank-form{margin-top:15px;padding-top:10px;border-top:1px solid #ffffff12}.payment-usdt-form label,.payment-bank-form label{font-size:12px}.payment-usdt-form .btn,.payment-bank-form .btn{white-space:normal}
+
+
+/* Compact, expandable and individually deletable scan history. */
+.history-extra[hidden]{display:none}.history-download{gap:6px}.delete-history-form{display:inline-flex;margin:0}.btn.danger{background:#3a1722;border:1px solid #a9475d;color:#ffd9e1}.btn.danger:hover{background:#592033}#history-toggle{margin-top:14px}
+
+
+/* Refined compact dashboard layout: more tools visible without excessive scrolling. */
+.tool-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.tool-card{padding:12px;border-radius:11px}
+.tool-card h3{font-size:14px;margin:9px 0 2px}
+.tool-card p{font-size:11px;line-height:1.45;min-height:31px;margin:5px 0 9px}
+.tool-card .scan-form input{padding:8px 10px}
+.tool-card .authorization{font-size:10px;margin:6px 0}
+.tool-card .btn.small{padding:7px 10px;font-size:11px}
+#tools-toggle{margin-top:14px;min-width:145px}
+.tool-extra[hidden]{display:none}
+.payment-details{margin-top:16px;border:1px solid var(--line);border-radius:11px;background:#0b1423;overflow:hidden}
+.payment-details summary{cursor:pointer;padding:13px 15px;color:var(--cyan);font-size:13px;font-weight:800;list-style:none}
+.payment-details summary::-webkit-details-marker{display:none}
+.payment-details summary:after{content:"＋";float:right}
+.payment-details[open] summary:after{content:"−"}
+.payment-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0;padding:12px;border-radius:0}
+.payment-detail{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0;padding:12px;border:1px solid #263650;border-radius:9px;background:#101d30}
+.payment-detail b{font-size:11px;color:var(--text)}
+.payment-detail span{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.payment-detail .btn{margin-top:2px}
+.plans{gap:12px}
+.plan{padding:16px}
+.plan h3{font-size:22px}
+.price{font-size:27px}
+.payment-usdt-form,.payment-bank-form{margin-top:10px;padding-top:7px}
+.payment-usdt-form label,.payment-bank-form label{margin:9px 0;font-size:11px}
+.payment-usdt-form input,.payment-bank-form input,.payment-usdt-form select{padding:9px 10px;font-size:12px}
+.history-download{gap:5px}
+@media(min-width:1100px){.tool-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:800px){.tool-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.tool-grid,.plans,.payment-row{grid-template-columns:1fr}.tool-card{padding:13px}.plan{padding:15px}.price{font-size:25px}}
+
+
+/* Professional onboarding, tool guidance and restrained motion. */
+.welcome-guide{position:relative;overflow:hidden;border-color:#31516a;background:linear-gradient(125deg,#142a43,#101b2d 58%,#102b35)}
+.guide-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.guide-heading h2{margin:3px 0 4px}
+.guide-pulse{white-space:nowrap;color:var(--cyan);font-size:10px;font-weight:900;letter-spacing:1.4px;animation:guideGlow 2.4s ease-in-out infinite}
+.guide-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}
+.guide-step{padding:12px;border:1px solid #2b4661;border-radius:10px;background:#091827aa;display:flex;flex-direction:column;gap:4px}
+.guide-step>span{color:var(--cyan);font-size:10px;font-weight:900;letter-spacing:1px}
+.guide-step b{font-size:12px}
+.guide-step small{font-size:10px;line-height:1.45;color:var(--muted)}
+.guide-note{margin-top:12px;padding:10px 12px;border-left:3px solid var(--cyan);border-radius:4px;background:#07152280;color:#b8c8da;font-size:11px}
+.guide-note b{color:var(--cyan)}
+.tool-help{margin:8px 0 10px;border:1px solid #263d56;border-radius:8px;background:#101e30}
+.tool-help summary{cursor:pointer;padding:8px 10px;color:#8feee4;font-size:10px;font-weight:800;list-style:none}
+.tool-help summary::-webkit-details-marker{display:none}
+.tool-help summary:after{content:"＋";float:right}
+.tool-help[open] summary:after{content:"−"}
+.tool-help-body{padding:0 10px 10px;color:#aebfd3;font-size:10px;line-height:1.6}
+.tool-help-body b{color:#e8f3ff}
+.tool-card{transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.tool-card:hover{transform:translateY(-2px);border-color:#3c7184;box-shadow:0 8px 24px #0003}
+.btn{transition:transform .16s ease,filter .16s ease}
+.btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.scan-form button:disabled{opacity:.75;cursor:progress}
+@keyframes guideGlow{0%,100%{opacity:.72}50%{opacity:1;text-shadow:0 0 12px #4ce0d088}}
+@media(max-width:850px){.guide-steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.guide-heading{flex-direction:column}.guide-steps{grid-template-columns:1fr 1fr}.guide-step{padding:10px}}
+@media(prefers-reduced-motion:reduce){.guide-pulse,.tool-card,.btn{animation:none;transition:none}}
