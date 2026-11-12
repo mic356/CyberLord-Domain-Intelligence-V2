@@ -123,6 +123,34 @@ class MonitoringAlert(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     read_at = db.Column(db.DateTime)
 
+
+class AcademyProgress(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    lesson_slug = db.Column(db.String(80), nullable=False)
+    best_score = db.Column(db.Integer, default=0, nullable=False)
+    completed_at = db.Column(db.DateTime)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint("user_id", "lesson_slug", name="uq_academy_progress_user_lesson"),)
+
+
+class BoardPost(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    title = db.Column(db.String(140), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    category = db.Column(db.String(32), default="General", nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class BoardReply(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey("board_post.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
@@ -415,18 +443,96 @@ def dashboard():
     history = ScanHistory.query.filter_by(user_id=current_user.id).order_by(ScanHistory.created_at.desc()).limit(50).all()
     return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS)
 
+ACADEMY_LESSONS = [
+    {"slug":"networking-essentials", "level":"FOUNDATION", "title":"Networking essentials", "time":"12 min", "desc":"Understand IP addresses, ports, TCP, UDP and DNS.", "content":["An IP address identifies a device or network interface. A port identifies a service or application endpoint on that device.","TCP is connection-oriented and provides ordered, reliable delivery. UDP is connectionless and has lower overhead, but does not guarantee delivery.","DNS translates domain names into records such as A/AAAA addresses and MX mail servers. A port being open means a service is listening; it does not automatically mean the service is vulnerable."], "question":"What does a port number help identify?", "choices":["A service or application endpoint", "A device's physical location", "The owner's password"], "answer":0, "explain":"A port helps direct network traffic to the correct service on a device."},
+    {"slug":"kali-linux-basics", "level":"LINUX & TOOLS", "title":"Getting comfortable with Kali Linux", "time":"15 min", "desc":"Learn terminal navigation, files and safe lab habits.", "content":["The terminal lets you run commands and inspect system information. Start with pwd to show your current directory, ls to list files and cd to change directory.","Use whoami to see the current account and ip addr to inspect network interfaces. Read command help before running unfamiliar tools.","Keep practice inside your own virtual lab or systems where you have explicit permission. Avoid running commands copied from unknown sources with administrator privileges."], "question":"Which command shows your current directory?", "choices":["pwd", "whoami", "ip addr"], "answer":0, "explain":"pwd prints the current working directory."},
+    {"slug":"nmap-fundamentals", "level":"RECONNAISSANCE", "title":"Nmap fundamentals", "time":"18 min", "desc":"Learn port states, service detection and scan interpretation.", "content":["Nmap is used for network discovery and security auditing. Only scan systems you own or have permission to assess.","A basic lab command is nmap 127.0.0.1. The -sV option asks Nmap to identify service versions. Use -p 80,443 to specify ports or -p- to scan all TCP ports.","Open means a service accepted the connection attempt. Closed means the host responded but no service is listening. Filtered means a firewall or network control prevents Nmap from determining the state."], "question":"What does Nmap -sV attempt to identify?", "choices":["Service versions", "Wi-Fi passwords", "User account passwords"], "answer":0, "explain":"-sV enables service/version detection."},
+    {"slug":"http-tls-headers", "level":"WEB SECURITY", "title":"HTTP, TLS and security headers", "time":"16 min", "desc":"Understand requests, responses, HTTPS and browser security headers.", "content":["An HTTP request contains a method, path, headers and sometimes a body. The server responds with a status code, headers and optional content.","Common status codes include 200 (success), 301/302 (redirect), 400 (bad request), 401 (authentication required), 403 (forbidden) and 404 (not found).", "TLS protects data in transit and helps authenticate the server. Headers such as Strict-Transport-Security, Content-Security-Policy and X-Content-Type-Options add browser-side protections."], "question":"What does HTTP status 403 generally mean?", "choices":["Forbidden", "Successful response", "Page permanently moved"], "answer":0, "explain":"403 means the server understood the request but refuses access."},
+    {"slug":"cve-triage", "level":"VULNERABILITY", "title":"CVE and vulnerability triage", "time":"14 min", "desc":"Validate versions, severity, exposure and remediation.", "content":["A CVE is a public identifier for a disclosed cybersecurity vulnerability. A CVE record is a starting point for research, not proof that a particular system is affected.","Check the exact product, version, configuration and vendor advisory. Compare the affected version range with reliable evidence from the target environment.","Severity scores help prioritise work, but real risk also depends on exposure, exploitability, business impact and available mitigations. Document uncertainty instead of overstating a finding."], "question":"Does a CVE number alone prove a system is vulnerable?", "choices":["No; verify product, version and configuration", "Yes, always", "Only if the port is open"], "answer":0, "explain":"A CVE must be matched to the actual product and affected version/configuration."},
+    {"slug":"security-reporting", "level":"REPORTING", "title":"Writing a professional security report", "time":"10 min", "desc":"Turn evidence into clear impact and practical recommendations.", "content":["A useful report explains what was tested, when it was tested, the scope and the limitations. Readers should understand exactly what was and was not assessed.","For each finding, include a concise title, severity rationale, affected asset, reproducible evidence, impact and a practical remediation recommendation.","Do not include secrets or unnecessary personal data. Separate confirmed observations from assumptions, and retest after remediation when authorised."], "question":"What should a finding include?", "choices":["Evidence, impact and remediation", "Only a scary title", "Unverified assumptions"], "answer":0, "explain":"A finding should be supported by evidence and explain its impact and remediation."},
+]
+
 @app.route("/academy")
 @login_required
 def academy():
-    lessons = [
-        {"level":"FOUNDATION", "title":"Networking essentials", "time":"12 min", "desc":"Understand IP addresses, ports, TCP, UDP, DNS and how devices communicate.", "prompt":"Teach me networking basics step by step, starting with IP addresses and ports."},
-        {"level":"LINUX & TOOLS", "title":"Getting comfortable with Kali Linux", "time":"15 min", "desc":"Learn the terminal, folders, permissions and safe lab habits.", "prompt":"Teach me Kali Linux terminal basics with simple commands and explain each one."},
-        {"level":"RECONNAISSANCE", "title":"Nmap fundamentals", "time":"18 min", "desc":"Learn host discovery, ports, service detection and how to interpret scan states.", "prompt":"Teach me Nmap from beginner level, including -sV, -p, -p- and -O."},
-        {"level":"WEB SECURITY", "title":"HTTP, TLS and security headers", "time":"16 min", "desc":"Understand requests, responses, HTTPS, certificates and browser security headers.", "prompt":"Explain HTTP requests, responses, TLS and important security headers step by step."},
-        {"level":"VULNERABILITY", "title":"CVE and vulnerability triage", "time":"14 min", "desc":"Learn how to validate product versions, severity, exploitability and remediation.", "prompt":"Teach me how to investigate a CVE without assuming a product is vulnerable."},
-        {"level":"REPORTING", "title":"Writing a professional security report", "time":"10 min", "desc":"Turn evidence into clear impact, limitations and practical recommendations.", "prompt":"Show me how to write a professional cybersecurity assessment report."},
-    ]
-    return render_template("academy.html", lessons=lessons)
+    progress = {p.lesson_slug: p for p in AcademyProgress.query.filter_by(user_id=current_user.id).all()}
+    lessons = []
+    for item in ACADEMY_LESSONS:
+        row = dict(item)
+        row["progress"] = progress.get(item["slug"])
+        lessons.append(row)
+    completed = sum(1 for item in lessons if item["progress"] and item["progress"].completed_at)
+    return render_template("academy.html", lessons=lessons, completed=completed, total=len(lessons))
+
+@app.route("/academy/<slug>", methods=["GET", "POST"])
+@login_required
+def academy_lesson(slug):
+    lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == slug), None)
+    if not lesson:
+        abort(404)
+    progress = AcademyProgress.query.filter_by(user_id=current_user.id, lesson_slug=slug).first()
+    result = None
+    if request.method == "POST":
+        try:
+            selected = int(request.form.get("answer", "-1"))
+        except (TypeError, ValueError):
+            selected = -1
+        if selected not in range(len(lesson["choices"])):
+            flash("Choose one answer before submitting.", "warning")
+        else:
+            correct = selected == lesson["answer"]
+            score = 100 if correct else 0
+            if not progress:
+                progress = AcademyProgress(user_id=current_user.id, lesson_slug=slug)
+                db.session.add(progress)
+            progress.best_score = max(progress.best_score or 0, score)
+            if correct:
+                progress.completed_at = datetime.utcnow()
+            db.session.commit()
+            result = {"correct": correct, "explain": lesson["explain"]}
+    return render_template("academy_lesson.html", lesson=lesson, progress=progress, result=result)
+
+@app.route("/interaction-board")
+@login_required
+def interaction_board():
+    posts = BoardPost.query.order_by(BoardPost.created_at.desc()).limit(60).all()
+    reply_counts = {p.id: BoardReply.query.filter_by(post_id=p.id).count() for p in posts}
+    authors = {u.id: u.email.split("@")[0] for u in User.query.filter(User.id.in_([p.user_id for p in posts])).all()} if posts else {}
+    return render_template("interaction_board.html", posts=posts, reply_counts=reply_counts, authors=authors)
+
+@app.route("/interaction-board/new", methods=["POST"])
+@login_required
+def interaction_board_new():
+    title = (request.form.get("title") or "").strip()
+    body = (request.form.get("body") or "").strip()
+    category = (request.form.get("category") or "General").strip()
+    if category not in {"General", "Learning", "Tools", "Web Security", "Networking", "Project Showcase"}:
+        category = "General"
+    if not 5 <= len(title) <= 140 or not 10 <= len(body) <= 5000:
+        flash("Use a title of 5–140 characters and a post of 10–5,000 characters.", "error")
+        return redirect(url_for("interaction_board"))
+    db.session.add(BoardPost(user_id=current_user.id, title=title, body=body, category=category))
+    db.session.commit()
+    flash("Your discussion has been published.", "success")
+    return redirect(url_for("interaction_board"))
+
+@app.route("/interaction-board/<int:post_id>", methods=["GET", "POST"])
+@login_required
+def interaction_thread(post_id):
+    post = BoardPost.query.get_or_404(post_id)
+    if request.method == "POST":
+        body = (request.form.get("body") or "").strip()
+        if not 2 <= len(body) <= 3000:
+            flash("A reply must be between 2 and 3,000 characters.", "error")
+        else:
+            db.session.add(BoardReply(post_id=post.id, user_id=current_user.id, body=body))
+            db.session.commit()
+            flash("Your reply has been added.", "success")
+            return redirect(url_for("interaction_thread", post_id=post.id))
+    replies = BoardReply.query.filter_by(post_id=post.id).order_by(BoardReply.created_at.asc()).all()
+    user_ids = {post.user_id} | {r.user_id for r in replies}
+    authors = {u.id: u.email.split("@")[0] for u in User.query.filter(User.id.in_(user_ids)).all()}
+    return render_template("interaction_thread.html", post=post, replies=replies, authors=authors)
 
 @app.route("/security-centre")
 @login_required
@@ -868,7 +974,7 @@ def admin_reject_bank_payment(payment_id):
 @app.route("/api/ai-assistant", methods=["POST"])
 @login_required
 def ai_assistant():
-    """Free built-in CyberLord knowledge assistant with optional public CVE intelligence lookups."""
+    """Gemini-backed CyberLord assistant with a local knowledge fallback."""
     now = time.time()
     window = session.get("ai_rate_window", [])
     window = [stamp for stamp in window if now - stamp < 60]
@@ -881,22 +987,80 @@ def ai_assistant():
     messages = body.get("messages", [])
     if not isinstance(messages, list):
         return jsonify(error="Invalid conversation format."), 400
-    user_turns = [item.get("content", "").strip()[:900] for item in messages[-12:]
-                  if isinstance(item, dict) and item.get("role") == "user"
-                  and isinstance(item.get("content"), str) and item.get("content", "").strip()]
-    if not user_turns:
-        return jsonify(error="Please enter a question."), 400
-    latest = user_turns[-1]
-    # Carry a little conversational context for follow-up prompts such as "explain that more".
-    context_query = " ".join(user_turns[-3:])
 
+    # Keep a short, bounded history and accept only plain-text user/assistant turns.
+    contents = []
+    for item in messages[-12:]:
+        if not isinstance(item, dict) or not isinstance(item.get("content"), str):
+            continue
+        content = item["content"].strip()[:1800]
+        if not content:
+            continue
+        role = item.get("role")
+        if role == "user":
+            gemini_role = "user"
+        elif role in ("assistant", "model"):
+            gemini_role = "model"
+        else:
+            continue
+        # Gemini expects alternating user/model turns. Drop duplicate consecutive roles.
+        if contents and contents[-1]["role"] == gemini_role:
+            contents[-1]["parts"][0]["text"] += "\n\n" + content
+        else:
+            contents.append({"role": gemini_role, "parts": [{"text": content}]})
+    if not contents or contents[-1]["role"] != "user":
+        return jsonify(error="Please enter a question."), 400
+
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
+    if api_key:
+        try:
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            payload = {
+                "systemInstruction": {"parts": [{"text": (
+                    "You are CyberLord AI, the cybersecurity learning and platform assistant. "
+                    "Give clear, accurate, beginner-friendly explanations. Prefer practical, "
+                    "step-by-step defensive guidance. Support authorised security testing only; "
+                    "do not help compromise systems, steal credentials, evade detection, deploy "
+                    "malware, or access data without permission. For dual-use questions, keep "
+                    "the answer bounded to a legal lab or defensive validation. Never claim "
+                    "you performed a scan or verified a live target unless a tool result is supplied. "
+                    "Do not invent CyberLord account, payment, scan or subscription status. "
+                    "Do not request passwords, OTPs, API keys, wallet seed phrases or private keys. "
+                    "If uncertain, say so and recommend checking primary documentation."
+                )}]},
+                "contents": contents,
+                "generationConfig": {"temperature": 0.55, "maxOutputTokens": 1200, "candidateCount": 1},
+            }
+            response = requests.post(endpoint,
+                headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+                json=payload, timeout=25)
+            response.raise_for_status()
+            data = response.json()
+            candidates = data.get("candidates") or []
+            parts = (candidates[0].get("content") or {}).get("parts") or [] if candidates else []
+            reply = "\n".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
+            if not reply:
+                raise ValueError("Gemini returned an empty response.")
+            return jsonify(reply=reply, mode="gemini", model=model,
+                           live_sources="Gemini response; verify important security findings against primary sources")
+        except Exception as exc:
+            app.logger.warning("Gemini API unavailable; using local CyberLord knowledge fallback: %s", str(exc)[:240])
+
+    # Keep the service useful if no key is configured or Gemini temporarily fails.
     try:
         from cyberlord_ai import answer
-        reply = answer(context_query, messages[-12:])
-        return jsonify(reply=reply, mode="built-in-knowledge", live_sources="NIST NVD and CISA KEV when reachable")
+        latest = next(item["parts"][0]["text"] for item in reversed(contents) if item["role"] == "user")
+        fallback_history = []
+        for item in contents:
+            fallback_history.append({"role": "assistant" if item["role"] == "model" else "user",
+                                     "content": item["parts"][0]["text"]})
+        reply = answer(latest, fallback_history)
+        return jsonify(reply=reply, mode="built-in-fallback",
+                       live_sources="NIST NVD and CISA KEV when reachable")
     except Exception:
-        app.logger.exception("CyberLord built-in assistant error")
-        return jsonify(error="CyberLord Assistant hit an unexpected problem. Please try again shortly."), 500
+        app.logger.exception("CyberLord assistant error")
+        return jsonify(error="CyberLord AI is temporarily unavailable. Please try again shortly."), 500
 
 
 

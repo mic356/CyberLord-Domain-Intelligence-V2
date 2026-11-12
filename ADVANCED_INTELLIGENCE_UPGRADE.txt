@@ -1,0 +1,45 @@
+CYBERLORD ADVANCED INTELLIGENCE UPGRADE
+
+Included modules:
+1. Digital Footprint Investigator
+   - Public DNS records, certificate-transparency subdomain hints, public IPs,
+     and basic HTTP security-header observations.
+2. Shadow API Hunter
+   - Common public OpenAPI/Swagger/GraphQL documentation paths, public
+     JavaScript assets, and API route hints. It does not collect secret values.
+3. Website Impersonation Detector
+   - Common typo/lookalike domain candidates and public DNS resolution checks.
+
+ACCESS
+These three tools are gated to PRO PLUS in the current app configuration.
+
+HOSTING
+The modules run inside the existing Flask application. No separate worker,
+new domain, or additional hosting service is required for these passive checks.
+They use existing Python dependencies and standard-library modules only.
+
+IMPORTANT
+These are passive, limited checks of public data. They do not exploit systems,
+bypass authentication, perform intrusive port scans, or access private data.
+A matching lookalike domain or API endpoint is an indicator, not proof of abuse
+or vulnerability. Only investigate domains you own or are authorised to assess.
+
+DEPLOYMENT
+1. Extract this ZIP.
+2. Upload/replace the project files in the existing GitHub repository, keeping
+   the folder structure (app.py, templates/, static/, etc.).
+3. Keep your existing Render environment variables unchanged.
+4. Render should deploy from the existing service after the GitHub update.
+5. After deployment, sign in and open Dashboard > Advanced Intelligence Lab.
+
+No new environment variables or paid API keys are required for these modules.
+
+
+ADMIN PAYMENT DASHBOARD
+- Open /admin on the existing CyberLord domain.
+- Configure ADMIN_EMAIL and ADMIN_PASSWORD in the existing Render service Environment settings.
+- This is a separate administrator login; customer accounts do not grant admin access.
+- Pending OPay/Union Bank requests appear in the dashboard. Confirm the funds in your own account before approving.
+- Approving a request activates the selected plan for 30 days. Rejecting does not activate a plan.
+- Customer payment submission now displays a simple success notice that the request was submitted; it does not claim the funds have been received.
+- No new hosting service or Python package is required.

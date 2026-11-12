@@ -1,0 +1,32 @@
+CYBERLORD ACADEMY + INTERACTION BOARD + GEMINI AI UPDATE
+
+This update keeps the existing CyberLord Domain Intelligence V2 Flask project and adds/updates:
+
+1. CYBERLORD AI
+- Uses Google's Gemini API from the Flask server when GEMINI_API_KEY is configured in Render.
+- Default model: gemini-3.8-flash (can be changed with GEMINI_MODEL).
+- API key is read only from the server environment; it is not stored in this folder or browser code.
+- Falls back to the built-in CyberLord cybersecurity knowledge module if Gemini is not configured or temporarily unavailable.
+- Never send your API key, password, OTP, wallet seed phrase or private key to the chat.
+
+2. CYBERLORD ACADEMY
+- Structured cybersecurity lessons and knowledge checks.
+- Saves each signed-in member's completion and best score in the application database.
+- Academy is a learning area, not an AI chat.
+
+3. INTERACTION BOARD
+- Signed-in members can publish discussions and reply to other members.
+- Posts and replies are stored in the app database.
+- No fake AI-generated member activity is included.
+
+DEPLOYMENT NOTES
+- Keep the existing Render service, database, custom domain and environment values.
+- Confirm GEMINI_API_KEY is present in Render > CyberLord Domain Intelligence V2 > Environment.
+- GEMINI_MODEL may be set to gemini-3.8-flash; if omitted, the app uses that default.
+- Do not add the actual API key to GitHub, HTML, CSS, JavaScript, README or this ZIP.
+- Upload/update the extracted project files in the existing GitHub repository root, preserving the folders static/, templates/ and kali-worker/.
+- Render should redeploy after the GitHub commit. Test /health, /academy, /interaction-board and the CyberLord AI chat after deployment.
+- Gemini availability and request limits depend on the Google AI Studio project's current quota and billing settings; unlimited free use is not guaranteed.
+
+SAFETY
+Use security tools only against systems you own or are explicitly authorised to assess. Academy progress and community posts require a signed-in account.

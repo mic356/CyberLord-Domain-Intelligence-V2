@@ -83,19 +83,19 @@ Users can download each of their own saved scan records from the dashboard as JS
 The app includes an additive startup database migration for the new subscription-expiry and payment-verification fields. Always back up the production database before deploying schema changes. Test a small payment first on the intended mainnet network; do not use testnet transfers for production activation.
 
 
-## CyberLord Intelligence Assistant (free mode)
+## CyberLord Intelligence Assistant
 
-
-When outbound network access is available, it can retrieve a requested CVE record from the public NIST National Vulnerability Database API and recent entries from CISA's Known Exploited Vulnerabilities feed. These are public data lookups, not a general-purpose live web search or a generative language model. The built-in knowledge is extensive but finite and is updated when the project knowledge module is updated. If it cannot confidently match a question, it asks for more detail rather than inventing an answer.
+CyberLord AI calls Google's Gemini API from the Flask backend when `GEMINI_API_KEY` is configured. It uses the `gemini-3.8-flash` model by default and can be changed with `GEMINI_MODEL`. The API key stays on the server and is never sent to browser JavaScript. If the key is absent or Gemini is temporarily unavailable, the app uses the built-in cybersecurity knowledge assistant as a fallback. The built-in module can also retrieve public CVE and CISA KEV information when outbound network access is available.
 
 
 ## New workspace experience
 
 - The public landing page now uses a bright, responsive violet/aqua/mint design with custom inline security illustrations, product explanations, onboarding workflow and clear account-creation calls to action.
-- Signed-in users can open **Cyber Academy** at `/academy` for short learning paths. Each lesson opens the dashboard and starts CyberLord AI with a relevant learning prompt.
+- Signed-in users can open **CyberLord Academy** at `/academy` for structured lessons, knowledge checks and saved completion progress. Academy content is separate from the AI assistant.
+- Signed-in users can open the **Interaction Board** at `/interaction-board` to publish discussions and reply to other members. Posts and replies are stored in the application database and are written by members, not generated as fake AI activity.
 - Signed-in users can open **Security Centre** at `/security-centre` to review recent saved scan activity and export reports.
 - The dashboard includes direct CyberLord AI guide prompts for domain scans, Nmap, scan interpretation, subscriptions and learning roadmaps.
-- CyberLord AI's built-in knowledge includes additional CyberLord product/tool guidance and payment/subscription explanations. It does not require a paid OpenAI API key. Live public-source lookups still depend on the external NIST/CISA services being reachable.
+- Gemini API usage is subject to the quota and billing limits of the Google AI Studio project. Do not assume unlimited free requests.
 
 **Important capability note:** Security Centre currently summarises saved scan history. It does not run background monitoring or scheduled scans. Do not advertise automatic 24/7 monitoring until a separately deployed scheduler/worker has been implemented and verified.
 
@@ -120,3 +120,19 @@ When outbound network access is available, it can retrieve a requested CVE recor
 - Deploy `cyberlord-monitoring-worker` as a persistent Render worker. Set its `DATABASE_URL` to the exact same persistent PostgreSQL connection string as the web service, and set the same `SECRET_KEY` on both. Configure Resend variables for email delivery.
 - Back up the persistent database. The worker must remain running; the web `/health` route does not confirm worker status.
 - Only register domains you own or are authorized to monitor.
+
+
+## Advanced Intelligence Lab (new)
+The dashboard now links to three PRO PLUS passive investigation modules: Digital Footprint Investigator, Shadow API Hunter, and Website Impersonation Detector. They run inside the existing Flask service; no separate worker or hosting service is required for these passive checks. The modules use public DNS, certificate-transparency data, and limited same-origin public HTTP requests. They do not perform exploitation, authentication bypass, intrusive port scans, or access private data. Findings are indicators and require human validation.
+
+
+## Private administrator payment dashboard
+The admin area is served by this same Flask application at `/admin`. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the existing Render service environment. The admin login is separate from customer authentication. Confirm bank/OPay funds independently before approving a pending request; approval activates the customer's 30-day plan. Customer payment forms show a successful submission notice without falsely claiming that funds have been received.
+
+### CyberLord AI, Academy and Interaction Board
+
+- **CyberLord AI** uses the Google Gemini API from the Flask server when `GEMINI_API_KEY` is configured in Render. The key is never sent to the browser. `GEMINI_MODEL` defaults to `gemini-3.8-flash`; if Gemini is temporarily unavailable, the app falls back to the built-in cybersecurity knowledge assistant. Gemini API quotas and pricing are controlled by the Google AI Studio project.
+- **CyberLord Academy** is a structured lesson-and-quiz area. Members read the lesson notes, answer knowledge checks and retain their completion status and best score. It is not an AI chat.
+- **Interaction Board** is a member discussion forum. Signed-in members create posts and reply to other members. Posts are stored in the application database and are not AI-generated sample conversations.
+
+Set `GEMINI_API_KEY` under the Render service's Environment settings. Do not place the key in `static/`, HTML templates, JavaScript, GitHub files or public messages.
