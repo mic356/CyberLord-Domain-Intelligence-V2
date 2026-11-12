@@ -240,3 +240,146 @@ footer{font-size:11px}
 .scrollTop{transform:none}
 .cards article:hover,.feature-card:hover,.public-plan:hover,.app-shortcuts a:hover{transform:none}
 }
+
+PRO REDESIGN PASS (pro-redesign branch)
+  Disciplined design system layered on the existing dark
+  security aesthetic. No layout/route/function changes.
+  ============================================================ */
+/* ---------- 1. Design tokens: single source of truth ---------- */
+:root{
+ /* type scale */
+ --fs-xs:11px; --fs-sm:13px; --fs-base:15px; --fs-lg:19px;
+ --fs-h1:clamp(40px,6vw,64px); --fs-h2:clamp(30px,4vw,44px); --fs-h3:20px;
+ --lh-tight:1.08; --lh-body:1.62;
+ --font-sans:"Inter",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+ --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+ /* spacing scale */
+ --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px; --sp-7:48px; --sp-8:64px;
+ /* color system (roles, not raw hex) */
+ --surface-0:#080d18; --surface-1:#0b1423; --surface-2:#111b2d; --surface-3:#142138;
+ --line:#263650; --line-soft:#1b2942;
+ --text:#eaf1ff; --text-2:#b6c5da; --muted:#94a6c1;
+ --accent:#4ce0d0; --accent-2:#7ca7ff; --accent-ink:#07111d;
+ --ok:#3ddc97; --warn:#ffd17a; --danger:#ff6684;
+ /* radii + shadows */
+ --r-sm:9px; --r-md:13px; --r-lg:17px;
+ --shadow-1:0 18px 50px rgba(2,8,20,.45);
+ --shadow-2:0 8px 28px rgba(2,8,20,.35);
+ /* motion */
+ --dur:.18s; --ease:ease;
+}
+/* ---------- 2. Typography discipline ---------- */
+body{font-family:var(--font-sans);font-size:var(--fs-base);line-height:var(--lh-body)}
+h1{font-size:var(--fs-h1);line-height:var(--lh-tight);letter-spacing:-.02em}
+h2{font-size:var(--fs-h2);line-height:var(--lh-tight);letter-spacing:-.015em}
+h3{font-size:var(--fs-h3);line-height:1.25}
+.lead,.hero-lede{font-size:var(--fs-lg);color:var(--text-2);max-width:62ch}
+.eyebrow{font-size:var(--fs-xs);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:800}
+.muted,.fine-print{color:var(--muted);font-size:var(--fs-sm)}
+code,.mono{font-family:var(--font-mono);font-size:.92em}
+a{text-underline-offset:3px}
+/* ---------- 3. Consistent buttons ---------- */
+.btn{border-radius:var(--r-sm);padding:12px 20px;font-weight:700;font-size:14px;
+ letter-spacing:.01em;transition:transform var(--dur) var(--ease),box-shadow var(--dur) var(--ease),border-color var(--dur) var(--ease)}
+.btn:hover{transform:translateY(-1px);box-shadow:var(--shadow-2)}
+.btn:active{transform:translateY(0)}
+.btn.primary{background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--accent-ink)}
+.btn.primary:hover{box-shadow:0 10px 30px rgba(76,224,208,.25)}
+.btn.ghost{border:1px solid #526782;color:var(--text);background:transparent}
+.btn.ghost:hover{border-color:var(--accent);color:var(--accent)}
+.btn.dark-cta{background:var(--text);color:var(--surface-0)}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
+.text-link{color:var(--accent);font-weight:700}
+.text-link:hover{color:var(--accent-2)}
+/* ---------- 4. Cards / panels: one radius, one border, one shadow ---------- */
+.cards article,.panel,.auth,.tool-card,.plan,.feature-card,.public-plan{border-radius:var(--r-lg);border:1px solid var(--line)}
+.panel,.cards article{background:linear-gradient(145deg,var(--surface-3),var(--surface-2));box-shadow:var(--shadow-2)}
+.tool-card,.plan{background:var(--surface-1)}
+.feature-card,.public-plan{box-shadow:var(--shadow-2)}
+.feature-card:hover,.public-plan:hover,.cards article:hover{border-color:#3a5578;box-shadow:var(--shadow-1)}
+.result{font-family:var(--font-mono);background:#07101b;border:1px solid var(--line-soft);border-radius:var(--r-sm)}
+/* ---------- 5. Hero: professional, restrained ---------- */
+.landing-hero{padding:var(--sp-7) 0 var(--sp-6)}
+.hero-copy h1{margin:var(--sp-4) 0}
+.hero-proof{display:flex;gap:var(--sp-5);flex-wrap:wrap;color:var(--text-2);font-size:var(--fs-sm);margin-top:var(--sp-4)}
+.hero-proof span::before{content:"✓ ";color:var(--accent);font-weight:800}
+.trust-strip b{font-size:22px;color:var(--text)}
+.trust-strip span{color:var(--muted)}
+/* ---------- 6. Professional empty states ---------- */
+.empty-state,.empty{min-height:120px;display:grid;place-items:center;text-align:center;
+ border:1px dashed var(--line);border-radius:var(--r-md);padding:var(--sp-5);color:var(--muted)}
+.empty-state .btn,.empty .btn{margin-top:var(--sp-3)}
+.no-results,.empty-history{color:var(--muted);text-align:center;padding:var(--sp-6) var(--sp-4)}
+/* ---------- 7. Scan results presentation ---------- */
+.data-table,.scan-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+.data-table th,.data-table td,.scan-table th,.scan-table td{padding:10px 12px;border-bottom:1px solid var(--line-soft);text-align:left;vertical-align:top}
+.data-table th,.scan-table th{color:var(--muted);font-weight:600;width:34%}
+.severity-high,.sev-high{color:var(--danger)}
+.severity-medium,.sev-medium{color:var(--warn)}
+.severity-low,.sev-low{color:var(--accent)}
+.grade-chip{display:inline-grid;place-items:center;min-width:44px;height:44px;border-radius:50%;font-weight:900;border:2px solid var(--accent)}
+/* ---------- 8. Email exposure checker (new feature) ---------- */
+.exposure-hero{display:grid;grid-template-columns:1.2fr 1fr;gap:var(--sp-6);align-items:center;
+ padding:var(--sp-7) var(--sp-6);margin:var(--sp-5) 0;
+ background:linear-gradient(140deg,#122544,#0d1a30);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-1)}
+.exposure-hero h2{margin:var(--sp-2) 0 var(--sp-3)}
+.exposure-hero h2 span{color:var(--accent)}
+.exposure-copy p{color:var(--text-2);max-width:52ch}
+.exposure-form{display:flex;gap:var(--sp-2);flex-wrap:wrap}
+.exposure-form input{flex:1 1 220px;margin:0;padding:13px 14px;border-radius:var(--r-sm);
+ border:1px solid #334764;background:#091321;color:#fff;font-size:15px}
+.exposure-form input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(76,224,208,.18)}
+.exposure-note{width:100%;color:var(--muted);font-size:var(--fs-sm);margin:2px 0 0}
+.exposure-wrap{max-width:860px;margin:0 auto}
+.exposure-head h1{margin:var(--sp-3) 0}
+.exposure-result{margin-top:var(--sp-5)}
+.notice{border-radius:var(--r-md);padding:var(--sp-4) var(--sp-5);border:1px solid var(--line);background:var(--surface-1);font-size:var(--fs-sm)}
+.notice-ok{border-color:#2c6b52;background:rgba(61,220,151,.07)}
+.notice-danger{border-color:#7a3a4c;background:rgba(255,102,132,.08)}
+.notice-warning{border-color:#7a6234;background:rgba(255,209,122,.07)}
+.blur-card{border:1px solid var(--line);border-radius:var(--r-md);padding:var(--sp-4) var(--sp-5);background:var(--surface-1)}
+.blur-line{margin:6px 0;color:var(--muted)}
+.blur-text{color:var(--text);letter-spacing:2px;user-select:none}
+@media(max-width:860px){.exposure-hero{grid-template-columns:1fr}}
+/* ---------- 9. Nav / footer rhythm ---------- */
+.top{border-bottom:1px solid var(--line-soft)}
+footer{color:var(--muted);border-top:1px solid var(--line-soft);padding:var(--sp-5)}
+/* ---------- 10. Interaction board: real, not AI ---------- */
+.board-post,.board-card{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--sp-4)}
+.board-meta{color:var(--muted);font-size:var(--fs-sm)}
+.board-empty{border:1px dashed var(--line);border-radius:var(--r-md);padding:var(--sp-6);text-align:center;color:var(--muted)}
+/* ---------- 11. Form focus + status colors ---------- */
+
+/* ---------- 12. Interaction board layout (real, not AI) ---------- */
+.board-hero{padding:var(--sp-6) 0 var(--sp-4)}
+.board-hero h1{margin:var(--sp-2) 0}
+.board-hero p{color:var(--text-2);max-width:70ch}
+.board-layout{display:grid;grid-template-columns:340px 1fr;gap:var(--sp-5);align-items:start}
+.board-compose{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--sp-5)}
+.board-compose h2{margin:0 0 var(--sp-3)}
+.board-feed-head{display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-3)}
+.board-feed-head span{color:var(--muted);font-size:var(--fs-sm)}
+.board-post{margin:var(--sp-3) 0}
+.board-post h3{margin:var(--sp-2) 0}
+.board-post p{color:var(--text-2)}
+.board-post-meta{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-3);
+  color:var(--muted);font-size:var(--fs-sm)}
+.board-post-meta span{color:var(--accent);font-weight:700;letter-spacing:.04em;text-transform:uppercase;font-size:var(--fs-xs)}
+.board-post-foot{display:flex;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap;
+  color:var(--muted);font-size:var(--fs-sm);border-top:1px solid var(--line-soft);padding-top:var(--sp-3)}
+.empty-board{border:1px dashed var(--line);border-radius:var(--r-md);padding:var(--sp-6);
+  text-align:center;color:var(--muted);margin:var(--sp-4) 0}
+.empty-board h3{color:var(--text);margin:0 0 var(--sp-2)}
+.btn.full{width:100%}
+.page-heading h1{margin:var(--sp-2) 0}
+.back-link{color:var(--accent);font-weight:700}
+.thread-wrap{max-width:780px}
+.thread-original,.thread-reply{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--sp-4) var(--sp-5);margin:var(--sp-3) 0}
+.thread-original p,.thread-reply p{color:var(--text-2)}
+.thread-replies-head{display:flex;justify-content:space-between;align-items:baseline;margin-top:var(--sp-5)}
+.thread-replies-head span{color:var(--muted);font-size:var(--fs-sm)}
+.reply-meta{display:flex;justify-content:space-between;gap:var(--sp-3);color:var(--muted);font-size:var(--fs-sm)}
+.reply-meta strong{color:var(--text)}
+.reply-form textarea{width:100%;min-height:110px;padding:12px;border-radius:var(--r-sm);border:1px solid #334764;background:#091321;color:#fff}
+.reply-form label{color:var(--text-2);font-size:var(--fs-sm)}
+@media(max-width:860px){.board-layout{grid-template-columns:1fr}}
