@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% block title %}SPF and DMARC Setup Guide for Nigerian Businesses{% endblock %}{% block description %}A practical SPF and DMARC setup guide for Nigerian small businesses. Stop criminals sending fake invoices from your domain, step by step.{% endblock %}{% block content %}
+<section class="policy-page">
+<div class="eyebrow">GUIDE</div>
+<h1>SPF and DMARC setup guide</h1>
+<p class="muted">Updated: November 2026 · For Nigerian small businesses · CyberLord Domain Intelligence</p>
+
+<p>There is a scam that costs Nigerian businesses millions of naira every year, and it takes about ten minutes to block. A criminal registers a lookalike domain or simply sends mail claiming to be from your domain, and your customer, trusting the sender name, pays into their account. SPF, DKIM and DMARC are the three records that stop this. They tell receiving mail servers which systems are allowed to send email for your domain, and what to do with mail that fails the check. This guide explains them in plain English and shows exactly what to add, using examples relevant to businesses in Lagos and across Nigeria.</p>
+
+<h2>Why this matters more than it sounds</h2>
+<p>If your domain has no SPF or DMARC record, anyone on the internet can send email that appears to come from you. Gmail, Outlook and corporate mail systems will still deliver it, because nothing told them otherwise. The criminal does not need to hack your website or your mailbox. They just type your domain into their mail server. For a business that sends invoices, delivery notes or payment requests, this is the perfect fraud channel. Banks and fintechs now treat DMARC as a baseline expectation for legitimate senders, so a missing record also hurts your real mail: your own invoices are more likely to land in spam.</p>
+
+<h2>SPF: which servers may send for you</h2>
+<p>SPF is a single DNS TXT record that lists the mail servers allowed to send on behalf of your domain. Start with a conservative version, publish it, test it, then tighten it. A common starting record looks like this: <code>v=spf1 include:_spf.google.com include:sendgrid.net -all</code>. The <code>v=spf1</code> part identifies the record. Each <code>include:</code> adds a provider you actually use, such as Google Workspace or a bulk mail service. The final <code>-all</code> means any server not listed is not allowed. Keep the record short. Long SPF records that need too many DNS lookups silently fail, which is worse than a short correct one.</p>
+
+<h2>DKIM: proving your mail was not altered</h2>
+<p>DKIM adds a cryptographic signature to your outgoing email. The receiving server checks the signature against a public key stored in your DNS, the same way it would check a signed document. If the signature is valid, the receiving server knows your approved system sent the mail and it was not changed in transit. DKIM is configured inside your mail provider, usually by generating keys and adding one or two TXT records they give you. For Google Workspace, enable DKIM in the admin console and add the selector record. For other providers, look in their dashboard for a DKIM setup page. Without DKIM, SPF alone can be defeated by sending from a subdomain you do not control, so configure both.</p>
+
+<h2>DMARC: telling receivers what to do with failures</h2>
+<p>DMARC is the instruction sheet. It builds on SPF and DKIM and tells receiving servers what to do when a message claims to be from your domain but fails both checks: do nothing, quarantine it, or reject it outright. A DMARC record is a TXT record at <code>_dmarc</code> for your domain, and a safe starting point is <code>v=DMARC1; p=none; rua=mailto:you@yourdomain.ng</code>. The <code>p=none</code> policy means monitor only: nothing is blocked yet, but reports arrive at the mailbox you named. Read those reports for a few weeks. They show every sender claiming to be you, including legitimate ones you forgot about and criminals you did not know existed. This reporting is the most valuable part of the whole exercise.</p>
+
+<h2>Rollout plan for a small business</h2>
+<p>Week one: add SPF and DKIM for your main mail provider, and publish DMARC with <code>p=none</code> sending reports to an address you check, such as <code>dmarc@yourdomain.ng</code>. Week two to four: read the reports, fix any legitimate sender that is failing, and note anything suspicious. Week five: move to <code>p=quarantine</code> with a low percentage, for example <code>pct=10</code>, and watch complaints. Then raise the percentage and, once reports are clean, move to <code>p=reject</code>. Rushing straight to reject is how businesses break their own newsletters and invoice systems, so the slow rollout is deliberate. A Nigerian web host or developer can do all of this in an afternoon; the patient part is watching the reports.</p>
+
+<h2>Common mistakes in Nigeria</h2>
+<p>Publishing an SPF record that does not include the service you actually send invoices from, which breaks your own mail. Forgetting that a marketing platform or bulk SMS-to-email service needs its own include. Setting <code>p=reject</code> on day one and discovering your bank alerts or receipt emails stop arriving. Choosing a DMARC reporting address that nobody opens, which defeats the purpose. And assuming your .com.ng or .ng domain is protected because your host "does email", when in fact DNS records are a separate thing from the hosting package. Check with a tool rather than trusting assumptions.</p>
+
+<h2>Verify your setup</h2>
+<p>After adding the records, wait a few hours for DNS to propagate, then check them. You can run a domain scan in CyberLord and look at the email posture results, which show whether SPF, DKIM and DMARC records exist and what they say. For a wider view of your domain's security, our <a href="{{ url_for('guide_website_security') }}">free website security check guide</a> explains what else to look for, and if your staff email has been caught in a breach, the free <a href="{{ url_for('email_exposure_check') }}">email exposure check</a> will tell you.</p>
+
+<h2>Protect your domain today</h2>
+<p>Ten minutes of DNS work now can save you from a fraud loss later, and it makes your real invoices more likely to be delivered and trusted. Start with SPF and DKIM, publish DMARC in monitor mode, and read the reports.</p>
+<p><a class="btn primary" href="{{ url_for('email_exposure_check') }}">Run the free email exposure check</a></p>
+<p class="muted">Related: <a href="{{ url_for('guide_website_security') }}">Free website security check</a> · <a href="{{ url_for('guide_email_compromised') }}">How to check if your email has been compromised</a> · <a href="{{ url_for('faq') }}">Is my email leaked? FAQ</a></p>
+</section>
+{% endblock %}
