@@ -978,7 +978,7 @@ def admin_reject_bank_payment(payment_id):
 @app.route("/api/ai-assistant", methods=["POST"])
 @login_required
 def ai_assistant():
-    """Gemini-backed CyberLord assistant with a local knowledge fallback."""
+    """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. If GEMINI_API_KEY is set, Gemini answers; on any failure it falls back to that same built-in base so the site stays fully functional without a key."""
     now = time.time()
     window = session.get("ai_rate_window", [])
     window = [stamp for stamp in window if now - stamp < 60]
