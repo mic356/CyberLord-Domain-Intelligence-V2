@@ -83,13 +83,8 @@ Users can download each of their own saved scan records from the dashboard as JS
 The app includes an additive startup database migration for the new subscription-expiry and payment-verification fields. Always back up the production database before deploying schema changes. Test a small payment first on the intended mainnet network; do not use testnet transfers for production activation.
 
 
-## CyberLord AI Assistant setup
+## CyberLord Intelligence Assistant (free mode)
 
-The dashboard includes a floating AI support assistant. To enable live AI replies:
-1. Create an API key in your OpenAI Platform account.
-2. In Render, open your CyberLord web service → Environment.
-3. Add `OPENAI_API_KEY` with the secret key value.
-4. Add `OPENAI_MODEL` with `gpt-5.5` (or another model enabled for your API project).
-5. Save changes and redeploy.
 
-Keep the API key only in Render environment variables. Never put it in `static/`, HTML, JavaScript, GitHub, or a public ZIP. API usage is billed separately by OpenAI. The assistant can explain product/payment steps but cannot approve payments or change subscriptions.
+When outbound network access is available, it can retrieve a requested CVE record from the public NIST National Vulnerability Database API and recent entries from CISA's Known Exploited Vulnerabilities feed. These are public data lookups, not a general-purpose live web search or a generative language model. The built-in knowledge is extensive but finite and is updated when the project knowledge module is updated. If it cannot confidently match a question, it asks for more detail rather than inventing an answer.
+

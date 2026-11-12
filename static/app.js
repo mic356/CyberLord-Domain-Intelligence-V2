@@ -83,7 +83,7 @@ document.querySelectorAll(".copy-value").forEach(button=>{
   async function send(text){
     text=(text||"").trim();if(!text)return;
     bubble(text,"user");history.push({role:"user",content:text});
-    const pending=bubble("CyberLord AI is thinking…","bot");
+    const pending=bubble("Searching CyberLord knowledge…","bot");
     const submit=form.querySelector("button");submit.disabled=true;
     try{
       const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history.slice(-12)})});

@@ -1,28 +1,4 @@
 {% extends "base.html" %}{% block title %}Dashboard · CyberLord
-<!-- CyberLord AI customer-support assistant -->
-<div class="cl-ai-launcher-wrap">
-  <button type="button" class="cl-ai-launcher" id="cl-ai-open" aria-controls="cl-ai-panel" aria-expanded="false">
-    <span class="cl-ai-spark">✦</span><span><b>CyberLord AI</b><small>Need help? Chat with us</small></span>
-  </button>
-</div>
-<aside class="cl-ai-panel" id="cl-ai-panel" aria-label="CyberLord AI assistant" hidden>
-  <div class="cl-ai-head"><div><span class="cl-ai-avatar">CL</span><span><b>CyberLord AI</b><small>Product guide &amp; support</small></span></div>
-    <button type="button" id="cl-ai-close" aria-label="Close assistant">×</button></div>
-  <div class="cl-ai-body" id="cl-ai-messages" aria-live="polite">
-    <div class="cl-ai-message bot">Welcome to CyberLord! 👋 I'm your AI support assistant. What would you like help with today?</div>
-    <div class="cl-ai-options">
-      <button type="button" data-question="How do I get started with CyberLord?">Getting started</button>
-      <button type="button" data-question="Explain the CyberLord cybersecurity tools.">Cybersecurity tools</button>
-      <button type="button" data-question="Explain Pro and Pro Plus subscriptions.">Plans &amp; subscriptions</button>
-      <button type="button" data-question="How do I pay using USDT or bank transfer?">Payment help</button>
-      <button type="button" data-question="How do I download PDF reports and manage scan history?">Reports &amp; history</button>
-      <button type="button" data-question="I need help with my account or login.">Account help</button>
-    </div>
-  </div>
-  <form class="cl-ai-compose" id="cl-ai-form"><input id="cl-ai-input" maxlength="1800" placeholder="Ask CyberLord AI…" autocomplete="off" required><button type="submit" aria-label="Send message">➤</button></form>
-  <div class="cl-ai-foot">AI answers can be imperfect. Payment approvals are never handled by chat. <a href="mailto:michaelelvistito@gmail.com">Contact human support</a>.</div>
-</aside>
-
 {% endblock %}{% block content %}
 <div class="dash-head"><div><div class="eyebrow">OPERATIONS CENTER</div><h1>Security dashboard</h1><p class="muted">{{ current_user.email }} · Current plan: <strong>{{ plans[current_user.plan].name }}</strong>{% if current_user.plan_expires_at %} · Expires: {{ current_user.plan_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}</p></div><span class="status">● SYSTEM READY</span></div>
 <section class="welcome-guide panel" aria-label="Getting started">
@@ -78,14 +54,14 @@
 <!-- CyberLord AI customer-support assistant -->
 <div class="cl-ai-launcher-wrap">
   <button type="button" class="cl-ai-launcher" id="cl-ai-open" aria-controls="cl-ai-panel" aria-expanded="false">
-    <span class="cl-ai-spark">✦</span><span><b>CyberLord AI</b><small>Need help? Chat with us</small></span>
+    <span class="cl-ai-spark">✦</span><span><b>CyberLord AI</b><small>Cybersecurity knowledge assistant</small></span>
   </button>
 </div>
 <aside class="cl-ai-panel" id="cl-ai-panel" aria-label="CyberLord AI assistant" hidden>
-  <div class="cl-ai-head"><div><span class="cl-ai-avatar">CL</span><span><b>CyberLord AI</b><small>Product guide &amp; support</small></span></div>
+  <div class="cl-ai-head"><div><span class="cl-ai-avatar">CL</span><span><b>CyberLord AI</b><small>Cybersecurity intelligence • live CVE sources</small></span></div>
     <button type="button" id="cl-ai-close" aria-label="Close assistant">×</button></div>
   <div class="cl-ai-body" id="cl-ai-messages" aria-live="polite">
-    <div class="cl-ai-message bot">Welcome to CyberLord! 👋 I'm your AI support assistant. What would you like help with today?</div>
+    <div class="cl-ai-message bot">Welcome to CyberLord Intelligence. 👋 I can explain cybersecurity concepts, tools, networks, web and cloud security, vulnerability management, incident response and more. I can also check individual CVE records against the live NIST NVD and recent CISA exploited-vulnerability entries when those public services are available. What would you like to explore?</div>
     <div class="cl-ai-options">
       <button type="button" data-question="How do I get started with CyberLord?">Getting started</button>
       <button type="button" data-question="Explain the CyberLord cybersecurity tools.">Cybersecurity tools</button>
@@ -95,8 +71,8 @@
       <button type="button" data-question="I need help with my account or login.">Account help</button>
     </div>
   </div>
-  <form class="cl-ai-compose" id="cl-ai-form"><input id="cl-ai-input" maxlength="1800" placeholder="Ask CyberLord AI…" autocomplete="off" required><button type="submit" aria-label="Send message">➤</button></form>
-  <div class="cl-ai-foot">AI answers can be imperfect. Payment approvals are never handled by chat. <a href="mailto:michaelelvistito@gmail.com">Contact human support</a>.</div>
+  <form class="cl-ai-compose" id="cl-ai-form"><input id="cl-ai-input" maxlength="1800" placeholder="Ask about any cybersecurity topic…" autocomplete="off" required><button type="submit" aria-label="Send message">➤</button></form>
+  <div class="cl-ai-foot">Built-in knowledge + public vulnerability sources. Verify critical findings. Payment approvals are never handled by chat. <a href="mailto:michaelelvistito@gmail.com">Contact human support</a>.</div>
 </aside>
 
 {% endblock %}
