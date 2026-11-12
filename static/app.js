@@ -1,13 +1,13 @@
 document.querySelectorAll(".scan-form").forEach(form=>{
  form.addEventListener("submit",async e=>{
   e.preventDefault(); const button=form.querySelector("button"), card=form.closest(".tool-card"), out=card.querySelector(".result");
-  button.disabled=true; button.textContent="Scanning…"; out.textContent="⏳ CyberLord is checking the target. Please wait…";
+  button.disabled=true; button.textContent="Scanning…"; card.classList.add("scanning"); out.textContent="⏳ CyberLord is checking the target. Please wait…";
   try{
    const response=await fetch("/scan/"+form.dataset.tool,{method:"POST",body:new FormData(form),headers:{"X-Requested-With":"fetch"}});
    const data=await response.json(); if(!response.ok) throw new Error(data.error||"Check failed");
    out.textContent=JSON.stringify(data.result,null,2);
   }catch(err){out.textContent="Error: "+err.message;}
-  finally{button.disabled=false;button.textContent="Run check";}
+  finally{button.disabled=false;button.textContent="Run check";card.classList.remove("scanning");}
  });
 });
 
@@ -54,6 +54,14 @@ document.querySelectorAll(".copy-value").forEach(button=>{
 });
 
 
+// Scan progress markup + AI typing indicator (academy-upgrades).
+document.querySelectorAll(".tool-card").forEach(card=>{
+  const form=card.querySelector(".scan-form"); if(!form) return;
+  const body=document.createElement("div");
+  body.innerHTML='<div class="scan-progress" aria-hidden="true"></div><div class="scan-card-indicator"><span class="spinner" aria-hidden="true"></span>Scanning, please wait…</div>';
+  form.after(body);
+});
+
 // CyberLord AI support chat: conversations are sent to the authenticated Flask backend.
 (()=>{
   const panel=document.getElementById("cl-ai-panel");
@@ -87,6 +95,8 @@ document.querySelectorAll(".copy-value").forEach(button=>{
     text=(text||"").trim();if(!text)return;
     bubble(text,"user");history.push({role:"user",content:text});
     const pending=bubble("Searching CyberLord knowledge…","bot");
+    const startTyping=()=>{const typing=document.createElement("span");typing.className="cl-ai-typing";typing.innerHTML="<span></span><span></span><span></span>";pending.textContent="";pending.appendChild(typing);};startTyping();
+    await new Promise(resolve=>setTimeout(resolve,600));
     const submit=form.querySelector("button");submit.disabled=true;
     try{
       const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history.slice(-12)})});

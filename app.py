@@ -24,6 +24,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Preformatted, Table, TableStyle, KeepTogether
 
+from academy_questions import ACADEMY_LESSONS
+
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "CHANGE-ME-TO-A-LONG-RANDOM-SECRET")
 db_url = os.getenv("DATABASE_URL", "sqlite:///cyberlord.db")
@@ -726,14 +728,10 @@ def dashboard():
     history = ScanHistory.query.filter_by(user_id=current_user.id).order_by(ScanHistory.created_at.desc()).limit(50).all()
     return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS)
 
-ACADEMY_LESSONS = [
-    {"slug":"networking-essentials", "level":"FOUNDATION", "title":"Networking essentials", "time":"12 min", "desc":"Understand IP addresses, ports, TCP, UDP and DNS.", "content":["An IP address identifies a device or network interface. A port identifies a service or application endpoint on that device.","TCP is connection-oriented and provides ordered, reliable delivery. UDP is connectionless and has lower overhead, but does not guarantee delivery.","DNS translates domain names into records such as A/AAAA addresses and MX mail servers. A port being open means a service is listening; it does not automatically mean the service is vulnerable."], "question":"What does a port number help identify?", "choices":["A service or application endpoint", "A device's physical location", "The owner's password"], "answer":0, "explain":"A port helps direct network traffic to the correct service on a device."},
-    {"slug":"kali-linux-basics", "level":"LINUX & TOOLS", "title":"Getting comfortable with Kali Linux", "time":"15 min", "desc":"Learn terminal navigation, files and safe lab habits.", "content":["The terminal lets you run commands and inspect system information. Start with pwd to show your current directory, ls to list files and cd to change directory.","Use whoami to see the current account and ip addr to inspect network interfaces. Read command help before running unfamiliar tools.","Keep practice inside your own virtual lab or systems where you have explicit permission. Avoid running commands copied from unknown sources with administrator privileges."], "question":"Which command shows your current directory?", "choices":["pwd", "whoami", "ip addr"], "answer":0, "explain":"pwd prints the current working directory."},
-    {"slug":"nmap-fundamentals", "level":"RECONNAISSANCE", "title":"Nmap fundamentals", "time":"18 min", "desc":"Learn port states, service detection and scan interpretation.", "content":["Nmap is used for network discovery and security auditing. Only scan systems you own or have permission to assess.","A basic lab command is nmap 127.0.0.1. The -sV option asks Nmap to identify service versions. Use -p 80,443 to specify ports or -p- to scan all TCP ports.","Open means a service accepted the connection attempt. Closed means the host responded but no service is listening. Filtered means a firewall or network control prevents Nmap from determining the state."], "question":"What does Nmap -sV attempt to identify?", "choices":["Service versions", "Wi-Fi passwords", "User account passwords"], "answer":0, "explain":"-sV enables service/version detection."},
-    {"slug":"http-tls-headers", "level":"WEB SECURITY", "title":"HTTP, TLS and security headers", "time":"16 min", "desc":"Understand requests, responses, HTTPS and browser security headers.", "content":["An HTTP request contains a method, path, headers and sometimes a body. The server responds with a status code, headers and optional content.","Common status codes include 200 (success), 301/302 (redirect), 400 (bad request), 401 (authentication required), 403 (forbidden) and 404 (not found).", "TLS protects data in transit and helps authenticate the server. Headers such as Strict-Transport-Security, Content-Security-Policy and X-Content-Type-Options add browser-side protections."], "question":"What does HTTP status 403 generally mean?", "choices":["Forbidden", "Successful response", "Page permanently moved"], "answer":0, "explain":"403 means the server understood the request but refuses access."},
-    {"slug":"cve-triage", "level":"VULNERABILITY", "title":"CVE and vulnerability triage", "time":"14 min", "desc":"Validate versions, severity, exposure and remediation.", "content":["A CVE is a public identifier for a disclosed cybersecurity vulnerability. A CVE record is a starting point for research, not proof that a particular system is affected.","Check the exact product, version, configuration and vendor advisory. Compare the affected version range with reliable evidence from the target environment.","Severity scores help prioritise work, but real risk also depends on exposure, exploitability, business impact and available mitigations. Document uncertainty instead of overstating a finding."], "question":"Does a CVE number alone prove a system is vulnerable?", "choices":["No; verify product, version and configuration", "Yes, always", "Only if the port is open"], "answer":0, "explain":"A CVE must be matched to the actual product and affected version/configuration."},
-    {"slug":"security-reporting", "level":"REPORTING", "title":"Writing a professional security report", "time":"10 min", "desc":"Turn evidence into clear impact and practical recommendations.", "content":["A useful report explains what was tested, when it was tested, the scope and the limitations. Readers should understand exactly what was and was not assessed.","For each finding, include a concise title, severity rationale, affected asset, reproducible evidence, impact and a practical remediation recommendation.","Do not include secrets or unnecessary personal data. Separate confirmed observations from assumptions, and retest after remediation when authorised."], "question":"What should a finding include?", "choices":["Evidence, impact and remediation", "Only a scary title", "Unverified assumptions"], "answer":0, "explain":"A finding should be supported by evidence and explain its impact and remediation."},
-]
+# Academy lessons and their exercise questions now live in academy_questions.py
+# (add practitioner-level questions there; see the how-to at the top of that file).
+# ACADEMY_LESSONS is imported from that module above.
+
 
 @app.route("/academy")
 @login_required
@@ -753,27 +751,33 @@ def academy_lesson(slug):
     lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == slug), None)
     if not lesson:
         abort(404)
+    questions = lesson.get("questions") or []
     progress = AcademyProgress.query.filter_by(user_id=current_user.id, lesson_slug=slug).first()
     result = None
     if request.method == "POST":
-        try:
-            selected = int(request.form.get("answer", "-1"))
-        except (TypeError, ValueError):
-            selected = -1
-        if selected not in range(len(lesson["choices"])):
-            flash("Choose one answer before submitting.", "warning")
-        else:
-            correct = selected == lesson["answer"]
-            score = 100 if correct else 0
-            if not progress:
-                progress = AcademyProgress(user_id=current_user.id, lesson_slug=slug)
-                db.session.add(progress)
-            progress.best_score = max(progress.best_score or 0, score)
-            if correct:
-                progress.completed_at = datetime.utcnow()
-            db.session.commit()
-            result = {"correct": correct, "explain": lesson["explain"]}
-    return render_template("academy_lesson.html", lesson=lesson, progress=progress, result=result)
+        answers = {}
+        for i, q in enumerate(questions):
+            raw = request.form.get("answer_%d" % i, "-1")
+            try:
+                selected = int(raw)
+            except (TypeError, ValueError):
+                selected = -1
+            if selected not in range(len(q.get("choices") or [])):
+                selected = -1
+            answers[i] = selected
+        correct_count = sum(1 for i, q in enumerate(questions) if answers.get(i) == q.get("answer"))
+        total = len(questions) or 1
+        pct = int(round(correct_count / total * 100))
+        if not progress:
+            progress = AcademyProgress(user_id=current_user.id, lesson_slug=slug)
+            db.session.add(progress)
+        progress.best_score = max(progress.best_score or 0, pct)
+        if pct == 100:
+            progress.completed_at = datetime.utcnow()
+        db.session.commit()
+        result = {"answers": answers, "correct_count": correct_count, "total": len(questions), "pct": pct,
+                  "explain": [next((item for item in questions if item is q), {}).get("explain", "") for q in questions]}
+    return render_template("academy_lesson.html", lesson=lesson, questions=questions, progress=progress, result=result, total=len(questions))
 
 @app.route("/interaction-board")
 @login_required
@@ -1260,7 +1264,7 @@ def admin_reject_bank_payment(payment_id):
 @app.route("/api/ai-assistant", methods=["POST"])
 @login_required
 def ai_assistant():
-    """Gemini-backed CyberLord assistant with a local knowledge fallback."""
+    """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. If GEMINI_API_KEY is set, Gemini answers; on any failure it falls back to that same built-in base so the site stays fully functional without a key."""
     now = time.time()
     window = session.get("ai_rate_window", [])
     window = [stamp for stamp in window if now - stamp < 60]
