@@ -18,6 +18,10 @@ For account, subscription or payment assistance, contact [CyberLord Customer Car
 5. Copy `.env.example` to `.env` and set a long random `SECRET_KEY`.
 6. `python app.py`
 
+## Cyber Academy exercises: how to add questions
+
+Lesson content and exercise questions live in `academy_questions.py` (imported by `app.py`). Each lesson has a `questions` list. To add a question, copy one question block in that lesson and change `question`, `choices`, `answer` (index of the correct option, starting at 0) and `explain`. Scenario, log-snippet and config-review questions are supported: put the scenario in the `question` string using line breaks. Save and restart the app (or redeploy). No database migration is needed. To add a whole lesson, copy one lesson block with a unique `slug`. See the header comment at the top of `academy_questions.py` for the full how-to.
+
 ## Render deployment
 Use the included `render.yaml`, or set:
 - Build: `pip install -r requirements.txt`
