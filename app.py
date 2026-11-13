@@ -996,7 +996,15 @@ def academy():
         })
     total_done = sum(c["done"] for c in courses)
     total_all = sum(c["total"] for c in courses)
-    return render_template("academy.html", courses=courses, completed=total_done, total=total_all)
+    completed_rows = [p for p in progress.values() if p.completed_at]
+    xp_points = (len(completed_rows) * 100) + sum(max(0, min(100, int(p.best_score or 0))) // 10 * 2 for p in progress.values())
+    badges = []
+    if total_done >= 1: badges.append({"icon":"⚡","name":"First Steps","detail":"Completed your first lesson"})
+    if total_done >= 5: badges.append({"icon":"🧭","name":"Path Finder","detail":"Completed five lessons"})
+    if total_done >= 10: badges.append({"icon":"🛡️","name":"Security Learner","detail":"Completed ten lessons"})
+    if any((p.best_score or 0) == 100 for p in completed_rows): badges.append({"icon":"🎯","name":"Perfect Score","detail":"Earned 100% on a lesson"})
+    return render_template("academy.html", courses=courses, completed=total_done, total=total_all,
+                           xp_points=xp_points, badges=badges)
 
 @app.route("/academy/<slug>", methods=["GET", "POST"])
 @login_required
@@ -1035,6 +1043,155 @@ def academy_lesson(slug):
         result = {"answers": answers, "correct_count": correct_count, "total": len(questions), "pct": pct,
                   "explain": [next((item for item in questions if item is q), {}).get("explain", "") for q in questions]}
     return render_template("academy_lesson.html", lesson=lesson, questions=questions, progress=progress, result=result, total=len(questions), course=course)
+
+
+@app.route("/api/academy/quiz/generate", methods=["POST"])
+@login_required
+def academy_quiz_generate():
+    """Create a fresh lesson-aligned quiz. AI providers are preferred; curated
+    lesson questions are the offline fallback. Answer keys remain server-side."""
+    body = request.get_json(silent=True) or {}
+    slug = str(body.get("lesson_slug") or "").strip()
+    lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == slug), None)
+    if not lesson:
+        return jsonify(error="Choose a valid Academy lesson."), 404
+    course = get_course_for_lesson(slug)
+    if course and course_locked(course):
+        return jsonify(error="This lesson requires an upgraded plan."), 403
+    if rate_limited(key="academy-quiz:" + client_ip() + ":" + str(current_user.id), limit=5, window=300):
+        return jsonify(error="You've generated several quizzes recently. Please wait a few minutes."), 429
+
+    prompt = (
+        "Create exactly 5 distinct multiple-choice assessment questions for a cybersecurity training lesson. "
+        "Use only the lesson facts below. Vary question styles: concept, scenario, output interpretation, "
+        "safe decision-making. Beginner-friendly but meaningful. Return ONLY valid JSON: "
+        '{"questions":[{"question":"...","choices":["...","...","...","..."],"answer":0,"explain":"..."}]}. '
+        "Each question must have exactly 4 choices, answer must be integer 0-3, explanations should teach. "
+        "Do not include unsafe real-world attack instructions. "
+        f"\nLESSON: {lesson.get('title')}\nDESCRIPTION: {lesson.get('desc')}\n"
+        f"OBJECTIVES: {json.dumps(lesson.get('objectives', []))}\n"
+        f"NOTES: {json.dumps(lesson.get('content', []))}\n"
+        f"EXISTING QUESTION IDEAS (do not copy verbatim): {json.dumps([q.get('question','') for q in lesson.get('questions', [])])}"
+    )
+    generated = None
+    provider = "practice-bank"
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip() or "gemini-3.5-flash"
+    if api_key:
+        try:
+            resp = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+                json={"contents":[{"role":"user","parts":[{"text":prompt}]}],
+                      "generationConfig":{"temperature":0.85,"responseMimeType":"application/json","maxOutputTokens":1800}},
+                timeout=(8, 35))
+            resp.raise_for_status()
+            parts = (resp.json().get("candidates") or [{}])[0].get("content",{}).get("parts",[])
+            raw = "\n".join(p.get("text","") for p in parts if isinstance(p,dict))
+            generated = json.loads(raw)
+            provider = "gemini"
+        except Exception as exc:
+            app.logger.warning("Academy quiz Gemini generation failed: %s", str(exc)[:180])
+    if not generated:
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
+        if groq_key:
+            try:
+                resp = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization":"Bearer "+groq_key,"Content-Type":"application/json"},
+                    json={"model":os.getenv("GROQ_MODEL","openai/gpt-oss-20b"),
+                          "messages":[{"role":"system","content":"Return only valid JSON, no markdown."},
+                                     {"role":"user","content":prompt}],
+                          "temperature":0.85,"max_tokens":1800,"response_format":{"type":"json_object"}},
+                    timeout=25)
+                resp.raise_for_status()
+                raw = resp.json()["choices"][0]["message"]["content"]
+                generated = json.loads(raw)
+                provider = "groq"
+            except Exception as exc:
+                app.logger.warning("Academy quiz Groq generation failed: %s", str(exc)[:180])
+
+    valid = []
+    for q in (generated or {}).get("questions", []) if isinstance(generated, dict) else []:
+        if not isinstance(q, dict): continue
+        choices = q.get("choices")
+        answer = q.get("answer")
+        question = str(q.get("question") or "").strip()[:700]
+        if (len(question) >= 12 and isinstance(choices, list) and len(choices) == 4
+                and all(isinstance(c, str) and c.strip() for c in choices)
+                and isinstance(answer, int) and answer in range(4)):
+            valid.append({"question":question, "choices":[str(c)[:350] for c in choices],
+                          "answer":answer, "explain":str(q.get("explain") or "")[:900]})
+    if len(valid) < 3:
+        # Offline fallback: rotate and shuffle the lesson's reviewed question bank.
+        bank = list(lesson.get("questions") or [])
+        if bank:
+            shift = int(time.time() // 30) % max(1, len(bank))
+            bank = bank[shift:] + bank[:shift]
+            valid = [{"question":q["question"],"choices":list(q["choices"]),
+                      "answer":int(q["answer"]),"explain":q.get("explain","")} for q in bank[:5]]
+            provider = "practice-bank"
+    if not valid:
+        return jsonify(error="A quiz could not be prepared for this lesson. Please try again."), 503
+
+    # Randomise choice order on every attempt; update the private answer key accordingly.
+    rng = secrets.SystemRandom()
+    for question in valid:
+        pairs = list(enumerate(question["choices"]))
+        rng.shuffle(pairs)
+        question["choices"] = [choice for _, choice in pairs]
+        question["answer"] = next(i for i, (old_index, _) in enumerate(pairs)
+                                  if old_index == question["answer"])
+
+    # Keep the private answer key in the signed session, never in the browser response.
+    quiz_id = secrets.token_urlsafe(12)
+    session["academy_quiz"] = {"id":quiz_id,"slug":slug,"user_id":current_user.id,
+                               "questions":valid,"created":int(time.time())}
+    session.modified = True
+    return jsonify(quiz_id=quiz_id, provider=provider,
+                   questions=[{"question":q["question"],"choices":q["choices"]} for q in valid],
+                   message=("Fresh AI-generated questions" if provider in ("gemini","groq")
+                            else "Practice mode: using the lesson question bank while AI generation is unavailable."))
+
+
+@app.route("/api/academy/quiz/submit", methods=["POST"])
+@login_required
+def academy_quiz_submit():
+    body = request.get_json(silent=True) or {}
+    quiz = session.get("academy_quiz") or {}
+    if (not quiz or quiz.get("id") != body.get("quiz_id")
+            or quiz.get("user_id") != current_user.id
+            or time.time() - int(quiz.get("created", 0)) > 1800):
+        return jsonify(error="This quiz has expired. Generate a fresh quiz and try again."), 400
+    lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == quiz.get("slug")), None)
+    if not lesson:
+        return jsonify(error="Lesson not found."), 404
+    course = get_course_for_lesson(quiz["slug"])
+    if course and course_locked(course):
+        return jsonify(error="Your course access has changed. Please refresh the page."), 403
+    submitted = body.get("answers") or []
+    qs = quiz.get("questions") or []
+    correct = 0
+    feedback = []
+    for i, q in enumerate(qs):
+        try: selected = int(submitted[i])
+        except (TypeError, ValueError, IndexError): selected = -1
+        ok = selected == q["answer"]
+        correct += int(ok)
+        feedback.append({"correct":ok,"correct_choice":q["answer"],"correct_answer":q["choices"][q["answer"]],"explain":q.get("explain","")})
+    pct = int(round(correct / max(1,len(qs)) * 100))
+    row = AcademyProgress.query.filter_by(user_id=current_user.id, lesson_slug=quiz["slug"]).first()
+    if not row:
+        row = AcademyProgress(user_id=current_user.id, lesson_slug=quiz["slug"])
+        db.session.add(row)
+    row.best_score = max(row.best_score or 0, pct)
+    if pct >= 80 and not row.completed_at:
+        row.completed_at = datetime.utcnow()
+    db.session.commit()
+    session.pop("academy_quiz", None)
+    return jsonify(score=pct, correct=correct, total=len(qs), completed=pct >= 80,
+                   feedback=feedback, best_score=row.best_score)
+
 
 @app.route("/tutor")
 @login_required
