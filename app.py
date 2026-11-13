@@ -76,7 +76,6 @@ RATE_LIMITS = {
     "forgot": (_env_int("FORGOT_MAX_ATTEMPTS", 5), _env_int("FORGOT_WINDOW_SEC", 900)),
     "scan": (_env_int("SCAN_MAX_ATTEMPTS", 10), _env_int("SCAN_WINDOW_SEC", 60)),
     "anonymous_scan": (_env_int("ANON_SCAN_MAX_ATTEMPTS", 2), _env_int("ANON_SCAN_WINDOW_SEC", 86400)),
-    "ai": (_env_int("AI_MAX_ATTEMPTS", 5), _env_int("AI_WINDOW_SEC", 3600)),
 
 }
 
@@ -143,10 +142,10 @@ def rate_limit(kind):
     return decorator
 
 # --- Anonymous funnel: per-user buckets ---------------------------------------------------------
-# Anonymous visitors may run at most 2 basic scans per IP/day and ask the AI at most 5 times
-# per IP/hour (env-tunable via ANON_SCAN_* / AI_* above). Each bucket keys as
-# "user:<id>:<kind>:<ip>" for signed-in users (IP only for anonymous), so one account cannot
-# shed limits by rotating addresses and one IP cannot burn a shared global bucket.
+# Anonymous visitors may run at most 2 basic scans per IP/day (env-tunable via
+# ANON_SCAN_* above). Each bucket keys as "user:<id>:<kind>:<ip>" for signed-in
+# users (IP only for anonymous), so one account cannot shed limits by rotating
+# addresses and one IP cannot burn a shared global bucket.
 def _user_rate(kind, *extra):
     limit, window = RATE_LIMITS[kind]
     suffix = ":" + ":".join(extra) if extra else ""
@@ -1603,22 +1602,16 @@ def admin_reject_bank_payment(payment_id):
 
 
 @app.route("/api/ai-assistant", methods=["POST"])
+@login_required
 def ai_assistant():
     """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. Provider chain: Gemini (gemini-3.8-flash) -> Groq (openai/gpt-oss-20b) -> built-in base. On any failure it silently falls back to the next provider, then to the built-in base, so the site stays fully functional without a key."""
-    # Per-user bucket: 5 messages per IP per hour for anonymous visitors,
-    # 20 per minute session window for signed-in users (unchanged behaviour).
-    limit_resp = _user_rate("ai")
-    if limit_resp is not None:
-        return limit_resp
-    is_auth = getattr(current_user, "is_authenticated", False)
-    if is_auth:
-        now = time.time()
-        window = session.get("ai_rate_window", [])
-        window = [stamp for stamp in window if now - stamp < 60]
-        if len(window) >= 20:
-            return jsonify(error="You're sending messages quickly. Please wait a moment and try again."), 429
-        window.append(now)
-        session["ai_rate_window"] = window
+    now = time.time()
+    window = session.get("ai_rate_window", [])
+    window = [stamp for stamp in window if now - stamp < 60]
+    if len(window) >= 20:
+        return jsonify(error="You're sending messages quickly. Please wait a moment and try again."), 429
+    window.append(now)
+    session["ai_rate_window"] = window
 
     body = request.get_json(silent=True) or {}
     messages = list(body.get("messages", []) or [])
