@@ -1,0 +1,8 @@
+test_hardening.db
+test_hardening.db-shm
+test_hardening.db-wal
+instance/
+__pycache__/
+*.pyc
+cyberlord-*.dump
+.DS_Store
