@@ -93,6 +93,54 @@
     if (list) list.dataset.voicePending = wasVoice ? "voice" : "typed";
   }
 
+  // ---- live voice transcript bubble ----
+  // While the user speaks, the words the speech engine has already
+  // recognized appear as a normal user text bubble in the chat (marked
+  // pending) so the conversation shows their question as text before
+  // it is sent. Only engine-recognized words are ever shown, never
+  // placeholder text. On send the composer reuses this bubble (see
+  // the voicePending check in each composer) instead of adding a
+  // duplicate; on quick-tap the preview is discarded and the text
+  // is parked in the input instead.
+  function findThread(form) {
+    if (!form) return null;
+    var list = form.parentNode && form.parentNode.querySelector(
+      ".tutor-messages, .chat-thread, .cl-ai-body, .cl-ai-thread");
+    if (!list) {
+      var near = form.closest("section, aside, div");
+      if (near) list = near.querySelector(".tutor-messages, .chat-thread, .cl-ai-body, .cl-ai-thread");
+    }
+    return list || null;
+  }
+  function userBubbleClass(list) {
+    if (list) {
+      if (list.classList.contains("cl-ai-body") || list.classList.contains("cl-ai-thread")) return "cl-ai-message user";
+      if (list.classList.contains("tutor-messages")) return "tutor-msg user";
+    }
+    return "chat-msg user";
+  }
+  function showLiveVoiceBubble(form, text) {
+    if (!form || !text) return null;
+    var list = findThread(form);
+    if (!list) return null;
+    var bubble = list.querySelector("[data-voice-pending='1']");
+    if (!bubble) {
+      bubble = document.createElement("div");
+      bubble.className = userBubbleClass(list);
+      bubble.setAttribute("data-voice-pending", "1");
+      list.appendChild(bubble);
+    }
+    bubble.textContent = text;
+    if (list.scrollTop !== undefined) list.scrollTop = list.scrollHeight;
+    return bubble;
+  }
+  function discardLiveVoiceBubble(form) {
+    var list = findThread(form);
+    if (!list) return;
+    var bubble = list.querySelector("[data-voice-pending='1']");
+    if (bubble) bubble.remove();
+  }
+
   // ---- speaker toggle at the bottom of each composer ----
   function refreshToggles() {
     document.querySelectorAll("[data-voice-toggle]").forEach(function (b) {
@@ -115,6 +163,7 @@
   // ---- tap-and-hold voice bar ----
   // Press (mousedown/touchstart) starts recording, release (mouseup/touchend)
   // stops; a short hold fills the input for editing, a longer hold sends.
+  // While recording, recognized words appear as a live user text bubble.
   var HOLD_MS = 350; // under this, treat as a tap: fill input, do not send
   function bindMic(b) {
     if (!sttOK()) { b.style.display = "none"; return; }
@@ -123,7 +172,7 @@
     // Long-press must not bring up the context menu on mobile.
     b.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 
-    var rec = null, pressStart = 0, released = false, transcript = "", done = false, pointerIn = true;
+    var rec = null, pressStart = 0, released = false, transcript = "", done = false, pointerIn = true, formEl = null;
 
     function setListening(on) {
       holding = !!on;
@@ -158,14 +207,19 @@
         rec.maxAlternatives = 1;
         rec.continuous = true;
         transcript = ""; done = false; released = false;
+        formEl = b.closest("form");
         rec.onresult = function (ev) {
           var text = "";
           for (var i = 0; i < ev.results.length; i++) {
             if (ev.results[i] && ev.results[i][0]) text += ev.results[i][0].transcript;
           }
           transcript = (text || "").trim();
+          // Show the recognized words as a user text bubble as they land.
+          if (formEl) showLiveVoiceBubble(formEl, transcript);
         };
-        rec.onerror = function () {};
+        rec.onerror = function () {
+        if (formEl) discardLiveVoiceBubble(formEl);
+      };
         rec.onend = function () {
           if (released) finish();
         };
@@ -189,15 +243,22 @@
       setListening(false);
       var text = transcript || "";
       rec = null;
-      if (!text) return;
       var form = b.closest("form");
       var input = form ? form.querySelector("input[type='text'], input:not([type])") : null;
+      if (!text) { if (form) discardLiveVoiceBubble(form); return; }
       var quick = (Date.now() - pressStart) < HOLD_MS;
       if (quick) {
-        // Quick tap: park the transcript in the input for editing, no send.
+        // Quick tap: discard the live preview, park the transcript in
+        // the input for editing. When that parked text is then sent,
+        // the composer's own submit handler renders it as a normal
+        // user text bubble, exactly like a typed question.
+        discardLiveVoiceBubble(form);
         if (input) { input.value = text; input.focus(); }
         return;
       }
+      // Hold: the live bubble already shows the words as text before
+      // sending. Keep it as the user's bubble (composers reuse the
+      // pending bubble instead of adding a duplicate) and submit.
       if (input) input.value = text;
       markFormInput(form, true);
       flagNextBot(form, true);

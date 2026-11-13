@@ -97,6 +97,15 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   const history=[];
   const scroll=()=>{messagesEl.scrollTop=messagesEl.scrollHeight};
   const bubble=(text,role)=>{
+    // Reuse the live voice bubble so a spoken question already shown
+    // as text before sending is not added twice.
+    if (role === "user") {
+      var pending = messagesEl.querySelector("[data-voice-pending='1']");
+      if (pending && pending.textContent === text) {
+        pending.removeAttribute("data-voice-pending");
+        return pending;
+      }
+    }
     const el=document.createElement("div");
     el.className="cl-ai-message "+role;
     el.textContent=text;
@@ -143,6 +152,15 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     const box=card.querySelector(".tutor-messages");
     const input=form.querySelector("input");
     function add(text,role){
+      // Reuse the live voice bubble so a spoken question already shown
+      // as text before sending is not added twice.
+      if (role === "user") {
+        var pending = box.querySelector("[data-voice-pending='1']");
+        if (pending && pending.textContent === text) {
+          pending.removeAttribute("data-voice-pending");
+          return pending;
+        }
+      }
       const el=document.createElement("div");
       el.className="tutor-msg "+role; el.textContent=text;
       box.appendChild(el); box.scrollTop=box.scrollHeight;

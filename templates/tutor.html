@@ -34,6 +34,16 @@
   function scroll(){ thread.scrollTop = thread.scrollHeight; }
 
   function add(text, role){
+    // Reuse the live voice bubble so a spoken question that was already
+    // shown as text before sending is not added twice.
+    if (role === "user") {
+      var pending = thread.querySelector("[data-voice-pending='1']");
+      if (pending && pending.textContent === text) {
+        pending.removeAttribute("data-voice-pending");
+        scroll();
+        return pending;
+      }
+    }
     var el = document.createElement("div");
     el.className = "chat-msg " + role;
     el.textContent = text;
