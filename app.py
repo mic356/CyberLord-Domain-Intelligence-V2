@@ -1536,7 +1536,7 @@ def admin_reject_bank_payment(payment_id):
 @app.route("/api/ai-assistant", methods=["POST"])
 @login_required
 def ai_assistant():
-    """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. If GEMINI_API_KEY is set, Gemini answers; on any failure it falls back to that same built-in base so the site stays fully functional without a key."""
+    """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. Provider chain: GEMINI_API_KEY (gemini-2.5-flash) -> GROQ_API_KEY (llama-3.3-70b) -> built-in base. On any failure it silently falls back to the next provider, then to the built-in base, so the site stays fully functional without a key."""
     now = time.time()
     window = session.get("ai_rate_window", [])
     window = [stamp for stamp in window if now - stamp < 60]
@@ -1622,9 +1622,45 @@ def ai_assistant():
             return jsonify(reply=reply, mode="gemini", model=model,
                            live_sources="Gemini response; verify important security findings against primary sources")
         except Exception as exc:
-            app.logger.warning("Gemini API unavailable; using local CyberLord knowledge fallback: %s", str(exc)[:240])
+            app.logger.warning("Gemini API unavailable; trying next provider: %s", str(exc)[:240])
 
-    # Keep the service useful if no key is configured or Gemini temporarily fails.
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip() or "llama-3.3-70b-versatile"
+    if groq_key:
+        try:
+            convo = [{"role": "system", "content": (
+                "You are CyberLord AI, the cybersecurity learning and platform assistant. "
+                "Give clear, accurate, beginner-friendly explanations. Prefer practical, "
+                "step-by-step defensive guidance. Support authorised security testing only; "
+                "do not help compromise systems, steal credentials, evade detection, deploy "
+                "malware, or access data without permission. For dual-use questions, keep "
+                "the answer bounded to a legal lab or defensive validation. Never claim "
+                "you performed a scan or verified a live target unless a tool result is supplied. "
+                "Do not invent CyberLord account, payment, scan or subscription status. "
+                "Do not request passwords, OTPs, API keys, wallet seed phrases or private keys. "
+                "If uncertain, say so and recommend checking primary documentation."
+            )}]
+            for item in contents:
+                convo.append({"role": "assistant" if item["role"] == "model" else "user",
+                              "content": item["parts"][0]["text"]})
+            groq_payload = {"model": groq_model, "messages": convo,
+                            "temperature": 0.55, "max_tokens": 1200}
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Content-Type": "application/json", "Authorization": "Bearer " + groq_key},
+                json=groq_payload, timeout=12)
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices") or []
+            reply = ((choices[0].get("message") or {}).get("content") or "").strip() if choices else ""
+            if not reply:
+                raise ValueError("Groq returned an empty response.")
+            return jsonify(reply=reply, mode="groq", model=groq_model,
+                           live_sources="Groq response; verify important security findings against primary sources")
+        except Exception as exc:
+            app.logger.warning("Groq API unavailable; using local CyberLord knowledge fallback: %s", str(exc)[:240])
+
+    # Keep the service useful if no key is configured or every provider fails.
     try:
         from cyberlord_ai import answer
         latest = next(item["parts"][0]["text"] for item in reversed(contents) if item["role"] == "user")
