@@ -28,7 +28,7 @@
 <p>In order: make sure the site loads over HTTPS and the certificate is valid. Update outdated software and plugins. Add the missing security headers your host can configure. Confirm SPF, DKIM and DMARC records exist for your domain. Then recheck. Most of the risk on typical small business sites comes from these ordinary misconfigurations, not from exotic attacks, and all of them can be fixed in an afternoon.</p>
 
 <h2>Run your own check</h2>
-<p>Sign up for a free CyberLord account and run the domain, TLS and HTTP security modules against your own domain, then read the evidence and fixes each one returns. If you want a second opinion on your email exposure at the same time, run the free <a href="{{ url_for('email_exposure_check') }}">email exposure check</a> as well.</p>
+<p>Sign up for a free CyberLord account and run the domain, TLS and HTTP security modules against your own domain, then read the evidence and fixes each one returns. If you want a second opinion on your email posture at the same time, run the free <a href="{{ url_for('index') }}">domain scan</a> as well.</p>
 <p><a class="btn primary" href="{{ url_for('register') }}">Create a free account and scan your domain</a></p>
 <p class="muted">Related: <a href="{{ url_for('guide_spf_dmarc') }}">SPF and DMARC setup guide</a> · <a href="{{ url_for('guide_email_compromised') }}">How to check if your email has been compromised</a> · <a href="{{ url_for('faq') }}">Is my email leaked? FAQ</a></p>
 </section>

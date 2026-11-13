@@ -62,8 +62,7 @@ TOOL_NAMES = {
     "email": "Email Security", "dns": "DNS Intelligence", "technology": "Technology Fingerprint",
     "ip": "IP Intelligence", "phone": "Phone Intelligence", "email_review": "Individual Email Review",
     "breach": "Breach Exposure", "attack_surface": "Attack Surface Map",
-    "cve": "CVE Intelligence", "compare": "Compare Domains", "port": "Limited Port Scanner", "deep_scan": "Deep Scan",
-    "email_exposure_check": "Email Exposure Check"
+    "cve": "CVE Intelligence", "compare": "Compare Domains", "port": "Limited Port Scanner", "deep_scan": "Deep Scan"
 }
 
 class User(UserMixin, db.Model):
@@ -615,76 +614,6 @@ def deep_scan(domain):
             "sections": sections, "findings": findings,
             "scope_note": "Deep Scan uses only public, passive OSINT sources (RDAP, Certificate Transparency, public DNS, one polite HTTPS GET, Wayback availability API). No intrusive scanning, port probing, authentication attempts or brute force is performed. Results depend on third-party data availability and may be incomplete."}
 
-# ---------------------------------------------------------------------------
-# Email exposure check (public, free tier)
-#
-# Source decision (verified 2026-11-12): Hudson Rock's free "Cavalier" email
-# check endpoint at
-#   https://www.hudsonrock.com/api/json/v2/stats/website-results/email?email=...
-# is keyless, needs no account and no API key. It backs the public checker on
-# hudsonrock.com and returns JSON. It reports whether the email appears in
-# infostealer (malware) credential dumps, i.e. a computer infected by an
-# infostealer had this email's saved credentials. It does NOT list named
-# breaches (unlike HIBP, which requires a paid API key and is therefore not
-# used). Free alternatives checked and rejected: breach.directory and
-# cib.db.rip were unreachable from our network (connection failures), and
-# HIBP's unauthenticated endpoints are not free.
-#
-# The lookup is pluggable via check_email_exposure(): only this one function
-# talks to the source, so a future keyed provider (e.g. HIBP) can be swapped
-# in without touching routes or templates. The function NEVER raises: any
-# failure is reported as status "source_unavailable" and the UI says so plainly
-# instead of showing fake or empty results.
-# ---------------------------------------------------------------------------
-
-HUDSON_ROCK_EMAIL_URL = "https://www.hudsonrock.com/api/json/v2/stats/website-results/email"
-
-
-def _hudson_rock_email_check(email):
-    """Keyless infostealer-exposure lookup. Returns a normalised dict."""
-    out = {"source": "Hudson Rock infostealer intelligence (free, no key required)",
-           "status": "source_unavailable", "found": False,
-           "date_compromised": None, "computer_name": None,
-           "total_user_services": 0, "total_corporate_services": 0,
-           "provider_url": "https://www.hudsonrock.com/free-tools"}
-    try:
-        r = requests.get(HUDSON_ROCK_EMAIL_URL, params={"email": email},
-                         headers={"User-Agent": "CyberLord-Email-Check/1.0"}, timeout=15)
-        r.raise_for_status()
-        data = r.json()
-    except Exception as exc:
-        out["reason"] = "The exposure source could not be reached just now (" + str(exc)[:140] + ")."
-        return out
-    if not isinstance(data, dict):
-        out["reason"] = "The exposure source returned an unexpected response."
-        return out
-    out["status"] = "ok"
-    out["computer_name"] = data.get("computer_name")
-    out["date_compromised"] = data.get("date_compromised")
-    out["total_user_services"] = data.get("total_user_services") or 0
-    out["total_corporate_services"] = data.get("total_corporate_services") or 0
-    out["found"] = bool(out["date_compromised"] or out["total_user_services"] or out["total_corporate_services"])
-    return out
-
-
-def check_email_exposure(email):
-    """Pluggable breach-source entry point. No fake data: if the source fails,
-    status is 'source_unavailable' and callers must say so."""
-    email = (email or "").strip().lower()
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-        return {"email": email, "status": "invalid", "found": False,
-                "reason": "Enter a valid email address."}
-    result = _hudson_rock_email_check(email)
-    result["email"] = email
-    result["checked_at"] = datetime.now(timezone.utc).isoformat()
-    result["scope_note"] = ("This checks public infostealer-compromise intelligence only. "
-                            "It is not a full breach database: an email not listed here may "
-                            "still appear in a breach this source does not cover. A listing "
-                            "means credentials tied to this email were recovered from an "
-                            "infected computer; change those passwords from a clean device.")
-    return result
-
-
 def kali_worker_scan(domain, modules):
     base=os.getenv("KALI_WORKER_URL","").rstrip("/"); token=os.getenv("KALI_WORKER_TOKEN","")
     if not base or not token: return {"available":False,"message":"Kali scan worker is not connected. Configure KALI_WORKER_URL and KALI_WORKER_TOKEN after deploying the isolated Kali worker."}
@@ -708,7 +637,6 @@ def index():
 
 SEO_PUBLIC_PAGES = [
     ("index", "https://cyberlord.name.ng/", "1.0", "daily"),
-    ("email_exposure_check", "https://cyberlord.name.ng/email-exposure-check", "1.0", "daily"),
     ("faq", "https://cyberlord.name.ng/faq", "0.9", "weekly"),
     ("guide_email_compromised", "https://cyberlord.name.ng/guides/check-if-email-is-compromised", "0.9", "weekly"),
     ("guide_website_security", "https://cyberlord.name.ng/guides/website-security-check", "0.9", "weekly"),
@@ -946,25 +874,6 @@ def security_centre():
     total = ScanHistory.query.filter_by(user_id=current_user.id).count()
     domains = len({x.target.lower() for x in items if "." in x.target and "@" not in x.target})
     return render_template("security_centre.html", items=items, total=total, domains=domains)
-
-@app.route("/email-exposure-check", methods=["GET", "POST"])
-def email_exposure_check():
-    """Public 'Has my email been leaked?' checker (free tier).
-
-    No login required. Free viewers see the verdict plus a small teaser;
-    signed-in PRO members get the full exposure record. Results are saved to
-    scan history only for signed-in users (so their own checks are trackable),
-    never for anonymous visitors.
-    """
-    result = None
-    email_val = ""
-    if request.method == "POST":
-        email_val = (request.form.get("email") or "").strip()
-        result = check_email_exposure(email_val)
-        if result.get("status") == "ok" and current_user.is_authenticated:
-            save_scan("email_exposure_check", email_val.lower(), result)
-    is_pro = bool(current_user.is_authenticated and PLANS.get(current_user.plan, PLANS["free"])["rank"] >= 1)
-    return render_template("email_exposure.html", result=result, email_val=email_val, is_pro=is_pro)
 
 @app.route("/history/<int:scan_id>/delete", methods=["POST"])
 @login_required

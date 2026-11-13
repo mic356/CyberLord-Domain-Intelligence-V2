@@ -25,11 +25,11 @@
 <p>Publishing an SPF record that does not include the service you actually send invoices from, which breaks your own mail. Forgetting that a marketing platform or bulk SMS-to-email service needs its own include. Setting <code>p=reject</code> on day one and discovering your bank alerts or receipt emails stop arriving. Choosing a DMARC reporting address that nobody opens, which defeats the purpose. And assuming your .com.ng or .ng domain is protected because your host "does email", when in fact DNS records are a separate thing from the hosting package. Check with a tool rather than trusting assumptions.</p>
 
 <h2>Verify your setup</h2>
-<p>After adding the records, wait a few hours for DNS to propagate, then check them. You can run a domain scan in CyberLord and look at the email posture results, which show whether SPF, DKIM and DMARC records exist and what they say. For a wider view of your domain's security, our <a href="{{ url_for('guide_website_security') }}">free website security check guide</a> explains what else to look for, and if your staff email has been caught in a breach, the free <a href="{{ url_for('email_exposure_check') }}">email exposure check</a> will tell you.</p>
+<p>After adding the records, wait a few hours for DNS to propagate, then check them. You can run a domain scan in CyberLord and look at the email posture results, which show whether SPF, DKIM and DMARC records exist and what they say. For a wider view of your domain's security, our <a href="{{ url_for('guide_website_security') }}">free website security check guide</a> explains what else to look for, and if your staff email has been caught in a breach, the <a href="{{ url_for('index') }}">domain scan</a> will show your email posture posture results.</p>
 
 <h2>Protect your domain today</h2>
 <p>Ten minutes of DNS work now can save you from a fraud loss later, and it makes your real invoices more likely to be delivered and trusted. Start with SPF and DKIM, publish DMARC in monitor mode, and read the reports.</p>
-<p><a class="btn primary" href="{{ url_for('email_exposure_check') }}">Run the free email exposure check</a></p>
+<p><a class="btn primary" href="{{ url_for('index') }}">Run a free domain scan</a></p>
 <p class="muted">Related: <a href="{{ url_for('guide_website_security') }}">Free website security check</a> · <a href="{{ url_for('guide_email_compromised') }}">How to check if your email has been compromised</a> · <a href="{{ url_for('faq') }}">Is my email leaked? FAQ</a></p>
 </section>
 {% endblock %}

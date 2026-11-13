@@ -7,7 +7,7 @@
 <p>Most account takeovers do not start with clever hacking. They start with a leaked email address and a password that was reused somewhere else. If your email appears in a breach, criminals already have a working key to try against your bank, your social accounts and your email itself, usually within hours. The good news is that a leak is survivable if you move fast. This page answers the questions people ask most about email leaks, in plain language, and points you to a free check you can run right now.</p>
 
 <h2>Is my email leaked?</h2>
-<p>The fastest way to find out is to run a free check. The <a href="{{ url_for('email_exposure_check') }}">CyberLord email exposure check</a> looks your address up in infostealer-compromise intelligence, which is data collected from computers infected by password-stealing malware. If your email shows up, you will see when it was first seen and how many saved accounts were tied to it. That tells you exactly how urgent the cleanup is.</p>
+<p>The fastest way to find out is to run a free check. The <a href="{{ url_for('index') }}">CyberLord domain scan</a> reviews your domain for exposed security signals and gives you the evidence behind each finding. If your email shows up in leaked data, you will see from the scan results exactly how urgent the cleanup is.</p>
 
 <h2>How do I know if my email has been compromised?</h2>
 <p>Run the free check first, but also watch for warning signs. Password reset emails you did not request. Login alerts from places you have never been. Friends saying they received strange messages from you or a business account. Email forwarding rules you did not create. A mailbox that sends mail while you are asleep. Any one of these means you should treat the address as compromised and act the same day, not next week.</p>
@@ -29,7 +29,7 @@
 
 <h2>Ready to check your email?</h2>
 <p>It takes less than a minute and costs nothing. If the result is clean, you can breathe easy and keep better habits. If it is not clean, you now know what to change first, and that knowledge is worth more than guessing.</p>
-<p><a class="btn primary" href="{{ url_for('email_exposure_check') }}">Run the free email exposure check</a></p>
+<p><a class="btn primary" href="{{ url_for('index') }}">Run a free domain scan</a></p>
 <p class="muted">Related: <a href="{{ url_for('guide_email_compromised') }}">How to check if your email has been compromised</a> · <a href="{{ url_for('guide_spf_dmarc') }}">SPF and DMARC setup guide</a> · <a href="{{ url_for('guide_website_security') }}">Free website security check</a></p>
 </section>
 {% endblock %}
