@@ -85,6 +85,41 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   form.after(body);
 });
 
+// Academy exercise: show one question at a time while preserving all answers for submit.
+(function(){
+  document.querySelectorAll("[data-quiz-form]").forEach(form=>{
+    const questions=[...form.querySelectorAll("[data-quiz-question]")];
+    const dots=[...document.querySelectorAll("[data-quiz-dot]")];
+    const prev=form.querySelector("[data-quiz-prev]");
+    const next=form.querySelector("[data-quiz-next]");
+    const submit=form.querySelector("[data-quiz-submit]");
+    const status=document.querySelector("[data-quiz-status]");
+    if(!questions.length) return;
+    let index=0;
+    function isAnswered(i){
+      return Boolean(questions[i].querySelector("input[type='radio']:checked"));
+    }
+    function render(){
+      questions.forEach((question,i)=>{ question.hidden=i!==index; });
+      dots.forEach((dot,i)=>{
+        dot.classList.toggle("answered",isAnswered(i));
+        if(i===index) dot.setAttribute("aria-current","true");
+        else dot.removeAttribute("aria-current");
+      });
+      prev.disabled=index===0;
+      next.hidden=index===questions.length-1;
+      submit.hidden=index!==questions.length-1;
+      if(status) status.textContent="Question "+(index+1)+" of "+questions.length;
+    }
+    function go(i){ index=Math.max(0,Math.min(questions.length-1,i)); render(); }
+    prev.addEventListener("click",()=>go(index-1));
+    next.addEventListener("click",()=>go(index+1));
+    dots.forEach(dot=>dot.addEventListener("click",()=>go(Number(dot.dataset.quizDot))));
+    form.addEventListener("change",render);
+    render();
+  });
+})();
+
 // CyberLord AI support chat: conversations are sent to the authenticated Flask backend.
 (()=>{
   const panel=document.getElementById("cl-ai-panel");
