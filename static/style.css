@@ -171,7 +171,14 @@ body{background:radial-gradient(ellipse at 8% 0%,#e8e5ff 0,transparent 34%),radi
 .quiz-question{border-top:1px solid rgba(255,255,255,.1);padding:14px 0 4px}
 .quiz-question h3{font-size:1rem;line-height:1.6;margin:0 0 6px;white-space:pre-wrap}
 .quiz-question .quiz-choice{margin:8px 0;padding:9px 11px}
-.quiz-result{margin:10px 0}
+.quiz-result{margin:10px 0;padding:14px 16px;line-height:1.65}
+.quiz-result strong{display:block;font-size:1.02rem;letter-spacing:.01em;margin-bottom:6px}
+.quiz-why{margin-top:8px;padding-top:10px;border-top:1px solid currentColor}
+.quiz-why-label{display:inline-block;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.85;margin-bottom:4px}
+.quiz-why p{margin:0;line-height:1.7;font-size:.95rem;white-space:pre-wrap}
+.quiz-score{margin-top:18px;padding:16px 18px}
+.quiz-score strong{font-size:1.15rem}
+.quiz-score p{margin:4px 0 0;line-height:1.65}
 
 /* Payment section: compact layout (visual only, academy-upgrades) */
 .plans{gap:10px}
