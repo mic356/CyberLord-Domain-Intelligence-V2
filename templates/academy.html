@@ -1,5 +1,57 @@
-{% extends "base.html" %}{% block title %}CyberLord Academy | Learn Cybersecurity Basics{% endblock %}{% block description %}Learn cybersecurity step by step with short academy lessons, knowledge checks and saved progress tracking.{% endblock %}{% block content %}
-<section class="academy-hero"><div class="eyebrow">CYBERLORD ACADEMY / LEARNING CENTRE</div><h1>Learn by doing.<br><span>Track your progress.</span></h1><p>A structured cybersecurity learning path with short lessons, knowledge checks and saved progress. CyberLord AI is separate from the Academy.</p><div class="academy-progress"><div><strong>{{ completed }} / {{ total }}</strong><span>lessons completed</span></div><div class="progress-track"><i style="width:{{ (completed / total * 100) if total else 0 }}%"></i></div></div></section>
-<section class="academy-grid">{% for lesson in lessons %}<article class="academy-card"><div class="academy-card-top"><span>{{ lesson.level }}</span><small>{{ lesson.time }}</small></div><h2>{{ lesson.title }}</h2><p>{{ lesson.desc }}</p><div class="academy-card-foot"><span class="status-pill">{{ lesson.questions|length }} exercise questions</span>{% if lesson.progress and lesson.progress.completed_at %}<span class="status-pill done">Completed · {{ lesson.progress.best_score }}%</span>{% else %}<span class="status-pill">Not completed</span>{% endif %}<a class="btn primary" href="{{ url_for('academy_lesson', slug=lesson.slug) }}">{% if lesson.progress and lesson.progress.completed_at %}Review lesson{% else %}Start lesson{% endif %} →</a></div></article>{% endfor %}</section>
+{% extends "base.html" %}{% block title %}CyberLord Academy | Learn Cybersecurity{% endblock %}{% block description %}Structured cybersecurity courses with lessons, diagrams, graded checks and saved progress. Beginner path free; advanced courses unlock with a plan.{% endblock %}{% block content %}
+<section class="academy-hero academy-hero-v2">
+  <div class="eyebrow">CYBERLORD ACADEMY / LEARNING CENTRE</div>
+  <h1>Learn by doing.<br><span>Track your progress.</span></h1>
+  <p>Zero to job-ready: short lessons, real diagrams, graded checks and saved progress. Start free, unlock the advanced courses when you are ready. CyberLord AI stays separate.</p>
+  <div class="academy-hero-stats"><span><strong>6 courses</strong>structured paths</span><span><strong>35 lessons</strong>graded checks</span><span><strong>1 path</strong>free forever</span></div>
+  <div class="academy-progress"><div><strong>{{ completed }} / {{ total }}</strong><span>lessons completed</span></div><div class="progress-track"><i style="width:{{ (completed / total * 100) if total else 0 }}%"></i></div></div>
+</section>
+{% for block in courses %}
+<section class="course-block {{ 'locked' if block.locked else '' }}">
+  <header class="course-head">
+    <div class="course-head-copy">
+      <div class="eyebrow">{{ block.course.level }}{% if block.locked %} · <span class="plan-lock">Unlocks with {{ block.plan.name }}</span>{% endif %}</div>
+      <h2>{{ block.course.title }}</h2>
+      <p>{{ block.course.tagline }}</p>
+      <div class="course-progress">
+        <span class="muted">{{ block.done }} / {{ block.total }} lessons complete</span>
+        <span class="progress-track small"><i style="width:{{ block.pct }}%;"></i></span>
+        <span class="muted">{{ block.pct }}%</span>
+      </div>
+    </div>
+    <img class="course-cover-img" src="{{ url_for('static', filename='academy/' + block.course.cover) }}" alt="{{ block.course.title }} cover artwork" loading="lazy">
+  </header>
+  {% if block.locked %}
+  <div class="upgrade-card">
+    <div>
+      <strong>This course is part of {{ block.plan.name }}.</strong>
+      <p class="muted">Unlock all {{ block.course.title }} lessons, keep your progress synced, and add the rest of the {{ block.plan.name }} library. From <strong>₦{{ block.plan.ngn }} / {{ block.plan.usdt }} USDT</strong> for 30 days.</p>
+    </div>
+    <div class="upgrade-actions">
+      <a class="btn primary" href="{{ url_for('dashboard') }}#plans">View {{ block.plan.name }} plans →</a>
+      <a class="btn ghost" href="{{ url_for('academy') }}">Back to free course</a>
+    </div>
+    <p class="muted small">Your free course and finished lessons stay exactly as they are.</p>
+  </div>
+  {% endif %}
+  <div class="academy-grid">
+    {% for lesson in block.lessons %}
+    <article class="academy-card {{ 'is-locked' if block.locked else '' }}">
+      <img class="lesson-img" src="{{ url_for('static', filename='academy/' + lesson.image) }}" alt="{{ lesson.title }} illustration" loading="lazy">
+      <div class="academy-card-top"><span>{{ lesson.level }}</span><small>{{ lesson.time }}</small></div>
+      <h2>{{ lesson.title }}</h2>
+      <p>{{ lesson.desc }}</p>
+      <div class="academy-card-foot">
+        <span class="status-pill">{{ lesson.questions|length }} exercise questions</span>
+        {% if block.locked %}<span class="status-pill">🔒 {{ block.plan.name }}</span>
+        {% elif lesson.progress and lesson.progress.completed_at %}<span class="status-pill done">Completed · {{ lesson.progress.best_score }}%</span>
+        {% else %}<span class="status-pill">Not completed</span>{% endif %}
+        <a class="btn primary" href="{{ url_for('academy_lesson', slug=lesson.slug) }}">{{ '🔒 Locked' if block.locked else ('Review lesson' if lesson.done else 'Start lesson') }} →</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
 <section class="academy-note"><b>Learning responsibly</b><p>Use your own lab or systems where you have explicit permission. Lessons focus on understanding, evidence and responsible security practice.</p></section>
 {% endblock %}

@@ -1,0 +1,35 @@
+
+/* Academy v2: courses, covers, diagrams, upgrade cards */
+.course-block{margin:34px 0}
+.course-head{display:flex;gap:20px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;padding:20px;border:1px solid var(--line,rgba(255,255,255,.12));border-radius:16px;background:rgba(255,255,255,.035)}
+.course-head h2{font-size:clamp(1.5rem,3.4vw,2.1rem);margin:10px 0}
+.course-head p{max-width:720px;line-height:1.7;opacity:.8}
+.course-head-copy{flex:1 1 420px}
+.course-cover-img{width:320px;max-width:100%;border-radius:12px;border:1px solid var(--line,rgba(255,255,255,.12))}
+.course-progress{display:flex;gap:12px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.progress-track.small{flex:1 1 160px;margin:0}
+.plan-lock{color:#ffc17c}
+.course-block.locked .course-head{opacity:.92}
+.lesson-img{width:100%;border-radius:10px;margin-bottom:12px;border:1px solid var(--line,rgba(255,255,255,.1))}
+.lesson-hero-img{width:100%;max-width:640px;border-radius:12px;margin:14px 0;border:1px solid var(--line,rgba(255,255,255,.12))}
+.objective-list{line-height:1.8;opacity:.9;padding-left:20px}
+.upgrade-card{display:flex;gap:18px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin:18px 0;padding:20px;border:1px solid rgba(255,193,124,.35);border-radius:16px;background:rgba(255,193,124,.06)}
+.upgrade-card.large{margin:26px 0}
+.upgrade-card > div:first-child{min-width:260px;flex:1 1 320px}
+.upgrade-actions{display:flex;gap:12px;flex-wrap:wrap}
+.upgrade-cover{width:300px;max-width:100%;border-radius:12px}
+.plan-price{font-size:1.05rem;margin-top:8px}
+.small{font-size:.82rem}
+.academy-card.is-locked{opacity:.85}
+.academy-hero-v2 .academy-hero-stats{display:flex;gap:22px;flex-wrap:wrap;margin-top:16px}
+.academy-hero-v2 .academy-hero-stats span{font-size:.88rem;opacity:.85}
+.academy-hero-v2 .academy-hero-stats strong{display:block;font-size:1.15rem;color:#55e0ae}
+
+/* Academy tutor panel (per-lesson, reuses /api/ai-assistant) */
+.tutor-card{border:1px solid var(--line,rgba(255,255,255,.12));border-radius:16px;background:rgba(255,255,255,.035);padding:22px;margin-bottom:22px}
+.tutor-messages{display:flex;flex-direction:column;gap:10px;max-height:240px;overflow:auto;margin:14px 0}
+.tutor-msg{max-width:90%;padding:10px 12px;border-radius:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.tutor-msg.user{align-self:flex-end;background:rgba(50,214,160,.18)}
+.tutor-msg.bot{align-self:flex-start;background:rgba(255,255,255,.07)}
+.tutor-form{display:flex;gap:10px;flex-wrap:wrap}
+.tutor-form input{flex:1 1 200px;padding:11px 12px;border:1px solid rgba(255,255,255,.16);border-radius:9px;background:rgba(0,0,0,.2);color:inherit;font:inherit}

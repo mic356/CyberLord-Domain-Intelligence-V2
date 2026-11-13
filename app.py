@@ -25,7 +25,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Preformatted, Table, TableStyle, KeepTogether
 
-from academy_questions import ACADEMY_LESSONS
+from academy_questions import ACADEMY_LESSONS, ACADEMY_COURSES, get_course_for_lesson, course_lessons
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "CHANGE-ME-TO-A-LONG-RANDOM-SECRET")
@@ -360,6 +360,14 @@ def allowed_tool(tool):
     if tool in PRO_TOOLS and rank < 1: return False
     if tool in PLUS_TOOLS and rank < 2: return False
     return True
+
+def plan_rank(user=None):
+    user = user if user is not None else current_user
+    refresh_subscription(user)
+    return PLANS.get(getattr(user, "plan", "free") or "free", PLANS["free"])["rank"]
+
+def course_locked(course, user=None):
+    return plan_rank(user) < int(course.get("plan", 0))
 
 def require_tool(tool):
     def decorator(fn):
@@ -970,13 +978,25 @@ def dashboard():
 @login_required
 def academy():
     progress = {p.lesson_slug: p for p in AcademyProgress.query.filter_by(user_id=current_user.id).all()}
-    lessons = []
-    for item in ACADEMY_LESSONS:
-        row = dict(item)
-        row["progress"] = progress.get(item["slug"])
-        lessons.append(row)
-    completed = sum(1 for item in lessons if item["progress"] and item["progress"].completed_at)
-    return render_template("academy.html", lessons=lessons, completed=completed, total=len(lessons))
+    courses = []
+    for course in ACADEMY_COURSES:
+        rows = []
+        for item in course_lessons(course):
+            row = dict(item)
+            row["progress"] = progress.get(item["slug"])
+            row["done"] = bool(row["progress"] and row["progress"].completed_at)
+            rows.append(row)
+        done = sum(1 for r in rows if r["done"])
+        total = len(rows)
+        pct = int(round(done / total * 100)) if total else 0
+        plan = PLANS["pro" if int(course.get("plan", 0)) == 1 else "pro_plus" if int(course.get("plan", 0)) == 2 else "free"]
+        courses.append({
+            "course": course, "lessons": rows, "done": done, "total": total, "pct": pct,
+            "locked": course_locked(course), "plan": plan,
+        })
+    total_done = sum(c["done"] for c in courses)
+    total_all = sum(c["total"] for c in courses)
+    return render_template("academy.html", courses=courses, completed=total_done, total=total_all)
 
 @app.route("/academy/<slug>", methods=["GET", "POST"])
 @login_required
@@ -984,6 +1004,10 @@ def academy_lesson(slug):
     lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == slug), None)
     if not lesson:
         abort(404)
+    course = get_course_for_lesson(slug)
+    if course and course_locked(course):
+        plan = PLANS["pro" if int(course.get("plan", 0)) == 1 else "pro_plus"]
+        return render_template("academy_locked.html", lesson=lesson, course=course, plan=plan), 403
     questions = lesson.get("questions") or []
     progress = AcademyProgress.query.filter_by(user_id=current_user.id, lesson_slug=slug).first()
     result = None
@@ -1010,7 +1034,7 @@ def academy_lesson(slug):
         db.session.commit()
         result = {"answers": answers, "correct_count": correct_count, "total": len(questions), "pct": pct,
                   "explain": [next((item for item in questions if item is q), {}).get("explain", "") for q in questions]}
-    return render_template("academy_lesson.html", lesson=lesson, questions=questions, progress=progress, result=result, total=len(questions))
+    return render_template("academy_lesson.html", lesson=lesson, questions=questions, progress=progress, result=result, total=len(questions), course=course)
 
 @app.route("/interaction-board")
 @login_required
@@ -1510,7 +1534,22 @@ def ai_assistant():
     session["ai_rate_window"] = window
 
     body = request.get_json(silent=True) or {}
-    messages = body.get("messages", [])
+    messages = list(body.get("messages", []) or [])
+    lesson_slug = body.get("lesson_slug") or body.get("lesson") or ""
+    if lesson_slug:
+        lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == str(lesson_slug).strip()), None)
+        if lesson:
+            context = (
+                "Context: the user is studying the CyberLord Academy lesson '"
+                + str(lesson.get("title", "")) + "' (" + str(lesson.get("level", "")) + "). "
+                "Answer ONLY about this lesson's topic. "
+                "Lesson description: " + str(lesson.get("desc", "")) + ". "
+                "Key points: " + " ".join(lesson.get("content", []) or []) + ". "
+                "If the question is off-topic, say so briefly and offer to answer about this lesson instead. "
+                "Teach in plain, beginner-friendly steps; never give account/payment/scan results. "
+                "Safety: defensive and authorised-lab guidance only."
+            )
+            messages = [{"role": "user", "content": context}] + messages
     if not isinstance(messages, list):
         return jsonify(error="Invalid conversation format."), 400
 

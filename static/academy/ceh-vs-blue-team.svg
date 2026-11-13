@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Red team, blue team, and purple" class="academy-img">
+<rect width="100%" height="100%" rx="14" fill="#0b1220"/>
+<text x="320" y="40" fill="#f5f7fb" font-family="Arial,sans-serif" font-size="21" font-weight="bold" text-anchor="middle">Red team, blue team, and purple</text>
+<rect x="40" y="56" width="560" height="2" rx="1" fill="#32d6a0"/>
+<rect x="60" y="84" width="520" height="54" rx="10" fill="#101a2e" stroke="#32d6a0" stroke-width="1.5"/>
+<text x="320" y="108" fill="#f5f7fb" font-family="Arial,sans-serif" font-size="15" font-weight="bold" text-anchor="middle">Red team</text>
+<text x="320" y="128" fill="#9fb0c8" font-family="Arial,sans-serif" font-size="12" text-anchor="middle">thinks like the attacker</text>
+<line x1="320" y1="138" x2="320" y2="154" stroke="#32d6a0" stroke-width="2"/>
+<polygon points="314,154 326,154 320,165" fill="#32d6a0"/>
+<rect x="60" y="166" width="520" height="54" rx="10" fill="#101a2e" stroke="#32d6a0" stroke-width="1.5"/>
+<text x="320" y="190" fill="#f5f7fb" font-family="Arial,sans-serif" font-size="15" font-weight="bold" text-anchor="middle">Blue team</text>
+<text x="320" y="210" fill="#9fb0c8" font-family="Arial,sans-serif" font-size="12" text-anchor="middle">defends, detects, responds</text>
+<line x1="320" y1="220" x2="320" y2="236" stroke="#32d6a0" stroke-width="2"/>
+<polygon points="314,236 326,236 320,247" fill="#32d6a0"/>
+<rect x="60" y="248" width="520" height="54" rx="10" fill="#101a2e" stroke="#32d6a0" stroke-width="1.5"/>
+<text x="320" y="272" fill="#f5f7fb" font-family="Arial,sans-serif" font-size="15" font-weight="bold" text-anchor="middle">Purple team</text>
+<text x="320" y="292" fill="#9fb0c8" font-family="Arial,sans-serif" font-size="12" text-anchor="middle">runs exercises and closes the gaps live</text>
+<text x="320" y="350" fill="#7e8ea8" font-family="Arial,sans-serif" font-size="11" text-anchor="middle">CEH teaches attack. Blue team jobs teach defence. You need both.</text>
+</svg>

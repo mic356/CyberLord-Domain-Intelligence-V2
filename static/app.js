@@ -134,3 +134,32 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   const launchQuestion=new URLSearchParams(window.location.search).get("ask");
   if(launchQuestion){toggle(true);send(launchQuestion);window.history.replaceState({},document.title,window.location.pathname+window.location.hash);}
 })();
+
+// Academy tutor: per-lesson questions go to /api/ai-assistant with lesson_slug for context.
+(function(){
+  document.querySelectorAll(".tutor-form").forEach(form=>{
+    const card=form.closest(".tutor-card"); if(!card) return;
+    const slug=card.dataset.lesson||"";
+    const box=card.querySelector(".tutor-messages");
+    const input=form.querySelector("input");
+    function add(text,role){
+      const el=document.createElement("div");
+      el.className="tutor-msg "+role; el.textContent=text;
+      box.appendChild(el); box.scrollTop=box.scrollHeight;
+      return el;
+    }
+    form.addEventListener("submit",async e=>{
+      e.preventDefault();
+      const text=(input.value||"").trim(); if(!text) return;
+      add(text,"user"); input.value="";
+      const pending=add("Thinking…","bot");
+      try{
+        const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lesson_slug:slug,messages:[{role:"user",content:text}]})});
+        const data=await res.json();
+        pending.remove();
+        if(!res.ok) throw new Error(data.error||"The tutor is temporarily unavailable.");
+        add(data.reply,"bot");
+      }catch(err){ pending.textContent=err.message||"Something went wrong. Please try again."; }
+    });
+  });
+})();

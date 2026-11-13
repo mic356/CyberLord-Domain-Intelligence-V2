@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block title %}{{ course.title }} · CyberLord Academy{% endblock %}{% block content %}
+<div class="page-heading"><a class="back-link" href="{{ url_for('academy') }}">← Academy</a><div class="eyebrow">{{ course.level }} · {{ plan.name }}</div><h1>{{ lesson.title }}</h1><p>{{ lesson.desc }}</p></div>
+<section class="upgrade-card large">
+  <div>
+    <strong>This lesson is part of {{ course.title }} ({{ plan.name }}).</strong>
+    <p class="muted">Upgrade to unlock this lesson and every other lesson in the course. Your free course, finished lessons and progress stay exactly as they are.</p>
+    <p class="plan-price">From <strong>₦{{ plan.ngn }} / {{ plan.usdt }} USDT</strong> for 30 days.</p>
+  </div>
+  <img class="upgrade-cover" src="{{ url_for('static', filename='academy/' + course.cover) }}" alt="{{ course.title }} cover" loading="lazy">
+  <div class="upgrade-actions">
+    <a class="btn primary" href="{{ url_for('dashboard') }}#plans">View {{ plan.name }} plans →</a>
+    <a class="btn ghost" href="{{ url_for('academy') }}">Back to academy</a>
+  </div>
+</section>
+<section class="academy-note"><b>What you get with {{ plan.name }}</b><p>All lessons in {{ course.title }}, graded checks with explanations, saved progress per lesson and per course, and the full {{ plan.name }} library.</p></section>
+{% endblock %}

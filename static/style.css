@@ -240,3 +240,12 @@ footer{font-size:11px}
 .scrollTop{transform:none}
 .cards article:hover,.feature-card:hover,.public-plan:hover,.app-shortcuts a:hover{transform:none}
 }
+
+/* Academy tutor panel (per-lesson, reuses /api/ai-assistant) */
+.tutor-card{border:1px solid var(--line,rgba(255,255,255,.12));border-radius:16px;background:rgba(255,255,255,.035);padding:22px;margin-bottom:22px}
+.tutor-messages{display:flex;flex-direction:column;gap:10px;max-height:240px;overflow:auto;margin:14px 0}
+.tutor-msg{max-width:90%;padding:10px 12px;border-radius:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.tutor-msg.user{align-self:flex-end;background:rgba(50,214,160,.18)}
+.tutor-msg.bot{align-self:flex-start;background:rgba(255,255,255,.07)}
+.tutor-form{display:flex;gap:10px;flex-wrap:wrap}
+.tutor-form input{flex:1 1 200px;padding:11px 12px;border:1px solid rgba(255,255,255,.16);border-radius:9px;background:rgba(0,0,0,.2);color:inherit;font:inherit}
