@@ -1036,6 +1036,18 @@ def academy_lesson(slug):
                   "explain": [next((item for item in questions if item is q), {}).get("explain", "") for q in questions]}
     return render_template("academy_lesson.html", lesson=lesson, questions=questions, progress=progress, result=result, total=len(questions), course=course)
 
+@app.route("/tutor")
+@login_required
+def tutor():
+    """Full-page tutor dashboard. Uses the same /api/ai-assistant endpoint
+    as the lesson panels, so lesson context and the GEMINI_API_KEY routing
+    (with built-in fallback) are shared. Chat history is kept in the
+    browser session (sessionStorage) by templates/tutor.html."""
+    lesson_slug = (request.args.get("lesson") or "").strip()
+    lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == lesson_slug), None)
+    return render_template("tutor.html", lesson_slug=lesson["slug"] if lesson else "")
+
+
 @app.route("/interaction-board")
 @login_required
 def interaction_board():
@@ -1577,7 +1589,7 @@ def ai_assistant():
         return jsonify(error="Please enter a question."), 400
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
+    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
     if api_key:
         try:
             endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -1599,7 +1611,7 @@ def ai_assistant():
             }
             response = requests.post(endpoint,
                 headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-                json=payload, timeout=25)
+                json=payload, timeout=12)
             response.raise_for_status()
             data = response.json()
             candidates = data.get("candidates") or []

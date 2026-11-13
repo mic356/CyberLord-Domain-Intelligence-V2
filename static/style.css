@@ -249,3 +249,18 @@ footer{font-size:11px}
 .tutor-msg.bot{align-self:flex-start;background:rgba(255,255,255,.07)}
 .tutor-form{display:flex;gap:10px;flex-wrap:wrap}
 .tutor-form input{flex:1 1 200px;padding:11px 12px;border:1px solid rgba(255,255,255,.16);border-radius:9px;background:rgba(0,0,0,.2);color:inherit;font:inherit}
+
+/* Tutor voice button (static/voice.js) — hidden automatically if the browser has no speechSynthesis */
+.speak-btn{margin-left:8px;padding:4px 10px;border-radius:999px;border:1px solid var(--line,rgba(255,255,255,.25));background:rgba(255,255,255,.06);color:inherit;font:inherit;font-size:.8rem;cursor:pointer;white-space:nowrap;vertical-align:middle}
+.speak-btn:hover{background:rgba(85,224,174,.18)}
+.tutor-full-link{color:#55e0ae;font-weight:600}
+
+/* Full-page tutor dashboard (/tutor) */
+.tutor-dashboard{border:1px solid var(--line,rgba(255,255,255,.12));border-radius:16px;background:rgba(255,255,255,.035);padding:22px;margin:18px 0}
+.chat-thread{display:flex;flex-direction:column;gap:12px;min-height:260px;max-height:60vh;overflow:auto;margin:14px 0}
+.chat-msg{max-width:85%;padding:12px 14px;border-radius:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.chat-msg.user{align-self:flex-end;background:rgba(50,214,160,.18)}
+.chat-msg.bot{align-self:flex-start;background:rgba(255,255,255,.07)}
+.tutor-intro{opacity:.92}
+.chat-form input{flex:1 1 280px}
+
