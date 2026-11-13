@@ -66,7 +66,7 @@
   </button>
 </div>
 <aside class="cl-ai-panel" id="cl-ai-panel" aria-label="CyberLord AI assistant" hidden>
-  <div class="cl-ai-head"><div><span class="cl-ai-avatar">CL</span><span><b>CyberLord AI</b><small>Gemini-powered cybersecurity assistant</small></span></div>
+  <div class="cl-ai-head"><div><span class="cl-ai-avatar">CL</span><span><b>CyberLord AI</b><small>Cybersecurity assistant</small></span></div>
     <button type="button" id="cl-ai-close" aria-label="Close assistant">×</button></div>
   <div class="cl-ai-body" id="cl-ai-messages" aria-live="polite">
     <div class="cl-ai-message bot">Welcome to CyberLord Intelligence. 👋 I can explain cybersecurity concepts, tools, networks, web and cloud security, vulnerability management, incident response and more. I can also check individual CVE records against the live NIST NVD and recent CISA exploited-vulnerability entries when those public services are available. What would you like to explore?</div>
@@ -82,8 +82,8 @@
       <button type="button" data-question="Create a beginner-friendly cybersecurity learning roadmap.">My learning roadmap</button>
     </div>
   </div>
-  <form class="cl-ai-compose" id="cl-ai-form"><input id="cl-ai-input" maxlength="1800" placeholder="Ask about any cybersecurity topic…" autocomplete="off" required><button type="submit" aria-label="Send message">➤</button></form>
-  <div class="cl-ai-foot">Gemini AI with a built-in fallback. Verify critical findings against trusted sources. Payment approvals are never handled by chat. <a href="mailto:michaelelvistito@gmail.com">Contact human support</a>.</div>
+  <form class="cl-ai-compose" id="cl-ai-form"><input id="cl-ai-input" maxlength="1800" placeholder="Ask about any cybersecurity topic…" autocomplete="off" required><button type="submit" aria-label="Send message">➤</button><button type="button" class="voice-toggle" data-voice-toggle aria-pressed="false" aria-label="Tap to hear answers spoken aloud" title="Voice replies on/off">🔊</button><button type="button" class="mic-btn" data-mic-btn aria-label="Talk to CyberLord AI" title="Talk to CyberLord AI">🎙</button></form>
+  <div class="cl-ai-foot">Verify critical findings against trusted sources. Payment approvals are never handled by chat. <a href="mailto:michaelelvistito@gmail.com">Contact human support</a>.</div>
 </aside>
 
 {% endblock %}

@@ -1,19 +1,23 @@
-// CyberLord Tutor voice: Web Speech API (speechSynthesis) — free, built into
-// phone and desktop browsers. No API key, no cost. If the browser does not
-// support it, every speaker button stays hidden (silent degrade).
+// CyberLord Tutor voice: Web Speech API (speechSynthesis + SpeechRecognition) —
+// free, built into phone and desktop browsers. No API key, no cost. Degrades
+// silently when the browser has neither capability.
 
 (function () {
   "use strict";
 
-  function supported() {
-    try {
-      return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
-    } catch (e) {
-      return false;
-    }
-  }
+  var LS = "cl-voice-replies";
+  var voiceOn = false;
+  try { voiceOn = localStorage.getItem(LS) === "1"; } catch (e) {}
 
-  if (!supported()) return; // degrade silently: no buttons, no errors
+  function ttsOK() {
+    try { return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window; }
+    catch (e) { return false; }
+  }
+  function sttOK() {
+    try { return !!window.SpeechRecognition || !!window.webkitSpeechRecognition; }
+    catch (e) { return false; }
+  }
+  if (!ttsOK() && !sttOK()) return;
 
   function pickEnglishVoice() {
     try {
@@ -27,13 +31,10 @@
     } catch (e) {}
     return null;
   }
+  if (ttsOK()) { try { window.speechSynthesis.onvoiceschanged = function () {}; } catch (e) {} }
 
-  // Voices often load asynchronously; refresh the pick when they arrive.
-  try {
-    window.speechSynthesis.onvoiceschanged = function () {};
-  } catch (e) {}
-
-  function speak(text, btn) {
+  function speak(text) {
+    if (!ttsOK() || !voiceOn) return;
     try {
       window.speechSynthesis.cancel();
       var clean = String(text || "").replace(/\s+/g, " ").trim().slice(0, 900);
@@ -43,57 +44,91 @@
       utter.rate = 1.0;
       var voice = pickEnglishVoice();
       if (voice) utter.voice = voice;
-      if (btn) {
-        btn.textContent = "⏹ Stop";
-        utter.onend = utter.onerror = function () {
-          btn.textContent = "🔊 Listen";
-        };
-      }
       window.speechSynthesis.speak(utter);
-    } catch (e) {
-      if (btn) btn.textContent = "🔊 Listen";
-    }
+    } catch (e) {}
   }
+  function stopSpeak() { try { if (ttsOK()) window.speechSynthesis.cancel(); } catch (e) {} }
 
-  function makeButton(messageEl) {
-    if (!messageEl || messageEl.dataset.voiceReady === "1") return;
-    messageEl.dataset.voiceReady = "1";
-    var btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "speak-btn";
-    btn.textContent = "🔊 Listen";
-    btn.setAttribute("aria-label", "Listen to this answer");
-    btn.addEventListener("click", function () {
-      if (window.speechSynthesis.speaking) {
-        try { window.speechSynthesis.cancel(); } catch (e) {}
-        btn.textContent = "🔊 Listen";
-      } else {
-        speak(messageEl.textContent.replace(/🔊 Listen|⏹ Stop/g, ""), btn);
-      }
-    });
-    messageEl.appendChild(btn);
-  }
-
+  // Auto-speak new bot replies when voice replies are ON.
   function scan(root) {
     var scope = root || document;
     if (!scope.querySelectorAll) return;
     scope.querySelectorAll(".tutor-msg.bot, .cl-ai-message.bot, .chat-msg.bot").forEach(function (el) {
-      makeButton(el);
+      if (el.dataset.voiceReady === "1") return;
+      el.dataset.voiceReady = "1";
+      var txt = el.textContent;
+      if (voiceOn) speak(txt);
     });
   }
 
-  // Attach buttons to replies that already exist, and to future replies.
+  // ---- speaker toggle at the bottom of each composer ----
+  function refreshToggles() {
+    document.querySelectorAll("[data-voice-toggle]").forEach(function (b) {
+      b.setAttribute("aria-pressed", voiceOn ? "true" : "false");
+      b.classList.toggle("on", voiceOn);
+      b.textContent = voiceOn ? "🔊" : "🔈";
+    });
+  }
+  function bindToggle(b) {
+    if (b.dataset.voiceBound === "1") return;
+    b.dataset.voiceBound = "1";
+    b.addEventListener("click", function () {
+      voiceOn = !voiceOn;
+      try { localStorage.setItem(LS, voiceOn ? "1" : "0"); } catch (e) {}
+      refreshToggles();
+      if (!voiceOn) stopSpeak();
+    });
+  }
+  function bindMic(b) {
+    if (!sttOK()) { b.style.display = "none"; return; }
+    if (b.dataset.micBound === "1") return;
+    b.dataset.micBound = "1";
+    b.addEventListener("click", function () {
+      var Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+      try {
+        var rec = new Ctor();
+        rec.lang = "en-US";
+        rec.interimResults = false;
+        rec.maxAlternatives = 1;
+        b.textContent = "●";
+        b.classList.add("listening");
+        rec.onresult = function (ev) {
+          var text = (ev.results[0][0].transcript || "").trim();
+          b.textContent = "🎙"; b.classList.remove("listening");
+          if (text) {
+            var form = b.closest("form");
+            var input = form ? form.querySelector("input[type='text'], input:not([type])") : null;
+            if (input) { input.value = text; }
+            if (form) {
+              if (form.requestSubmit) form.requestSubmit();
+              else form.dispatchEvent(new Event("submit", { cancelable: true }));
+            }
+          }
+        };
+        rec.onerror = rec.onend = function () { b.textContent = "🎙"; b.classList.remove("listening"); };
+        rec.start();
+      } catch (e) { b.textContent = "🎙"; b.classList.remove("listening"); }
+    });
+  }
+  function wireComposers(scope) {
+    if (!scope.querySelectorAll) return;
+    scope.querySelectorAll("[data-voice-toggle]").forEach(bindToggle);
+    scope.querySelectorAll("[data-mic-btn]").forEach(bindMic);
+    refreshToggles();
+  }
+  wireComposers(document);
+
   scan(document);
   try {
     var observer = new MutationObserver(function (mutations) {
       mutations.forEach(function (m) {
         m.addedNodes.forEach(function (node) {
-          if (node.nodeType === 1) {
-            if (node.matches && node.matches(".tutor-msg.bot, .cl-ai-message.bot, .chat-msg.bot")) {
-              makeButton(node);
-            } else if (node.querySelectorAll) {
-              scan(node);
-            }
+          if (node.nodeType !== 1) return;
+          wireComposers(node);
+          if (node.matches && node.matches(".tutor-msg.bot, .cl-ai-message.bot, .chat-msg.bot")) {
+            scan(node.parentNode || document);
+          } else if (node.querySelectorAll) {
+            scan(node);
           }
         });
       });

@@ -200,8 +200,15 @@ def _followup_for(low, title):
             return v
     return "Want me to go deeper on any part, or give you a practical example with commands?"
 
+_STOP = {"how","do","does","what","is","are","the","to","of","in","on","for","my","me","it","this","that","and","or","can","you","tell","about","explain","teach","please"}
+_ALIAS_EXTRA = {"website":"web security http","site":"web security http","secure":"security","securing":"security","protect":"security","domain":"dns web","wifi":"wireless","virus":"malware"}
 def _tokens(s):
-    return set(re.findall(r"[a-z0-9+#.-]{2,}", (s or "").lower()))
+    toks = set(re.findall(r"[a-z0-9+#.-]{2,}", (s or "").lower())) - _STOP
+    extra=set()
+    for t in list(toks):
+        if t in _ALIAS_EXTRA:
+            extra.update(_ALIAS_EXTRA[t].split())
+    return toks | extra
 
 
 def _topic_matches(query):
@@ -209,7 +216,7 @@ def _topic_matches(query):
     ranked = []
     for title, body in TOPICS:
         keys = _tokens(title)
-        score = len(q & keys)
+        score = len(q & keys) * 2
         # Related technical vocabulary can identify a topic even if the title differs.
         body_keys = _tokens(body)
         score += min(4, len(q & body_keys) // 5)
@@ -261,46 +268,64 @@ def _live_kev(query):
         return "I couldn't reach CISA's live Known Exploited Vulnerabilities feed right now. Visit https://www.cisa.gov/known-exploited-vulnerabilities-catalog and try again later."
 
 
+_SMALL_TALK = {
+    "hi": "Hey there! What are we learning today?",
+    "hello": "Hello! Ask me anything about cybersecurity or your CyberLord tools.",
+    "hey": "Hey! What do you want to work on?",
+    "good morning": "Good morning! What can I help you with today?",
+    "good evening": "Good evening! What are we digging into?",
+    "how are you": "Doing great, thanks for asking. What can I help you with?",
+    "what's up": "Not much, just ready to help. What do you need?",
+    "thanks": "You're welcome! Anything else on your mind?",
+    "thank you": "You're welcome! Anything else I can help with?",
+    "bye": "See you later, happy learning!",
+    "goodbye": "See you later, happy learning!",
+}
+
+_CONVERSATIONAL_STARTERS = [
+    "Good question. ", "Sure, let's walk through it. ", "Easy one. ",
+    "Here's the short version. ", "Let's break it down. ", "Happy to explain. ",
+]
+
+def _focus_phrase(q):
+    low = q.lower()
+    for phrase in ("how do i ", "how to ", "how can i ", "explain ", "what is ", "what does ", "what are ", "tell me about ", "teach me "):
+        if phrase in low:
+            return low.split(phrase, 1)[1][:60]
+    words = low.split()
+    return " ".join(words[:5])[:60] if words else ""
+
+
 def answer(query, history=None):
     q = (query or "").strip()
-    low = q.lower()
+    low = q.lower().strip(" .!?")
     if not q:
-        return "Ask me a cybersecurity, technology or CyberLord question and I'll help you work through it."
-    if low in ("thanks", "thank you", "thank you so much", "appreciated"):
-        return "You're welcome! Happy to help anytime. Want to dig into another topic, or is there a scan result you'd like explained?"
-    if low in ("bye", "goodbye", "see you", "see you later"):
-        return "See you later! Come back anytime you want a hand with security topics or your CyberLord tools."
-    if low in ("how are you", "how's it going", "how is it going", "what's up"):
-        return "Doing well, thanks for asking! I'm here to help with cybersecurity questions, CyberLord tools, or making sense of a scan result. What are you working on today?"
+        return "Ask me anything about cybersecurity or your CyberLord tools and I'll walk you through it."
+    if low in _SMALL_TALK:
+        return _SMALL_TALK[low]
     live = _live_cve(q)
     if live:
         return live
     if any(x in low for x in ("latest exploited", "known exploited", "cisa kev", "recent kev", "latest cve feed")):
         return _live_kev(q)
-    if low.strip() in ("hello", "hi", "hey", "good morning", "good evening", "hello there", "hi there", "hey there"):
-        greeting = _pick(_GREETINGS, q)
-        return f"{greeting} I'm CyberLord Intelligence Assistant. I can explain cybersecurity concepts, tools, networks, web security, cloud, incident response, and help interpret scan results. I can also look up individual CVEs in the live NIST NVD and recent entries in CISA's exploited-vulnerability catalog when those services are reachable. What are you working on today?"
     if any(x in low for x in ("cyberlord plan", "subscription", "pro plus", "payment", "paystack", "bank transfer", "usdt")):
         return ("CYBERLORD ACCOUNT & PLANS\nPro: 6,300 NGN or 4.50 USDT for 30 days. Pro Plus: 12,600 NGN or 9.00 USDT for 30 days. USDT networks supported by the current dashboard are TRC20 and BEP20; Paystack is temporarily disabled.\nA receipt, screenshot or bank reference alone does not activate a subscription. Payment must be independently verified by the server-side payment process. I cannot approve payments or change accounts. Never share passwords, OTPs, private keys or seed phrases in chat. For account-specific help contact michaelelvistito@gmail.com.")
-    for trigger, clarifier in _AMBIGUOUS:
-        if trigger in low and len(low.split()) <= 6:
-            return clarifier
     if any(x in low for x in ("how do i hack", "hack into", "break into", "crack password")):
         return "I can only help with authorized testing and learning. Are you trying to practice in your own lab, understand a concept defensively, or secure a system you own? Tell me which, and I'll point you to a legal path."
-    if "server load" in low or "server-load" in low or "load average" in low:
-        server_load = next((body for title, body in TOPICS if title == "server load"), "")
-        if server_load:
-            return server_load + "\n\nPRACTICAL NEXT STEP\nCheck uptime and top before reacting, and alert on sustained load over minutes, not a single spike.\n\nREFERENCE LIBRARY\n" + "\n".join(f"- {name}: {url}" for name, url in SOURCES[:5])
     matches = _topic_matches(q)
     if matches:
-        opener = _pick(_VARIANT_OPENERS, q)
-        out = [opener]
-        for i, (_, title, body) in enumerate(matches, 1):
-            out.append(f"{i}. {title.title()}\n{body}")
-        out.append("\nPRACTICAL NEXT STEP\n" + _followup_for(low, matches[0][1]) + "\n\nTell me your operating system, tool, exact error or sanitized scan output and I can make the explanation more specific. Remove passwords, tokens, personal data and private keys before sharing.")
-        out.append("\nREFERENCE LIBRARY\n" + "\n".join(f"- {name}: {url}" for name, url in SOURCES[:5]))
+        score, title, body = matches[0]
+        starter = _pick(_CONVERSATIONAL_STARTERS, q)
+        first_para = body.split("\n\n")[0].strip()[:420]
+        rest = body[len(first_para):].strip(" \n")
+        out = [starter + first_para]
+        if rest:
+            out.append(rest)
+        out.append("\nWant me to go deeper on " + title + " or show a practical example next?")
         return "\n\n".join(out)
-    return (
-        _UNCERTAINTY + "\n\nFor safety, I can assist with authorised testing and defensive learning, not unauthorised access or harm."
-    )
+    focus = _focus_phrase(q)
+    if focus:
+        return ("Great question about " + focus + ". "
+                "I can cover the core idea, a safe hands-on example, and what to check next if you tell me whether you are learning, securing your own system, or running an authorized lab.")
+    return (_UNCERTAINTY + "\n\nSafety: I can help with authorized testing and defensive learning only, not unauthorized access or harm.")
 

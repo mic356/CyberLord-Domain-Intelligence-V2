@@ -1,13 +1,50 @@
 {% extends "base.html" %}{% block title %}CyberLord Academy | Learn Cybersecurity{% endblock %}{% block description %}Structured cybersecurity courses with lessons, diagrams, graded checks and saved progress. Beginner path free; advanced courses unlock with a plan.{% endblock %}{% block content %}
-<section class="academy-hero academy-hero-v2">
-  <div class="eyebrow">CYBERLORD ACADEMY / LEARNING CENTRE</div>
-  <h1>Learn by doing.<br><span>Track your progress.</span></h1>
-  <p>Zero to job-ready: short lessons, real diagrams, graded checks and saved progress. Start free, unlock the advanced courses when you are ready. CyberLord AI stays separate.</p>
-  <div class="academy-hero-stats"><span><strong>6 courses</strong>structured paths</span><span><strong>35 lessons</strong>graded checks</span><span><strong>1 path</strong>free forever</span></div>
-  <div class="academy-progress"><div><strong>{{ completed }} / {{ total }}</strong><span>lessons completed</span></div><div class="progress-track"><i style="width:{{ (completed / total * 100) if total else 0 }}%"></i></div></div>
+<section class="academy-hero-v3">
+  <div class="academy-hero-copy">
+    <div class="academy-eyebrow"><span class="pulse-dot"></span> CYBERLORD ACADEMY</div>
+    <h1>Learn cybersecurity.<br><span>Master it step by step.</span></h1>
+    <p>Zero-to-hero learning paths with short lessons, real cover art, hands-on exercises and progress you can see at a glance. Start free. Unlock advanced tracks when you're ready.</p>
+    <div class="academy-hero-actions">
+      <a class="btn primary hero-cta" href="#paths">Start learning <span>→</span></a>
+      <a class="btn ghost hero-secondary" href="{{ url_for('tutor') }}">Ask the tutor</a>
+    </div>
+    <div class="academy-stats-grid">
+      <div><strong>6</strong><span>Learning paths</span></div>
+      <div><strong>{{ total }}</strong><span>Lessons</span></div>
+      <div><strong>{{ completed }}</strong><span>Completed</span></div>
+      <div><strong>{{ (completed / total * 100) | round | int if total else 0 }}%</strong><span>Overall progress</span></div>
+    </div>
+  </div>
+  <div class="academy-dashboard-card">
+    <div class="dash-card-head"><span>Your progress</span><span class="dash-badge">LIVE</span></div>
+    <div class="dash-ring-wrap">
+      <div class="progress-ring" style="--pct:{{ (completed / total * 100) if total else 0 }}"><span>{{ (completed / total * 100) | round | int if total else 0 }}%</span></div>
+      <div><strong>{{ completed }} of {{ total }} lessons</strong><p class="muted">Keep the streak going. Your next lesson is waiting below.</p></div>
+    </div>
+    <div class="dash-mini-list">
+      {% for block in courses[:3] %}<div class="dash-mini-row"><span>{{ block.course.title }}</span><span class="progress-track small"><i style="width:{{ block.pct }}%"></i></span><b>{{ block.pct }}%</b></div>{% endfor %}
+    </div>
+  </div>
+</section>
+<section id="paths" class="paths-section">
+<div class="paths-head"><h2>Learning paths</h2><p class="muted">Pick a path and work through it in order. Each card shows your progress, lesson count and plan.</p></div>
+<div class="paths-grid">
+{% for block in courses %}
+  <article class="path-card {{ 'locked' if block.locked else '' }}">
+    <div class="path-card-cover"><img src="{{ url_for('static', filename='academy/' + block.course.cover) }}" alt="{{ block.course.title }} cover" loading="lazy"><span class="path-plan-badge">{{ block.plan.name }}</span></div>
+    <div class="path-card-body">
+      <div class="path-card-meta"><span>{{ block.course.level }}</span><span>{{ block.total }} lessons</span></div>
+      <h3>{{ block.course.title }}</h3>
+      <p>{{ block.course.tagline }}</p>
+      <div class="path-progress"><div class="progress-track"><i style="width:{{ block.pct }}%"></i></div><span>{{ block.done }}/{{ block.total }} · {{ block.pct }}%</span></div>
+      {% if block.locked %}<a class="btn primary full" href="{{ url_for('dashboard') }}#plans">Unlock with {{ block.plan.name }}</a>{% else %}<a class="btn primary full" href="#course-{{ loop.index }}">View lessons</a>{% endif %}
+    </div>
+  </article>
+{% endfor %}
+</div>
 </section>
 {% for block in courses %}
-<section class="course-block {{ 'locked' if block.locked else '' }}">
+<section class="course-block" id="course-{{ loop.index }}">
   <header class="course-head">
     <div class="course-head-copy">
       <div class="eyebrow">{{ block.course.level }}{% if block.locked %} · <span class="plan-lock">Unlocks with {{ block.plan.name }}</span>{% endif %}</div>
@@ -29,7 +66,6 @@
     </div>
     <div class="upgrade-actions">
       <a class="btn primary" href="{{ url_for('dashboard') }}#plans">View {{ block.plan.name }} plans →</a>
-      <a class="btn ghost" href="{{ url_for('academy') }}">Back to free course</a>
     </div>
     <p class="muted small">Your free course and finished lessons stay exactly as they are.</p>
   </div>
@@ -37,15 +73,15 @@
   <div class="academy-grid">
     {% for lesson in block.lessons %}
     <article class="academy-card {{ 'is-locked' if block.locked else '' }}">
-      <img class="lesson-img" src="{{ url_for('static', filename='academy/' + lesson.image) }}" alt="{{ lesson.title }} illustration" loading="lazy">
+      <div class="lesson-card-cover"><img class="lesson-img" src="{{ url_for('static', filename='academy/' + lesson.image) }}" alt="{{ lesson.title }} illustration" loading="lazy">{% if lesson.done %}<span class="done-badge">✓ Done</span>{% endif %}</div>
       <div class="academy-card-top"><span>{{ lesson.level }}</span><small>{{ lesson.time }}</small></div>
       <h2>{{ lesson.title }}</h2>
       <p>{{ lesson.desc }}</p>
       <div class="academy-card-foot">
-        <span class="status-pill">{{ lesson.questions|length }} exercise questions</span>
+        <span class="status-pill">{{ lesson.questions|length }} questions</span>
         {% if block.locked %}<span class="status-pill">🔒 {{ block.plan.name }}</span>
-        {% elif lesson.progress and lesson.progress.completed_at %}<span class="status-pill done">Completed · {{ lesson.progress.best_score }}%</span>
-        {% else %}<span class="status-pill">Not completed</span>{% endif %}
+        {% elif lesson.done %}<span class="status-pill done">Completed · {{ lesson.progress.best_score }}%</span>
+        {% else %}<span class="status-pill">Not started</span>{% endif %}
         <a class="btn primary" href="{{ url_for('academy_lesson', slug=lesson.slug) }}">{{ '🔒 Locked' if block.locked else ('Review lesson' if lesson.done else 'Start lesson') }} →</a>
       </div>
     </article>

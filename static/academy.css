@@ -48,3 +48,49 @@
 .tutor-intro{opacity:.92}
 .chat-form input{flex:1 1 280px}
 
+
+
+/* ---- Modern academy v3 ---- */
+.academy-hero-v3{display:grid;grid-template-columns:1.2fr .8fr;gap:28px;align-items:center;padding:42px;border-radius:22px;margin:10px 0 34px;position:relative;overflow:hidden;background:radial-gradient(120% 150% at 0% 0%,rgba(85,224,174,.22),transparent 55%),radial-gradient(100% 120% at 100% 100%,rgba(64,138,255,.20),transparent 55%),linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.02));border:1px solid var(--line,rgba(255,255,255,.12))}
+.academy-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:.78rem;letter-spacing:.16em;font-weight:700;color:#55e0ae}
+.pulse-dot{width:9px;height:9px;border-radius:50%;background:#55e0ae;animation:pulse 2s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 10px rgba(85,224,174,0)}100%{box-shadow:0 0 0 0 rgba(85,224,174,0)}}
+.academy-hero-v3 h1{font-size:clamp(2rem,5vw,3.2rem);line-height:1.08;margin:14px 0}
+.academy-hero-v3 h1 span{background:linear-gradient(90deg,#55e0ae,#40a0ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.academy-hero-v3 p{max-width:560px;line-height:1.7;opacity:.85}
+.academy-hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}
+.hero-cta{padding:13px 22px;border-radius:12px}
+.academy-stats-grid{display:flex;gap:26px;flex-wrap:wrap}
+.academy-stats-grid strong{display:block;font-size:1.35rem;color:#55e0ae}
+.academy-stats-grid span{font-size:.82rem;opacity:.75}
+.academy-dashboard-card{background:rgba(10,16,28,.55);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:22px;box-shadow:0 18px 40px rgba(0,0,0,.25)}
+.dash-card-head{display:flex;justify-content:space-between;font-weight:700;margin-bottom:16px}
+.dash-badge{font-size:.68rem;letter-spacing:.12em;color:#55e0ae;border:1px solid rgba(85,224,174,.5);padding:3px 8px;border-radius:999px}
+.dash-ring-wrap{display:flex;gap:18px;align-items:center;margin-bottom:16px}
+.progress-ring{--pct:0;width:92px;height:92px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;background:conic-gradient(#55e0ae calc(var(--pct)*1%),rgba(255,255,255,.12) 0);position:relative}
+.progress-ring::after{content:"";position:absolute;inset:9px;border-radius:50%;background:#0c1626}
+.progress-ring span{position:relative;z-index:1;font-weight:800;font-size:1.1rem}
+.dash-mini-row{display:flex;align-items:center;gap:10px;font-size:.84rem;padding:7px 0}
+.dash-mini-row span:first-child{flex:1 1 120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.paths-section{margin:8px 0 10px}
+.paths-head h2{font-size:1.6rem;margin-bottom:4px}
+.paths-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;margin:18px 0 8px}
+.path-card{border:1px solid var(--line,rgba(255,255,255,.12));border-radius:18px;overflow:hidden;background:rgba(255,255,255,.035);transition:transform .25s ease,border-color .25s ease}
+.path-card:hover{transform:translateY(-4px);border-color:rgba(85,224,174,.45)}
+.path-card-cover{position:relative}
+.path-card-cover img{width:100%;height:150px;object-fit:cover;display:block}
+.path-plan-badge{position:absolute;top:10px;right:10px;background:rgba(8,14,22,.78);color:#55e0ae;font-size:.72rem;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid rgba(85,224,174,.4)}
+.path-card-body{padding:18px}
+.path-card-meta{display:flex;justify-content:space-between;font-size:.76rem;letter-spacing:.06em;text-transform:uppercase;opacity:.7;margin-bottom:8px}
+.path-card h3{margin:4px 0 6px}
+.path-card p{opacity:.82;line-height:1.6;font-size:.92rem}
+.path-progress{display:flex;align-items:center;gap:10px;margin:14px 0}
+.path-progress .progress-track{flex:1;margin:0}
+.path-progress span{font-size:.82rem;opacity:.8;white-space:nowrap}
+.btn.full{width:100%;justify-content:center}
+.lesson-card-cover{position:relative}
+.done-badge{position:absolute;top:10px;left:10px;background:#12513a;color:#b9f5da;font-size:.72rem;font-weight:700;padding:4px 10px;border-radius:999px}
+@media(max-width:900px){.academy-hero-v3{grid-template-columns:1fr;padding:26px}}
+.voice-toggle,.mic-btn{border-radius:10px;padding:10px 12px;cursor:pointer}
+.voice-toggle.on{background:rgba(85,224,174,.18);border-color:rgba(85,224,174,.6)}
+.mic-btn.listening{background:rgba(255,90,90,.22);animation:pulse 1.2s infinite}
