@@ -1,21 +1,23 @@
-{% extends "base.html" %}{% block title %}CyberLord Tutor | Ask any cybersecurity question{% endblock %}{% block description %}CyberLord Tutor: ask any cybersecurity question, get a clear answer, and press Listen to hear it read aloud.{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}CyberLord Tutor | Ask any cybersecurity question{% endblock %}{% block description %}CyberLord Tutor: ask any cybersecurity question and talk with it by voice.{% endblock %}{% block content %}
 <div class="page-heading">
   <div class="eyebrow">CYBERLORD TUTOR / ANSWER DASHBOARD</div>
-  <h1>CyberLord Tutor with voice</h1>
-  <p class="muted">Ask any cybersecurity question below. Every answer appears in the chat thread, stays in your session history, and has a speaker button so you can hear it read aloud in English. Nothing is charged for voice: it uses your browser's built-in speech.</p>
+  <h1>CyberLord Tutor</h1>
+  <p class="muted">Ask any cybersecurity question below. Tap the speaker at the bottom to hear answers read aloud, or tap the mic and just talk to it.</p>
 </div>
 
 <section class="tutor-dashboard" id="tutor-dashboard" data-lesson="{{ lesson_slug or '' }}">
   <div class="chat-thread" id="chat-thread" aria-live="polite">
-    <div class="chat-msg bot tutor-intro">I am CyberLord Tutor. Ask me anything about cybersecurity. Press <b>Listen</b> under any answer to hear it read aloud.<button type="button" class="speak-btn" data-speak-intro aria-label="Listen to the tutor introduction">🔊 Listen</button></div>
+    <div class="chat-msg bot tutor-intro">I am CyberLord Tutor. Ask me anything about cybersecurity.</div>
   </div>
   <form class="tutor-form chat-form" id="chat-form">
     <input type="text" id="chat-input" placeholder="Ask any cybersecurity question…" aria-label="Type your question" autocomplete="off">
     <button class="btn primary" type="submit">Ask</button>
+    <button type="button" class="btn voice-toggle" data-voice-toggle aria-pressed="false" aria-label="Tap to hear answers spoken aloud" title="Voice replies on/off">🔈</button>
+    <button type="button" class="btn mic-btn" data-mic-btn aria-label="Talk to CyberLord Tutor" title="Talk to CyberLord Tutor">🎙</button>
     <button type="button" class="btn" id="chat-clear">Clear chat</button>
   </form>
-  <p class="muted small">Answers are educational and defensive only. If a real AI key is configured on the server, answers come from Google Gemini; otherwise they come from the built-in CyberLord knowledge base. Your chat history on this page is kept for this browser session only.</p>
-  <p class="muted small">Stuck on a lesson? <a href="{{ url_for('academy') }}">Back to the Academy</a> and use the tutor panel on any lesson, or <a href="{{ url_for('tutor', lesson='what-is-cybersecurity') }}">continue this chat with a lesson topic</a>.</p>
+  <p class="muted small">Answers are educational and defensive only. Your chat history on this page is kept for this browser session only.</p>
+  <p class="muted small">Stuck on a lesson? <a href="{{ url_for('academy') }}">Back to the Academy</a> and use the tutor panel on any lesson.</p>
 </section>
 
 <script>
@@ -102,7 +104,6 @@
     input.focus();
   });
 
-  // The intro Listen button is wired by static/voice.js via the chat-msg bot selector.
   var q = new URLSearchParams(window.location.search).get("ask");
   if(q){ ask(q); }
 })();
