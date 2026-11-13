@@ -1660,10 +1660,37 @@ def ai_assistant():
                 "contents": contents,
                 "generationConfig": {"temperature": 0.55, "maxOutputTokens": 1200, "candidateCount": 1},
             }
-            response = requests.post(endpoint,
-                headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-                json=payload, timeout=12)
-            response.raise_for_status()
+            # Gemini can take longer than a short web-request timeout and may
+            # return temporary 429/5xx capacity errors. Retry only transient
+            # failures a limited number of times with exponential backoff.
+            response = None
+            for attempt in range(3):
+                try:
+                    response = requests.post(
+                        endpoint,
+                        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+                        json=payload,
+                        timeout=(10, 60),
+                    )
+                    if response.status_code not in (408, 429, 500, 502, 503, 504):
+                        response.raise_for_status()
+                        break
+                    if attempt == 2:
+                        response.raise_for_status()
+                    app.logger.warning(
+                        "Gemini temporary HTTP %s; retrying attempt %s/3",
+                        response.status_code, attempt + 2
+                    )
+                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as retry_exc:
+                    if attempt == 2:
+                        raise
+                    app.logger.warning(
+                        "Gemini connection/timeout issue; retrying attempt %s/3: %s",
+                        attempt + 2, str(retry_exc)[:160]
+                    )
+                time.sleep(2 ** attempt)
+            if response is None:
+                raise RuntimeError("Gemini request did not produce a response.")
             data = response.json()
             candidates = data.get("candidates") or []
             parts = (candidates[0].get("content") or {}).get("parts") or [] if candidates else []
