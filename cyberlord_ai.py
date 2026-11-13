@@ -323,7 +323,14 @@ def answer(query, history=None, persona="main", lesson=None):
     # Tutor: current lesson's material answers first, before the general KB.
     if persona == "tutor" and lesson:
         try:
-            lesson_text = " ".join([str(lesson.get("title", "")), str(lesson.get("desc", ""))] + list(lesson.get("content", []) or []))
+            _q_texts = []
+            for _i, _qq in enumerate(lesson.get("questions", []) or [], 1):
+                if isinstance(_qq, dict):
+                    _qs = str(_qq.get("question", "")).strip()
+                    if _qs:
+                        _q_texts.append(_qs)
+            _ex = str(lesson.get("exercise", "") or "").strip()
+            lesson_text = " ".join([str(lesson.get("title", "")), str(lesson.get("desc", "")), _ex] + list(lesson.get("content", []) or []) + _q_texts)
         except Exception:
             lesson_text = ""
         # Generic prompts like "explain this lesson" pull the lesson summary.
@@ -334,6 +341,30 @@ def answer(query, history=None, persona="main", lesson=None):
             if points:
                 summary += "\n\nKey ideas:\n" + points
             return (summary + "\n\nWant me to drill into any one of those, or give a quick example using the same idea?")
+        # Quiz-question asks: discuss and explain; reveal the answer and
+        # explanation only when the student asks to check or has attempted it.
+        _qlow = low
+        _ask_check = any(w in _qlow for w in ("check", "answer", "correct", "right answer", "reveal", "attempted", "tried", "my answer", "is it right"))
+        if any(w in _qlow for w in ("question", "quiz", "q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9", "q10")) and lesson.get("questions"):
+            import re as _re
+            _num = _re.search(r"q(\d+)", _qlow) or _re.search(r"(\d+)(st|nd|rd|th)?\s*question", _qlow)
+            _idx = int(_num.group(1)) - 1 if _num else 0
+            _qs = lesson.get("questions", []) or []
+            if 0 <= _idx < len(_qs) and isinstance(_qs[_idx], dict):
+                _qq = _qs[_idx]
+                _qtext = str(_qq.get("question", "")).strip()
+                _chosen = str(_qq.get("choices", []) or [])[:300]
+                _ans = _qq.get("answer", 0)
+                try:
+                    _ans = int(_ans)
+                except Exception:
+                    _ans = 0
+                _letters = "ABCDEFGHIJ"
+                _letter = _letters[_ans] if 0 <= _ans < len(_letters) else str(_ans + 1)
+                _expl = str(_qq.get("explain", "") or _qq.get("explanation", "") or "").strip()
+                if _ask_check:
+                    return ("For question %d: %s\n\nThe correct answer is %s. %s" % (_idx + 1, _qtext, _letter, _expl))
+                return ("Let's look at question %d: %s\n\nOptions: %s\n\nTry picking one first and tell me your answer, then I'll check it with you and explain the reasoning." % (_idx + 1, _qtext, _chosen))
         if lesson_text and _tokens(q) & _tokens(lesson_text):
             first = str(lesson.get("desc", "")).strip() or lesson_text[:420]
             return ("Let's stay with this lesson, " + str(lesson.get("title", "")).strip() + ". " + first +
