@@ -32,7 +32,11 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.8-flash
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
 
   - type: worker
     name: cyberlord-monitoring-worker

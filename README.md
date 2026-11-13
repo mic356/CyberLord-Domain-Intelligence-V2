@@ -89,7 +89,7 @@ The app includes an additive startup database migration for the new subscription
 
 ## CyberLord Intelligence Assistant
 
-CyberLord AI calls Google's Gemini API from the Flask backend when `GEMINI_API_KEY` is configured. It uses the `gemini-2.5-flash` model by default and can be changed with `GEMINI_MODEL`. The API key stays on the server and is never sent to browser JavaScript. If the key is absent or Gemini is temporarily unavailable, the app uses the built-in cybersecurity knowledge assistant as a fallback. The built-in module can also retrieve public CVE and CISA KEV information when outbound network access is available.
+CyberLord AI calls Google's Gemini API from the Flask backend when `GEMINI_API_KEY` is configured. It uses the `gemini-3.8-flash` model by default and can be changed with `GEMINI_MODEL`. The API key stays on the server and is never sent to browser JavaScript. If the key is absent or Gemini is temporarily unavailable, the app uses the built-in cybersecurity knowledge assistant as a fallback. The built-in module can also retrieve public CVE and CISA KEV information when outbound network access is available.
 
 
 ## New workspace experience
@@ -135,7 +135,7 @@ The admin area is served by this same Flask application at `/admin`. Set `ADMIN_
 
 ### CyberLord AI, Academy and Interaction Board
 
-- **CyberLord AI** uses the Google Gemini API from the Flask server when `GEMINI_API_KEY` is configured in Render. The key is never sent to the browser. `GEMINI_MODEL` defaults to `gemini-2.5-flash`; if Gemini is temporarily unavailable, the app falls back to the built-in cybersecurity knowledge assistant. Gemini API quotas and pricing are controlled by the Google AI Studio project.
+- **CyberLord AI** uses the Google Gemini API from the Flask server when `GEMINI_API_KEY` is configured in Render. The key is never sent to the browser. `GEMINI_MODEL` defaults to `gemini-3.8-flash`; if Gemini is temporarily unavailable, the app falls back to the built-in cybersecurity knowledge assistant. Gemini API quotas and pricing are controlled by the Google AI Studio project.
 - **CyberLord Academy** is a structured lesson-and-quiz area. Members read the lesson notes, answer knowledge checks and retain their completion status and best score. It is not an AI chat.
 - **Interaction Board** is a member discussion forum. Signed-in members create posts and reply to other members. Posts are stored in the application database and are not AI-generated sample conversations.
 

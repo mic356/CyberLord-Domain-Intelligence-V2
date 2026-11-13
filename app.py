@@ -1536,7 +1536,7 @@ def admin_reject_bank_payment(payment_id):
 @app.route("/api/ai-assistant", methods=["POST"])
 @login_required
 def ai_assistant():
-    """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. Provider chain: GEMINI_API_KEY (gemini-2.5-flash) -> GROQ_API_KEY (llama-3.3-70b) -> built-in base. On any failure it silently falls back to the next provider, then to the built-in base, so the site stays fully functional without a key."""
+    """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. Provider chain: Gemini (gemini-3.8-flash) -> Groq (openai/gpt-oss-20b) -> built-in base. On any failure it silently falls back to the next provider, then to the built-in base, so the site stays fully functional without a key."""
     now = time.time()
     window = session.get("ai_rate_window", [])
     window = [stamp for stamp in window if now - stamp < 60]
@@ -1626,7 +1626,7 @@ def ai_assistant():
         return jsonify(error="Please enter a question."), 400
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
     if api_key:
         try:
             endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -1676,7 +1676,7 @@ def ai_assistant():
             app.logger.warning("Gemini API unavailable; trying next provider: %s", str(exc)[:240])
 
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
-    groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip() or "llama-3.3-70b-versatile"
+    groq_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b").strip() or "openai/gpt-oss-20b"
     if groq_key:
         try:
             groq_system = (
