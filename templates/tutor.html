@@ -1,0 +1,110 @@
+{% extends "base.html" %}{% block title %}CyberLord Tutor | Ask any cybersecurity question{% endblock %}{% block description %}CyberLord Tutor: ask any cybersecurity question, get a clear answer, and press Listen to hear it read aloud.{% endblock %}{% block content %}
+<div class="page-heading">
+  <div class="eyebrow">CYBERLORD TUTOR / ANSWER DASHBOARD</div>
+  <h1>CyberLord Tutor with voice</h1>
+  <p class="muted">Ask any cybersecurity question below. Every answer appears in the chat thread, stays in your session history, and has a speaker button so you can hear it read aloud in English. Nothing is charged for voice: it uses your browser's built-in speech.</p>
+</div>
+
+<section class="tutor-dashboard" id="tutor-dashboard" data-lesson="{{ lesson_slug or '' }}">
+  <div class="chat-thread" id="chat-thread" aria-live="polite">
+    <div class="chat-msg bot tutor-intro">I am CyberLord Tutor. Ask me anything about cybersecurity. Press <b>Listen</b> under any answer to hear it read aloud.<button type="button" class="speak-btn" data-speak-intro aria-label="Listen to the tutor introduction">🔊 Listen</button></div>
+  </div>
+  <form class="tutor-form chat-form" id="chat-form">
+    <input type="text" id="chat-input" placeholder="Ask any cybersecurity question…" aria-label="Type your question" autocomplete="off">
+    <button class="btn primary" type="submit">Ask</button>
+    <button type="button" class="btn" id="chat-clear">Clear chat</button>
+  </form>
+  <p class="muted small">Answers are educational and defensive only. If a real AI key is configured on the server, answers come from Google Gemini; otherwise they come from the built-in CyberLord knowledge base. Your chat history on this page is kept for this browser session only.</p>
+  <p class="muted small">Stuck on a lesson? <a href="{{ url_for('academy') }}">Back to the Academy</a> and use the tutor panel on any lesson, or <a href="{{ url_for('tutor', lesson='what-is-cybersecurity') }}">continue this chat with a lesson topic</a>.</p>
+</section>
+
+<script>
+(function(){
+  "use strict";
+  var LESSON = "{{ lesson_slug or '' }}";
+  var thread = document.getElementById("chat-thread");
+  var form = document.getElementById("chat-form");
+  var input = document.getElementById("chat-input");
+  var clearBtn = document.getElementById("chat-clear");
+  var KEY = "cl-tutor-chat" + (LESSON ? ":" + LESSON : "");
+  var history = [];
+
+  function scroll(){ thread.scrollTop = thread.scrollHeight; }
+
+  function add(text, role){
+    var el = document.createElement("div");
+    el.className = "chat-msg " + role;
+    el.textContent = text;
+    thread.appendChild(el);
+    scroll();
+    return el;
+  }
+
+  function save(){
+    try{ sessionStorage.setItem(KEY, JSON.stringify(history.slice(-40))); }catch(e){}
+  }
+  function restore(){
+    try{
+      var raw = sessionStorage.getItem(KEY);
+      if(!raw) return;
+      var saved = JSON.parse(raw);
+      if(!Array.isArray(saved)) return;
+      saved.forEach(function(m){
+        if(m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string"){
+          add(m.content, m.role === "user" ? "user" : "bot");
+          history.push(m);
+        }
+      });
+    }catch(e){}
+  }
+
+  restore();
+
+  async function ask(text){
+    text = (text || "").trim();
+    if(!text) return;
+    add(text, "user");
+    history.push({role:"user", content:text});
+    save();
+    var pending = add("Thinking…", "bot");
+    try{
+      var res = await fetch("/api/ai-assistant", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({lesson_slug: LESSON, messages: history.slice(-12)})
+      });
+      var data = await res.json();
+      pending.remove();
+      if(!res.ok) throw new Error(data.error || "The tutor is temporarily unavailable.");
+      add(data.reply, "bot");
+      history.push({role:"assistant", content:data.reply});
+      save();
+    }catch(err){
+      pending.textContent = err.message || "Something went wrong. Please try again.";
+    }
+    scroll();
+  }
+
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var v = input.value; input.value = "";
+    ask(v);
+  });
+
+  clearBtn.addEventListener("click", function(){
+    history = [];
+    try{ sessionStorage.removeItem(KEY); }catch(e){}
+    thread.innerHTML = "";
+    var intro = document.createElement("div");
+    intro.className = "chat-msg bot tutor-intro";
+    intro.textContent = "Chat cleared. What would you like to learn today?";
+    thread.appendChild(intro);
+    input.focus();
+  });
+
+  // The intro Listen button is wired by static/voice.js via the chat-msg bot selector.
+  var q = new URLSearchParams(window.location.search).get("ask");
+  if(q){ ask(q); }
+})();
+</script>
+{% endblock %}

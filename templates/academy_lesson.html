@@ -9,6 +9,7 @@
 <div class="academy-note"><b>Practical reminder</b><p>Only test systems you own or are authorised to assess. Record what you observe and avoid claiming more than your evidence supports.</p></div>
 </article><aside class="tutor-card" data-lesson="{{ lesson.slug }}">
 <h2>Ask the tutor</h2>
+<p><a class="tutor-full-link" href="{{ url_for('tutor', lesson=lesson.slug) }}">Open full tutor →</a></p>
 <p class="muted">Stuck on this lesson? Ask here. The tutor only answers about this lesson.</p>
 <div class="tutor-messages" aria-live="polite"></div>
 <form class="tutor-form"><input type="text" placeholder="Ask about {{ lesson.title }}…" aria-label="Ask the tutor"><button class="btn primary" type="submit">Send</button></form>
