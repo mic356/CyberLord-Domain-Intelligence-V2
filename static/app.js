@@ -12,7 +12,7 @@ document.querySelectorAll(".scan-form").forEach(form=>{
 });
 
 
-// Theme toggle: dark is default, light is opt-in. Stored in localStorage.
+// Theme toggle: bright (yesterday) is default, dark navy is opt-in. Stored in localStorage.
 (function(){
   var root = document.documentElement;
   var btn = document.getElementById("theme-toggle");
