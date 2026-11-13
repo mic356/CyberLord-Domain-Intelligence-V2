@@ -1,4 +1,5 @@
-import os, re, json, hmac, hashlib, secrets, socket, ssl, ipaddress, subprocess, shutil, time
+import os, re, json, hmac, hashlib, secrets, socket, ssl, ipaddress, subprocess, shutil, time, threading
+
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -28,6 +29,20 @@ from academy_questions import ACADEMY_LESSONS
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "CHANGE-ME-TO-A-LONG-RANDOM-SECRET")
+
+# Keep cookies out of reach of JavaScript, limit cross-site sending, and
+# mark them Secure over HTTPS. Render always serves the app over HTTPS, so
+# Secure is on in production; locally (plain http), omit it so tests and
+# local development still work.
+_ON_RENDER = bool(os.environ.get("RENDER") or os.environ.get("RENDER_EXTERNAL_HOSTNAME"))
+_USE_SECURE = _ON_RENDER or os.environ.get("SESSION_COOKIE_SECURE", "").lower() in ("1", "true", "yes")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = _USE_SECURE
+app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
+app.config["REMEMBER_COOKIE_SECURE"] = _USE_SECURE
+
 db_url = os.getenv("DATABASE_URL", "sqlite:///cyberlord.db")
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
@@ -36,7 +51,143 @@ elif db_url.startswith("postgresql://"):
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True} if db_url.startswith("postgresql") else {}
+
+# ---------------------------------------------------------------------------
+# In-memory rate limiting (no Redis: Render free tier). Sliding window per IP.
+# Stored in process memory only, so counters reset on restart or redeploy;
+# while the process is alive the limits are enforced for any slot of time.
+# ---------------------------------------------------------------------------
+def _env_float(name, default):
+    try:
+        return float(os.environ.get(name, "") or default)
+    except (TypeError, ValueError):
+        return float(default)
+
+def _env_int(name, default):
+    try:
+        return int(os.environ.get(name, "") or default)
+    except (TypeError, ValueError):
+        return int(default)
+
+LOGIN_FAIL_DELAY = _env_float("LOGIN_FAIL_DELAY_SEC", 1.5)
+RATE_LIMITS = {
+    "login": (_env_int("LOGIN_MAX_ATTEMPTS", 5), _env_int("LOGIN_WINDOW_SEC", 300)),
+    "register": (_env_int("REGISTER_MAX_ATTEMPTS", 10), _env_int("REGISTER_WINDOW_SEC", 900)),
+    "forgot": (_env_int("FORGOT_MAX_ATTEMPTS", 5), _env_int("FORGOT_WINDOW_SEC", 900)),
+    "scan": (_env_int("SCAN_MAX_ATTEMPTS", 10), _env_int("SCAN_WINDOW_SEC", 60)),
+
+}
+
+_rate_lock = threading.Lock()
+_rate_store = {}  # key -> list[timestamps]
+
+
+def client_ip():
+    """Best-effort client address behind Cloudflare/Render proxies."""
+    for header in ("CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For"):
+        raw = request.headers.get(header, "")
+        if raw:
+            candidate = raw.split(",")[0].strip()
+            try:
+                ipaddress.ip_address(candidate)
+                return candidate
+            except ValueError:
+                continue
+    return request.remote_addr or "unknown"
+
+
+def rate_limited(*, key, limit, window):
+    """Sliding-window check. Returns True when this request exceeds the limit.
+
+    When the limit is exceeded, the rejected attempt IS recorded, so a client
+    that keeps hammering stays blocked (a sustained hammering only extends its
+    own lockout, it never lets it pass). Expired slots are dropped, and a
+    slot that ages out is freed. Storage is process memory only, so counters
+    reset on a restart or redeploy and fail open (traffic allowed again).
+    """
+    now = time.monotonic()
+    with _rate_lock:
+        hits = _rate_store.get(key, [])
+        cutoff = now - window
+        hits = [t for t in hits if t > cutoff]
+        _rate_store[key] = hits
+        if len(hits) >= limit:
+            return True
+        hits.append(now)
+        return False
+
+
+def _check_rate(kind, *extra):
+    """Returns a 429 response when the named limit is hit, else None."""
+    limit, window = RATE_LIMITS[kind]
+    suffix = ":" + ":".join(extra) if extra else ""
+    key = kind + ":" + client_ip() + suffix
+    if rate_limited(key=key, limit=limit, window=window):
+        app.logger.warning("Rate limit hit: %s", key)
+        return jsonify(error="Too many attempts. Please wait a little and try again."), 429
+    return None
+
+
+def rate_limit(kind):
+    """Decorator: per-IP sliding-window limit for one endpoint kind."""
+    def decorator(fn):
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            limit_resp = _check_rate(kind)
+            if limit_resp is not None:
+                return limit_resp
+            return fn(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
+def form_str(name, max_length):
+    """Trimmed form value, truncated to a sane length so oversized posts
+    cannot blow up stored fields or column sizes downstream."""
+    return (request.form.get(name, "") or "").strip()[:max_length]
+
+
+# ---------------------------------------------------------------------------
+# Security headers + session cookie flags.
+# The site renders from inline template code rather than JS bundles, so the
+# CSP allows self plus inline scripts/styles. The inline content is:
+#   <script> in templates/base.html (theme bootstrap on page load)
+#   <script> in templates/login.html (theme bootstrap + theme toggle)
+#   <script> in templates/payment_result.html (same as login.html)
+#   <script type="application/ld+json"> in base.html / index.html / faq.html
+#   a <style> block in templates/login.html, and external fonts
+#   (https://fonts.googleapis.com) on the login page.
+# Withdrawing 'unsafe-inline' later, once the inline theme-bootstrap script
+# is moved into a static file, is a safe follow-up but is not required for
+# the app to stay working on the free tier.
+# ---------------------------------------------------------------------------
+CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data: https:; "
+    "connect-src 'self' https:; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers["Content-Security-Policy"] = CSP
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    return response
+
+
 db = SQLAlchemy(app)
+
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
@@ -157,14 +308,32 @@ class BoardReply(db.Model):
 def load_user(user_id):
     return db.session.get(User, int(user_id))
 
+DOMAIN_RE = re.compile(r"(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
+
+
 def normalize_domain(value):
+    """Strict public-domain validation. Anything that is not exactly one
+    valid domain name (no scheme, no '@', no leading/trailing punctuation,
+    no internal spaces or shell metacharacters) is rejected early so scan
+    tools never receive hostile input such as 'x.com; rm -rf' or 'x.com at y'."""
     value = (value or "").strip().lower()
+
+    if "@" in value or " " in value or "_" in value:
+        raise ValueError("Enter a valid public domain name, e.g. example.com.")
     if "://" in value:
         value = urlparse(value).hostname or ""
+    if not value:
+        raise ValueError("Enter a valid public domain name, e.g. example.com.")
+    if "@" in value or " " in value or "_" in value or ".." in value:
+        raise ValueError("Enter a valid public domain name, e.g. example.com.")
+    if value.startswith("."):
+        raise ValueError("Enter a valid public domain name, e.g. example.com.")
     value = value.split("/")[0].split(":")[0].strip(".")
-    if not value or len(value) > 253 or not re.fullmatch(r"(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", value):
+
+    if not value or len(value) > 253 or not DOMAIN_RE.fullmatch(value):
         raise ValueError("Enter a valid public domain name, e.g. example.com.")
     return value
+
 
 def refresh_subscription(user):
     """Downgrade expired paid plans before checking access or showing the dashboard."""
@@ -698,11 +867,12 @@ def contact():
     return render_template("contact.html")
 
 @app.route("/register", methods=["GET","POST"])
+@rate_limit("register")
 def register():
     if request.method == "POST":
-        email = request.form.get("email","").strip().lower()
-        password = request.form.get("password","")
-        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) or len(password) < 10:
+        email = form_str("email", 254).lower()
+        password = form_str("password", 128)
+        if len(email) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) or len(password) < 10:
             flash("Enter a valid email and a password of at least 10 characters.", "error")
         elif User.query.filter_by(email=email).first():
             flash("An account with that email already exists.", "error")
@@ -712,14 +882,28 @@ def register():
             login_user(user); return redirect(url_for("dashboard"))
     return render_template("auth.html", mode="register")
 
+
 @app.route("/login", methods=["GET","POST"])
+@rate_limit("login")
 def login():
     if request.method == "POST":
-        user = User.query.filter_by(email=request.form.get("email","").strip().lower()).first()
-        if user and user.check_password(request.form.get("password","")):
+        email = form_str("email", 254).lower()
+        password = form_str("password", 128)
+        # Existence check and password check both land on the same path, and
+        # the dummy hash burn for unknown accounts keeps both timings close,
+        # so attackers cannot tell which case failed. One message for every
+        # failure, plus a fixed delay, plus the per-IP limiter above which
+        # locks the address out after repeated failures.
+        user = User.query.filter_by(email=email).first()
+        ok = bool(user) and user.check_password(password)
+        if not ok and not user:
+            check_password_hash("pbkdf2:sha256:600000", password)
+        if ok:
             login_user(user); return redirect(url_for("dashboard"))
+        time.sleep(LOGIN_FAIL_DELAY)
         flash("Email or password is incorrect.", "error")
     return render_template("auth.html", mode="login")
+
 
 @app.route("/logout")
 @login_required
@@ -727,9 +911,11 @@ def logout():
     logout_user(); return redirect(url_for("index"))
 
 @app.route("/forgot-password", methods=["GET","POST"])
+@rate_limit("forgot")
 def forgot_password():
     if request.method == "POST":
-        email = request.form.get("email","").strip().lower()
+        email = form_str("email", 254).lower()
+
         user = User.query.filter_by(email=email).first()
         if user:
             token = serializer.dumps(user.email, salt="password-reset")
@@ -758,9 +944,10 @@ def reset_password(token):
     user = User.query.filter_by(email=email).first()
     if not user: return redirect(url_for("forgot_password"))
     if request.method == "POST":
-        password = request.form.get("password","")
+        password = form_str("password", 128)
         if len(password) < 10:
             flash("Use at least 10 characters.", "error")
+
         else:
             user.set_password(password); db.session.commit()
             flash("Password updated. Please sign in.", "success")
@@ -954,9 +1141,12 @@ def download_scan(scan_id):
 def run_tool(tool):
     if tool not in TOOL_NAMES: return jsonify(error="Unknown tool"), 404
     if not allowed_tool(tool): return jsonify(error="This tool requires a paid plan."), 403
-    target=request.form.get("target","").strip()
+    limit_resp = _check_rate("scan", request.endpoint or tool)
+    if limit_resp is not None: return limit_resp
+    target=form_str("target", 512)
     if request.form.get("authorized") != "on":
         return jsonify(error="Confirm that you own this target or have explicit permission to assess it."), 400
+
     try:
         if tool == "compare":
             parts=[x.strip() for x in target.split(",")]
@@ -1703,11 +1893,14 @@ def run_advanced_intelligence(tool):
     if tool not in ADVANCED_TOOLS: abort(404)
     if not allowed_tool("attack_surface"):
         return jsonify(ok=False,error="These advanced investigations require PRO PLUS."),403
+    limit_resp = _check_rate("scan", request.endpoint or tool)
+    if limit_resp is not None: return limit_resp
     if request.form.get("authorized")!="yes":
         return jsonify(ok=False,error="Confirm that you own this domain or have permission to investigate it."),400
     try:
-        domain=normalize_domain(request.form.get("domain"))
+        domain=normalize_domain(form_str("domain", 254))
         if tool=="footprint": result=_passive_footprint(domain)
+
         elif tool=="api_hunter": result=_shadow_api_hunt(domain)
         else: result=_impersonation_candidates(domain)
         save_scan("advanced_"+tool,domain,result)
