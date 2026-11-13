@@ -16,6 +16,7 @@ TOPICS = [
 ("networking tcp ip", "Networking foundation: an IP address identifies a network interface; a port identifies a service endpoint on a host. TCP is connection-oriented and provides ordered reliable delivery; UDP is connectionless and has lower protocol overhead. A subnet/prefix defines the network portion of an address. A router moves packets between networks; a switch forwards frames within a LAN; DNS maps names to records; DHCP leases network configuration. Learn IPv4/IPv6, CIDR, ARP, ICMP, routing, NAT, VLANs, TCP handshake, TLS and common ports."),
 ("ports services", "Common ports: 20/21 FTP (legacy, unencrypted unless protected); 22 SSH; 23 Telnet (insecure); 25 SMTP; 53 DNS; 80 HTTP; 110 POP3; 123 NTP; 143 IMAP; 443 HTTPS; 445 SMB; 465/587 mail submission; 993 IMAPS; 995 POP3S; 3306 MySQL; 3389 RDP; 5432 PostgreSQL; 5900 VNC; 6379 Redis; 8080 alternate HTTP. A port being open only means something accepted a connection; it does not prove a vulnerability. Verify service identity and exposure."),
 ("reconnaissance osint", "Reconnaissance collects information before an assessment. Passive reconnaissance uses public sources without directly probing the target; active reconnaissance sends queries or traffic to the target and needs explicit scope/permission. Document domain ownership, DNS records, subdomains, certificates, public technology indicators and exposed services. Validate findings, record timestamps and sources, minimise collection of personal data, and do not treat an exposed hostname as proof of a weakness."),
+("difference tcp vs udp explained", "TCP vs UDP EXPLAINED: TCP is connection-oriented, ordered and reliable, used by web, email and file transfers. UDP is connectionless and faster with no delivery guarantee, used by DNS, streaming and gaming. Choosing between them is about reliability versus speed and overhead, not about security. Neither encrypts traffic by itself."),
 ("nmap", "Nmap is a network discovery and service-auditing tool. Begin only with an owned or explicitly authorised target. Useful concepts: `nmap -sn <scope>` host discovery; `nmap -sT <host>` TCP connect scan; `sudo nmap -sS <host>` SYN scan where permitted; `nmap -sV <host>` service/version detection; `nmap -p 22,80,443 <host>` selected ports; `nmap -p- <host>` all TCP ports; `nmap -oN scan.txt <host>` save normal output. `-O` attempts OS detection and is not a port option. `open`, `closed` and `filtered` describe scan observations, not security verdicts. Avoid aggressive scripts or broad scans without written scope."),
 ("web security http", "HTTP is a request/response protocol. A request includes method, path, headers and sometimes a body. Responses include status, headers and content. 2xx generally means success; 3xx redirection; 4xx client/request issue; 5xx server issue. HTTPS protects traffic with TLS. Review security headers such as Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options and frame-ancestors/X-Frame-Options. A missing header is context-dependent and not automatically an exploitable vulnerability."),
 ("owasp top 10", "OWASP Top 10 is an awareness document for major web application risk categories. Study broken access control, cryptographic failures, injection, insecure design, security misconfiguration, vulnerable/outdated components, identification/authentication failures, software/data integrity failures, security logging/monitoring failures and SSRF (the exact categories vary by edition). Mitigations include server-side authorisation checks, parameterised queries, output encoding, secure defaults, dependency management, strong session handling and tested logging."),
@@ -45,6 +46,11 @@ TOPICS = [
 ("sqlmap", "sqlmap automates detection and validation of SQL injection in authorised test environments. Start by understanding the request, parameter and application behaviour; use a deliberately vulnerable lab or written scope. Prefer low-impact detection settings, avoid data extraction or destructive options, and capture reproducible evidence. Defend with parameterised queries, least privilege and safe error handling."),
 ("gobuster directory enumeration", "Gobuster is used for authorised discovery of directories, files, DNS names or virtual hosts. Directory enumeration can create substantial traffic and may expose sensitive paths; obtain approval, set sensible rate limits and avoid brute forcing third-party systems. Treat discovered paths as leads and verify access controls without accessing private data."),
 ("nikto web server scanner", "Nikto performs web-server checks for potentially risky files, outdated components and configuration issues. Its results often include false positives and informational findings. Use it only on approved hosts, validate each result manually and avoid interpreting a banner or missing file as proof of compromise."),
+("syn scan tcp handshake", "SYN SCAN EXPLAINED IN PLAIN WORDS: TCP normally starts with a three-way handshake: the client sends SYN, server replies SYN-ACK, client sends ACK. A SYN scan sends only the first SYN packet. Nmap watches the reply: if it gets SYN-ACK the port is open, if it gets RST it is closed, if nothing comes back it is filtered. The connection is never fully opened, so the scan is faster and quieter on the host logs than a full connect scan, which is why people call it stealthy. It still needs written scope and permission; on many networks it also needs root because it crafts raw packets."),
+("nessus vulnerability scanner", "NESSUS: Nessus (by Tenable) is a vulnerability scanner. It probes a system using thousands of checks and compares results against known weakness databases, then reports potential vulnerabilities with severity ratings. It focuses on what is wrong or missing rather than what is open. Use it only on systems you own or are authorised to test, and always read the findings carefully: scanner output is a lead, not proof. Pair it with patching and manual validation."),
+("difference between nmap and nessus", "NMAP vs NESSUS: Nmap is a network discovery and port/service scanner. It answers what is alive, what ports are open, what services and versions are running. Nessus is a vulnerability scanner. It answers what known weaknesses might exist on this system. The practical order is: use Nmap to see what is there, use Nessus-style checks to see what is risky. Neither is a magic proof of compromise, and both need authorisation and scope before use."),
+("spf email security spoofing", "HOW SPF PROTECTS YOUR EMAIL: SPF (Sender Policy Framework) is a DNS record that lists which servers are allowed to send email for your domain. When a message arrives, the receiving server checks the sending server against your SPF record. If it is not on the list, the message is suspicious and can be flagged or rejected. SPF alone does not stop every phishing trick, because it does not verify the visible sender name, and compromised legitimate servers can still pass. Pair it with DKIM (a signed message) and DMARC (policy telling receivers what to do when checks fail), plus MFA, user reporting and verification through a separate trusted channel."),
+("defenders use searchsploit", "HOW DEFENDERS USE SEARCHSPLOIT: defenders use Searchsploit (an offline search tool for the Exploit-DB archive) to quickly check whether public proof-of-concept material or advisories exist for a product and version. This helps prioritise patching and detection work. The defender workflow is: search the product and exact version, read the advisory and affected versions, check the vendor fix and CISA KEV/NIST NVD, then patch, mitigate and retest. A search hit is not proof a system is vulnerable, and exploit code should not be run outside a lab or authorised test."),
 ("searchsploit exploit database", "SearchSploit is a local search interface for the Exploit-DB archive. Use it to research whether public proof-of-concept material exists for a product/version. Read the advisory and source carefully, confirm affected versions and prerequisites, and do not run exploit code against systems without explicit authorisation. A matching search result is not proof that a target is vulnerable."),
 ("password auditing john hashcat", "John the Ripper and Hashcat are password-auditing tools. Use them only with hashes you own or are authorised to audit. Understand hash formats, salts, work factors and legal/privacy requirements. Defences include unique long passwords, MFA, breached-password screening, rate limiting and modern password hashing such as Argon2id, scrypt or bcrypt."),
 ("python programming", "Python is useful for security automation, parsing logs, calling APIs and writing small assessment helpers. Learn variables, data structures, functions, exceptions, modules, virtual environments, HTTP requests and JSON. Validate input, set request timeouts, handle errors, avoid hard-coded secrets, pin dependencies and write tests. Never execute untrusted code simply because an online answer recommends it."),
@@ -101,7 +107,6 @@ TOPICS = [
 ("what is steganography", "STEGANOGRAPHY hides data inside other data, such as embedding a message in an image or audio file. It is used for legitimate watermarking and also to conceal malware or stolen data. Detection looks for statistical anomalies and mismatched metadata. It is different from encryption, which scrambles data rather than hiding its existence."),
 ("what is cryptography hashes", "Cryptography basics: a HASH turns data into a fixed-size fingerprint (SHA-256 is common) and is used to verify file integrity. A MAC or digital signature proves data was not altered and (for signatures) who created it. Passwords should be stored with a slow salted hash such as Argon2id, scrypt, or bcrypt, never as plain text or fast hashes like MD5 or SHA-1."),
 ("what is a digital signature", "A DIGITAL SIGNATURE uses a private key to create a signature that anyone with the public key can verify. It proves the signer created it and that the data has not changed since. It is the basis of code signing, certificate signing, and document signing. Protect your private key like a password, ideally in a hardware token."),
-("what is symmetric vs asymmetric encryption", "SYMMETRIC encryption uses one shared secret key for both encrypting and decrypting (for example AES). ASYMMETRIC uses a key pair: a public key encrypts and a private key decrypts, or the reverse for signatures (RSA, ECC). Modern systems combine them: asymmetric crypto exchanges a session key, then symmetric crypto does the bulk work."),
 ("what is tls handshake", "THE TLS HANDSHAKE is how a browser and server agree on a protocol, verify the server certificate, and create shared encryption keys. After the handshake, traffic is encrypted and authenticated. Problems usually show as certificate errors, expired certificates, or mismatched names, which you should investigate rather than click through."),
 ("what is a certificate authority", "A CERTIFICATE AUTHORITY (CA) is an organization trusted to issue digital certificates that bind a name to a public key. Browsers trust a set of root CAs; a site certificate chains up to one of them. Short-lived, automated certificates such as those from Let's Encrypt have made HTTPS the default."),
 ("what is a digital certificate", "A DIGITAL CERTIFICATE is a signed statement that binds a name or key to an owner, used for HTTPS server identity, code signing, and email signing. It has an expiry date and a chain of trust. An expired or mismatched certificate is a warning to investigate, not something to bypass on systems you care about."),
@@ -145,6 +150,7 @@ SOURCES = [
 ("what is a strong password", "A STRONG PASSWORD is long, unique, and hard to guess. A passphrase of 4 to 5 random words is easier to remember and harder to crack than a short complex string. Use a password manager, never reuse passwords across sites, and turn on MFA. Change a password immediately if a site reports a breach or you suspect phishing."),
 ("what is a password manager", "A PASSWORD MANAGER stores encrypted passwords and can generate strong unique ones for each site. It reduces reuse and phishing risk because you fill credentials inside the app rather than typing them anywhere. Choose a reputable one, protect the master password, and store recovery codes safely."),
 ("what is encryption explained simply", "ENCRYPTION scrambles information so only someone with the key can read it. In transit, TLS (https) encrypts web traffic. At rest, full-disk and database encryption protect stored data. Encryption protects against eavesdropping and theft of devices, but it does not stop phishing, malware on an unlocked device, or someone you willingly give the key to."),
+("what is symmetric vs asymmetric encryption", "SYMMETRIC encryption uses one shared secret key for both encrypting and decrypting (for example AES). ASYMMETRIC uses a key pair: a public key encrypts and a private key decrypts, or the reverse for signatures (RSA, ECC). Modern systems combine them: asymmetric crypto exchanges a session key, then symmetric crypto does the bulk work."),
 ("what is https and tls", "HTTPS is HTTP running over TLS. TLS encrypts traffic, authenticates the server using a certificate, and protects integrity in transit. Look for the padlock and a valid certificate, but remember a padlock only proves the connection is encrypted, not that the site is honest or safe. Keep certificates valid and renew them before expiry."),
 ("what is dns explained", "DNS (Domain Name System) translates names like cyberlord.name.ng into IP addresses. Records include A/AAAA (addresses), CNAME (alias), MX (mail), TXT (verification and SPF), and NS (name servers). DNS itself is not encrypted by default; DNS-over-HTTPS and DNSSEC add privacy and authenticity in different ways. If a site will not load, DNS is a good place to look first."),
 ("what is http vs https", "HTTP sends web traffic unencrypted; HTTPS encrypts it with TLS. On HTTP, anyone on the path can read or modify traffic. On HTTPS, the connection is encrypted and the server is authenticated by certificate. Always prefer HTTPS, and treat a padlock as necessary but not sufficient for trust; phishing sites can have valid certificates too."),
@@ -202,9 +208,10 @@ def _followup_for(low, title):
     return "Want me to go deeper on any part, or give you a practical example with commands?"
 
 _STOP = {"how","do","does","what","is","are","the","to","of","in","on","for","my","me","it","this","that","and","or","can","you","tell","about","explain","teach","please"}
-_ALIAS_EXTRA = {"website":"web security http","site":"web security http","secure":"security","securing":"security","protect":"security","domain":"dns web","wifi":"wireless","virus":"malware"}
+_ALIAS_EXTRA = {"nessus":"nessus vulnerability scanner","syn":"syn scan","website":"web security http","site":"web security http","secure":"security","securing":"security","protect":"security","domain":"dns web","wifi":"wireless","virus":"malware"}
 def _tokens(s):
-    toks = set(re.findall(r"[a-z0-9+#.-]{2,}", (s or "").lower())) - _STOP
+    norm = (s or "").lower().replace("-", " ").replace("’", "").replace("‘", "")
+    toks = set(re.findall(r"[a-z0-9+#.]{2,}", norm)) - _STOP
     extra=set()
     for t in list(toks):
         if t in _ALIAS_EXTRA:
@@ -212,13 +219,29 @@ def _tokens(s):
     return toks | extra
 
 
+def _title_df():
+    from collections import Counter
+    c = Counter()
+    for title, _ in TOPICS:
+        for tok in _tokens(title):
+            c[tok] += 1
+    return c
+
+_TITLE_DF = None
+
 def _topic_matches(query):
+    global _TITLE_DF
+    if _TITLE_DF is None:
+        _TITLE_DF = _title_df()
     q = _tokens(query)
+    norm_q = re.sub(r"\s+", " ", (query or "").lower().replace("-", " "))
     ranked = []
     for title, body in TOPICS:
         keys = _tokens(title)
-        score = len(q & keys) * 2
-        # Related technical vocabulary can identify a topic even if the title differs.
+        score = sum(3 if _TITLE_DF.get(tok, 0) <= 1 else 2 for tok in (q & keys))
+        title_stripped = " ".join(w for w in title.replace("-", " ").split() if w not in _STOP)
+        if len(title_stripped) >= 4 and title_stripped in norm_q:
+            score += 6
         body_keys = _tokens(body)
         score += min(4, len(q & body_keys) // 5)
         if score:
@@ -378,7 +401,9 @@ def answer(query, history=None, persona="main", lesson=None):
                       "horoscope", "stock price", "lottery", "joke", "meme", "pet", "dog",
                       "cat", "baby", "wedding", "religion", "politic", "election", "currency",
                       "bitcoin price", "ethereum price", "fashion", "holiday", "travel destination")
-        _tutor_off_topic = any(x in low for x in _OFF_TOPIC)
+        # Word-boundary match only: substring matching ("cat" in "authentication") must not redirect on-topic questions.
+        _padded = " " + re.sub(r"[^a-z0-9 ]", " ", low) + " "
+        _tutor_off_topic = any((" " + x + " ") in _padded for x in _OFF_TOPIC)
         if _tutor_off_topic:
             title = str((lesson or {}).get("title", "")).strip() if lesson else ""
             return _tutor_redirect(q, lesson_title=title)
