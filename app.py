@@ -1690,6 +1690,46 @@ def admin_reject_bank_payment(payment_id):
 
 
 
+
+def _lesson_questions_context(lesson, max_chars=8000):
+    """Compact per-lesson quiz context for the tutor: exercise plus each question
+    (text, correct answer letter + choice text, short explanation). Capped so the
+    system prompt stays bounded; lives in system parts, not the 1800-char user
+    message, so truncation never clips it."""
+    if not lesson:
+        return ""
+    parts = []
+    ex = str(lesson.get("exercise", "") or "").strip()
+    if ex:
+        parts.append("Exercise: " + ex[:300])
+    letters = "ABCDEFGHIJ"
+    out = []
+    for i, q in enumerate(lesson.get("questions", []) or [], 1):
+        if not isinstance(q, dict):
+            continue
+        choices = q.get("choices", []) or []
+        ans = q.get("answer", 0)
+        try:
+            ans = int(ans)
+        except Exception:
+            ans = 0
+        letter = letters[ans] if 0 <= ans < len(letters) else str(ans + 1)
+        choice_text = str(choices[ans]) if 0 <= ans < len(choices) else ""
+        line = f"Q{i}: {str(q.get('question','')).strip()[:200]}"
+        if choice_text:
+            line += f" Answer {letter}: {choice_text[:120]}"
+        expl = str(q.get("explain", "") or q.get("explanation", "") or "").strip()
+        if expl:
+            line += f" Why: {expl[:180]}"
+        out.append(line)
+    if out:
+        parts.append("Lesson quiz questions:" + chr(10) + chr(10).join(out))
+    block = chr(10).join(parts).strip()
+    if len(block) > max_chars:
+        block = block[:max_chars].rsplit(chr(10), 1)[0]
+    return block
+
+
 @app.route("/api/ai-assistant", methods=["POST"])
 @login_required
 def ai_assistant():
@@ -1712,9 +1752,11 @@ def ai_assistant():
     if persona not in ("tutor", "main"):
         persona = "tutor" if lesson_slug else "main"
     lesson = None
+    lesson_questions_block = ""
     if lesson_slug:
         lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == str(lesson_slug).strip()), None)
         if lesson:
+            lesson_questions_block = _lesson_questions_context(lesson)
             if persona == "tutor":
                 context = (
                     "You are the CyberLord Academy Tutor. "
@@ -1727,6 +1769,9 @@ def ai_assistant():
                     "Keep it natural, human and short. Lesson: '" + str(lesson.get("title", "")) + "' (" + str(lesson.get("level", "")) + "). "
                     "Lesson description: " + str(lesson.get("desc", "")) + ". "
                     "Key points: " + " ".join(lesson.get("content", []) or []) + ". "
+                    "Quiz rule: when a student asks about a lesson quiz question, you may "
+                    "discuss and explain it, but reveal the correct answer only if they ask to check "
+                    "their answer or have already attempted it; otherwise keep answers hidden so they learn. "
                     "Teach in plain, beginner-friendly steps; never give account/payment/scan results. "
                     "Safety: defensive and authorised-lab guidance only."
                 )
@@ -1793,7 +1838,10 @@ def ai_assistant():
                     "and course topics (current lesson first, other academy topics second). If asked "
                     "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                     "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
-                    "Natural, human, short."
+                    "Natural, human, short. "
+                    "Quiz rule: when a student asks about a lesson quiz question, you may discuss and "
+                    "explain it, but reveal the correct answer only if they ask to check their answer or "
+                    "have already attempted it; otherwise keep answers hidden so they learn."
                 )
             else:
                 system_line = (
@@ -1801,8 +1849,7 @@ def ai_assistant():
                     "asks, including general knowledge, truthfully and concisely with a human tone. If you "
                     "do not actually know, say so plainly in one line instead of guessing or inventing. "
                 )
-            payload = {
-                "systemInstruction": {"parts": [{"text": (
+            _sys_parts = [{"text": (
                     system_line +
                     "Give clear, accurate, beginner-friendly explanations. Prefer practical, "
                     "step-by-step defensive guidance. Support authorised security testing only; "
@@ -1813,7 +1860,11 @@ def ai_assistant():
                     "Do not invent CyberLord account, payment, scan or subscription status. "
                     "Do not request passwords, OTPs, API keys, wallet seed phrases or private keys. "
                     "If uncertain, say so and recommend checking primary documentation."
-                )}]},
+                )}]
+            if lesson_questions_block and persona == "tutor":
+                _sys_parts.append({"text": "Current lesson exercise and quiz questions (with correct answers and short explanations) for this tutor session:" + chr(10) + lesson_questions_block})
+            payload = {
+                "systemInstruction": {"parts": _sys_parts},
                 "contents": contents,
                 "generationConfig": {"temperature": 0.55, "maxOutputTokens": 1200, "candidateCount": 1},
             }
@@ -1869,11 +1920,16 @@ def ai_assistant():
                 "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                 "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                 "Natural, human, short. "
+                "Quiz rule: when a student asks about a lesson quiz question, you may discuss and "
+                "explain it, but reveal the correct answer only if they ask to check their answer or "
+                "have already attempted it; otherwise keep answers hidden so they learn."
             ) if persona == "tutor" else (
                 "You are CyberLord AI, the broad dashboard assistant. Answer ANY question the user "
                 "asks, including general knowledge, truthfully and concisely with a human tone. If you "
                 "do not actually know, say so plainly in one line instead of guessing or inventing. "
             )
+            if lesson_questions_block and persona == "tutor":
+                groq_system += chr(10) + "Current lesson exercise and quiz questions (with correct answers and short explanations):" + chr(10) + lesson_questions_block
             convo = [{"role": "system", "content": (
                 groq_system +
                 "Give clear, accurate, beginner-friendly explanations. Prefer practical, "
