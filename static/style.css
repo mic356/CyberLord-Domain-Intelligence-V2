@@ -264,3 +264,16 @@ footer{font-size:11px}
 .tutor-intro{opacity:.92}
 .chat-form input{flex:1 1 280px}
 
+/* ChatGPT-style tap-and-hold voice bar (static/voice.js). The mic button's
+   listening state pulses while held; the waveform bars bounce on the page. */
+@keyframes clPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+.mic-btn{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
+.mic-btn.listening{background:rgba(255,60,60,.32);border-color:rgba(255,80,80,.85);animation:clPulse .9s ease-in-out infinite}
+.mic-btn.voice-holding{box-shadow:0 0 0 5px rgba(255,60,60,.18)}
+/* Waveform bars that appear beside the mic while holding (JS inserts them). */
+.voice-bars{display:inline-flex;align-items:flex-end;gap:3px;height:18px;padding:0 4px}
+.voice-bars i{display:block;width:3px;background:#ff5a5a;border-radius:2px;animation:clWave .7s ease-in-out infinite}
+.voice-bars i:nth-child(1){height:8px}.voice-bars i:nth-child(2){height:16px;animation-delay:.1s}
+.voice-bars i:nth-child(3){height:12px;animation-delay:.2s}.voice-bars i:nth-child(4){height:18px;animation-delay:.3s}
+.voice-bars i:nth-child(5){height:10px;animation-delay:.4s}
+@keyframes clWave{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
