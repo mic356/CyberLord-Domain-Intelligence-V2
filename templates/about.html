@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% block title %}About CyberLord | Domain Intelligence{% endblock %}{% block description %}About CyberLord: a Nigerian domain-intelligence and cybersecurity learning platform. What it is, who built it and its mission.{% endblock %}{% block content %}
+<section class="policy-page">
+<div class="eyebrow">ABOUT</div>
+<h1>About CyberLord</h1>
+<p class="muted">Updated: November 2026 · CyberLord Domain Intelligence, Lagos, Nigeria</p>
+
+<h2>What CyberLord is</h2>
+<p>CyberLord is a domain-intelligence and cybersecurity learning platform built in Nigeria. One side is a scanner that checks real websites for exposed signals: DNS records, the TLS certificate on a domain, HTTP security headers and cookie posture, email protections (SPF, DKIM, DMARC), subdomains, technology hints and registration data, all from public sources. The other side is Cyber Academy, a guided learning path that explains what those results mean, plus CyberLord AI, a knowledge assistant for networking, tools and security concepts.</p>
+<p>Try a basic check on your own domain first. You can run one simple domain scan free, straight from the homepage, without making an account. The rest of the toolkit is free with an account, and advanced modules are available on the <a href="{{ url_for('pricing') }}">Pro and Pro Plus plans</a>.</p>
+
+<h2>Who built it</h2>
+<p>CyberLord was built by Michael Elvis Tito, a solo operator in Lagos, Nigeria, and hosted by an independent team, not a corporation. CyberLord runs on Nigerian-facing infrastructure, priced in naira, paid through methods Nigerians actually use, and explained in plain language.</p>
+
+<h2>Our mission</h2>
+<p>Make website security checkable and understandable for everyone, not just experts and big companies. Most compromises begin with a leaked email or a misconfigured domain, and most people get no early warning. CyberLord exists to give that warning early, show the evidence behind every finding, and teach what to do next, step by step, without guesswork.</p>
+
+<h2>Contact</h2>
+<p>CyberLord is run independently from Lagos, Nigeria. For questions, corrections or breaches of our own service, email <a href="mailto:michaelelvistito@gmail.com">michaelelvistito@gmail.com</a> or see our <a href="{{ url_for('contact') }}">contact page</a>.</p>
+</section>
+{% endblock %}

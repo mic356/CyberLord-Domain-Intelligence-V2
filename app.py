@@ -75,6 +75,8 @@ RATE_LIMITS = {
     "register": (_env_int("REGISTER_MAX_ATTEMPTS", 10), _env_int("REGISTER_WINDOW_SEC", 900)),
     "forgot": (_env_int("FORGOT_MAX_ATTEMPTS", 5), _env_int("FORGOT_WINDOW_SEC", 900)),
     "scan": (_env_int("SCAN_MAX_ATTEMPTS", 10), _env_int("SCAN_WINDOW_SEC", 60)),
+    "anonymous_scan": (_env_int("ANON_SCAN_MAX_ATTEMPTS", 2), _env_int("ANON_SCAN_WINDOW_SEC", 86400)),
+    "ai": (_env_int("AI_MAX_ATTEMPTS", 5), _env_int("AI_WINDOW_SEC", 3600)),
 
 }
 
@@ -139,6 +141,29 @@ def rate_limit(kind):
             return fn(*args, **kwargs)
         return wrapped
     return decorator
+
+# --- Anonymous funnel: per-user buckets ---------------------------------------------------------
+# Anonymous visitors may run at most 2 basic scans per IP/day and ask the AI at most 5 times
+# per IP/hour (env-tunable via ANON_SCAN_* / AI_* above). Each bucket keys as
+# "user:<id>:<kind>:<ip>" for signed-in users (IP only for anonymous), so one account cannot
+# shed limits by rotating addresses and one IP cannot burn a shared global bucket.
+def _user_rate(kind, *extra):
+    limit, window = RATE_LIMITS[kind]
+    suffix = ":" + ":".join(extra) if extra else ""
+    who = "u" + str(current_user.id) if current_user.is_authenticated else "anon"
+    key = kind + ":" + who + ":" + client_ip() + suffix
+    if rate_limited(key=key, limit=limit, window=window):
+        app.logger.warning("Rate limit hit: %s", key)
+        return jsonify(error="Too many attempts. Please wait a little and try again."), 429
+    return None
+
+def _anon_signup_cta():
+    # Gentle account nudge shown under anonymous scan results. Never changes results.
+    return ('<div class="anon-signup-cta"><h3>Like this result?</h3>'
+            '<p>Create a free account to save your scan history and unlock Deep Scan, '
+            'full history, and the advanced intelligence tools.</p>'
+            '<a class="btn primary" href="/register">Create a free account</a> '
+            '<a class="btn ghost" href="/pricing">See plans</a></div>')
 
 
 def form_str(name, max_length):
@@ -818,6 +843,8 @@ SEO_PUBLIC_PAGES = [
     ("guide_email_compromised", "https://cyberlord.name.ng/guides/check-if-email-is-compromised", "0.9", "weekly"),
     ("guide_website_security", "https://cyberlord.name.ng/guides/website-security-check", "0.9", "weekly"),
     ("guide_spf_dmarc", "https://cyberlord.name.ng/guides/spf-dmarc-setup", "0.9", "weekly"),
+    ("pricing", "https://cyberlord.name.ng/pricing", "0.8", "monthly"),
+    ("about", "https://cyberlord.name.ng/about", "0.7", "monthly"),
     ("privacy", "https://cyberlord.name.ng/privacy", "0.5", "monthly"),
     ("terms", "https://cyberlord.name.ng/terms", "0.5", "monthly"),
     ("refund_policy", "https://cyberlord.name.ng/refund-policy", "0.5", "monthly"),
@@ -855,7 +882,7 @@ def google_search_console_verification():
 
 @app.route("/robots.txt")
 def robots():
-    return app.response_class("User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /academy\nDisallow: /admin\nDisallow: /api/\nDisallow: /scan/\nDisallow: /history/\nDisallow: /payment/\nDisallow: /monitoring\nDisallow: /advanced-intelligence\nDisallow: /security-centre\nDisallow: /interaction-board\n\nSitemap: https://cyberlord.name.ng/sitemap.xml\n", mimetype="text/plain")
+    return app.response_class("User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /academy\nDisallow: /admin\nDisallow: /api/\nDisallow: /scan/\nDisallow: /free-scan\nDisallow: /history/\nDisallow: /payment/\nDisallow: /monitoring\nDisallow: /advanced-intelligence\nDisallow: /security-centre\nDisallow: /interaction-board\n\nSitemap: https://cyberlord.name.ng/sitemap.xml\n", mimetype="text/plain")
 
 
 @app.route("/privacy")
@@ -873,6 +900,48 @@ def refund_policy():
 @app.route("/contact")
 def contact():
     return render_template("contact.html")
+
+@app.route("/pricing")
+def pricing():
+    return render_template("pricing.html")
+
+@app.route("/about")
+def about():
+    return render_template("about.html")
+
+@app.route("/domain-scan")
+def domain_scan():
+    # Legacy / dead link: point visitors at the working free scan on the homepage.
+    return redirect(url_for("index") + "#free-scan")
+
+@app.route("/free-scan", methods=["POST"])
+def free_scan():
+    """Anonymous basic domain scan: 2 per IP per day, no account, no history saved.
+
+    Reuses the same input validation and scan_domain() as the authenticated
+    scanner. Only the basic ``domain`` check is opened up; every other tool
+    stays behind login (deep_scan, history, advanced tools are unchanged).
+    Anonymous results come back JSON (like /scan/<tool>) with an ``anon_cta``
+    HTML snippet the caller can render under the readable report.
+    """
+    limit_resp = _user_rate("anonymous_scan", "domain")
+    if limit_resp is not None:
+        return limit_resp
+    target = form_str("target", 512)
+    if request.form.get("authorized") != "on":
+        return jsonify(error="Confirm that you own this target or have explicit permission to assess it."), 400
+    try:
+        domain = normalize_domain(target)
+        result = scan_domain(domain)
+        return jsonify(result=result, anon_cta=_anon_signup_cta())
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    except requests.RequestException as e:
+        app.logger.warning("Anonymous scan provider unavailable: %s", e)
+        return jsonify(error="A scan provider could not be reached. Check the target and provider connection."), 502
+    except Exception:
+        app.logger.exception("Anonymous scan failed")
+        return jsonify(error="The check could not be completed. Verify the target and try again."), 500
 
 @app.route("/register", methods=["GET","POST"])
 @rate_limit("register")
@@ -1534,16 +1603,22 @@ def admin_reject_bank_payment(payment_id):
 
 
 @app.route("/api/ai-assistant", methods=["POST"])
-@login_required
 def ai_assistant():
     """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. Provider chain: Gemini (gemini-3.8-flash) -> Groq (openai/gpt-oss-20b) -> built-in base. On any failure it silently falls back to the next provider, then to the built-in base, so the site stays fully functional without a key."""
-    now = time.time()
-    window = session.get("ai_rate_window", [])
-    window = [stamp for stamp in window if now - stamp < 60]
-    if len(window) >= 20:
-        return jsonify(error="You're sending messages quickly. Please wait a moment and try again."), 429
-    window.append(now)
-    session["ai_rate_window"] = window
+    # Per-user bucket: 5 messages per IP per hour for anonymous visitors,
+    # 20 per minute session window for signed-in users (unchanged behaviour).
+    limit_resp = _user_rate("ai")
+    if limit_resp is not None:
+        return limit_resp
+    is_auth = getattr(current_user, "is_authenticated", False)
+    if is_auth:
+        now = time.time()
+        window = session.get("ai_rate_window", [])
+        window = [stamp for stamp in window if now - stamp < 60]
+        if len(window) >= 20:
+            return jsonify(error="You're sending messages quickly. Please wait a moment and try again."), 429
+        window.append(now)
+        session["ai_rate_window"] = window
 
     body = request.get_json(silent=True) or {}
     messages = list(body.get("messages", []) or [])

@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Pricing Plans | CyberLord Domain Security{% endblock %}{% block description %}CyberLord pricing: Free forever, Pro ₦6,300 and Pro Plus ₦12,600 per 30 days. Core domain intelligence, Cyber Academy and more.{% endblock %}{% block content %}
+<section class="landing-section pricing-preview" id="plans">
+ <div class="section-intro"><div class="eyebrow">SIMPLE, CLEAR ACCESS</div><h2>Start free.<br><span>Upgrade when you need more.</span></h2><p>Learn and explore at no cost. Choose a paid plan when you need additional intelligence modules and deeper assessments.</p></div>
+ <div class="public-plan-grid">
+  <article class="public-plan"><div class="eyebrow">GET STARTED</div><h3>FREE</h3><div class="public-price">₦0 <small>forever</small></div><ul><li>Cyber Academy learning guides</li><li>CyberLord AI knowledge assistant</li><li>Core domain and DNS intelligence</li><li>Basic scan history</li></ul><a class="btn ghost" href="{{ url_for('register') }}">Create free account</a></article>
+  <article class="public-plan"><div class="eyebrow">MORE INTELLIGENCE</div><h3>PRO</h3><div class="public-price">₦6,300 <small>or 4.50 USDT / 30 days</small></div><ul><li>Everything in Free</li><li>Phone Intelligence</li><li>Individual Email Review</li><li>Breach Exposure module</li></ul><a class="btn primary" href="{{ url_for('register') }}">Explore Pro</a></article>
+  <article class="public-plan public-plan-featured"><div class="eyebrow">FULL TOOL ACCESS</div><h3>PRO PLUS</h3><div class="public-price">₦12,600 <small>or 9.00 USDT / 30 days</small></div><ul><li>Everything in Pro</li><li>Attack Surface Map</li><li>CVE Intelligence</li><li>Compare Domains and Limited Port Scanner</li></ul><a class="btn primary" href="{{ url_for('register') }}">Explore Pro Plus</a></article>
+ </div>
+ <p class="pricing-footnote">Paid subscriptions last 30 days after payment is independently verified. A payment screenshot alone never unlocks an account.</p>
+ <p class="muted">Questions about a plan or a payment? <a href="{{ url_for('contact') }}">Contact us</a> at <a href="mailto:michaelelvistito@gmail.com">michaelelvistito@gmail.com</a>.</p>
+</section>
+{% endblock %}
