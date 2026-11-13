@@ -122,7 +122,7 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     await new Promise(resolve=>setTimeout(resolve,600));
     const submit=form.querySelector("button");submit.disabled=true;
     try{
-      const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history.slice(-12)})});
+      const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({persona:"main",messages:history.slice(-12)})});
       const data=await res.json();
       pending.remove();
       if(!res.ok)throw new Error(data.error||"The assistant is temporarily unavailable.");
@@ -154,7 +154,7 @@ document.querySelectorAll(".tool-card").forEach(card=>{
       add(text,"user"); input.value="";
       const pending=add("Thinking…","bot");
       try{
-        const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lesson_slug:slug,messages:[{role:"user",content:text}]})});
+        const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({persona:"tutor",lesson_slug:slug,messages:[{role:"user",content:text}]})});
         const data=await res.json();
         pending.remove();
         if(!res.ok) throw new Error(data.error||"The tutor is temporarily unavailable.");

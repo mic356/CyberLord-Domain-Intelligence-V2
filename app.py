@@ -1547,21 +1547,58 @@ def ai_assistant():
 
     body = request.get_json(silent=True) or {}
     messages = list(body.get("messages", []) or [])
+    fallback_latest = next((m.get("content", "") for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str)), "")
     lesson_slug = body.get("lesson_slug") or body.get("lesson") or ""
+    # Persona flag: "tutor" = academy tutor surfaces (lesson panels + /tutor
+    # page, always carry a lesson_slug); "main" = dashboard assistant, broad.
+    persona = str(body.get("persona") or body.get("mode") or "").strip().lower()
+    if persona not in ("tutor", "main"):
+        persona = "tutor" if lesson_slug else "main"
+    lesson = None
     if lesson_slug:
         lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == str(lesson_slug).strip()), None)
         if lesson:
-            context = (
-                "Context: the user is studying the CyberLord Academy lesson '"
-                + str(lesson.get("title", "")) + "' (" + str(lesson.get("level", "")) + "). "
-                "Answer ONLY about this lesson's topic. "
-                "Lesson description: " + str(lesson.get("desc", "")) + ". "
-                "Key points: " + " ".join(lesson.get("content", []) or []) + ". "
-                "If the question is off-topic, say so briefly and offer to answer about this lesson instead. "
-                "Teach in plain, beginner-friendly steps; never give account/payment/scan results. "
-                "Safety: defensive and authorised-lab guidance only."
-            )
+            if persona == "tutor":
+                context = (
+                    "You are the CyberLord Academy Tutor. "
+                    "Answer ONLY about the academy's lesson content and course topics: "
+                    "the current lesson's material first, other academy topics second. "
+                    "If asked something off-academy (weather, sport, general trivia, anything not taught here), "
+                    "do NOT refuse flatly and never sound robotic. Redirect cleverly instead: tie the question "
+                    "back to a cybersecurity or lesson angle (\"nice question - in this lesson's world, that'd be "
+                    "... but let's stay on [topic]: ...\") or pull it back to a related lesson concept. "
+                    "Keep it natural, human and short. Lesson: '" + str(lesson.get("title", "")) + "' (" + str(lesson.get("level", "")) + "). "
+                    "Lesson description: " + str(lesson.get("desc", "")) + ". "
+                    "Key points: " + " ".join(lesson.get("content", []) or []) + ". "
+                    "Teach in plain, beginner-friendly steps; never give account/payment/scan results. "
+                    "Safety: defensive and authorised-lab guidance only."
+                )
+            else:
+                context = (
+                    "You are CyberLord AI, the broad dashboard assistant. "
+                    "Answer ANY question the user asks, including general knowledge. "
+                    "Be truthful and concise, keep a human tone. "
+                    "If you do not actually know, say so plainly in one line instead of guessing or inventing. "
+                    "The user is also studying lesson '" + str(lesson.get("title", "")) + "'; lead with that lesson's material when relevant. "
+                    "Teach in plain, beginner-friendly steps; never give account/payment/scan results. "
+                    "Safety: defensive and authorised-lab guidance only."
+                )
             messages = [{"role": "user", "content": context}] + messages
+    else:
+        if persona == "main":
+            messages = [{"role": "user", "content": (
+                "You are CyberLord AI, the broad CyberLord dashboard assistant. "
+                "Answer ANY question the user asks, including general knowledge, truthfully and concisely with a human tone. "
+                "If you do not actually know, say so plainly in one line instead of guessing or inventing a wrong answer. "
+                "Never invent CyberLord account, payment, scan or subscription status."
+            )}] + messages
+        else:
+            messages = [{"role": "user", "content": (
+                "You are the CyberLord Academy Tutor. Answer ONLY about the academy's lesson content and course topics. "
+                "If asked something off-academy, do NOT refuse flatly: redirect cleverly, tying the question back to a "
+                "cybersecurity or lesson angle, or pull it back to a related lesson concept. "
+                "Keep it natural, human and short."
+            )}] + messages
     if not isinstance(messages, list):
         return jsonify(error="Invalid conversation format."), 400
 
@@ -1593,9 +1630,23 @@ def ai_assistant():
     if api_key:
         try:
             endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            if persona == "tutor":
+                system_line = (
+                    "You are the CyberLord Academy Tutor. Answer ONLY about the academy's lesson content "
+                    "and course topics (current lesson first, other academy topics second). If asked "
+                    "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
+                    "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
+                    "Natural, human, short."
+                )
+            else:
+                system_line = (
+                    "You are CyberLord AI, the broad dashboard assistant. Answer ANY question the user "
+                    "asks, including general knowledge, truthfully and concisely with a human tone. If you "
+                    "do not actually know, say so plainly in one line instead of guessing or inventing. "
+                )
             payload = {
                 "systemInstruction": {"parts": [{"text": (
-                    "You are CyberLord AI, the cybersecurity learning and platform assistant. "
+                    system_line +
                     "Give clear, accurate, beginner-friendly explanations. Prefer practical, "
                     "step-by-step defensive guidance. Support authorised security testing only; "
                     "do not help compromise systems, steal credentials, evade detection, deploy "
@@ -1619,7 +1670,7 @@ def ai_assistant():
             reply = "\n".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
             if not reply:
                 raise ValueError("Gemini returned an empty response.")
-            return jsonify(reply=reply, mode="gemini", model=model,
+            return jsonify(reply=reply, mode="gemini", model=model, persona=persona,
                            live_sources="Gemini response; verify important security findings against primary sources")
         except Exception as exc:
             app.logger.warning("Gemini API unavailable; trying next provider: %s", str(exc)[:240])
@@ -1628,8 +1679,19 @@ def ai_assistant():
     groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip() or "llama-3.3-70b-versatile"
     if groq_key:
         try:
+            groq_system = (
+                "You are the CyberLord Academy Tutor. Answer ONLY about the academy's lesson content "
+                "and course topics (current lesson first, other academy topics second). If asked "
+                "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
+                "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
+                "Natural, human, short. "
+            ) if persona == "tutor" else (
+                "You are CyberLord AI, the broad dashboard assistant. Answer ANY question the user "
+                "asks, including general knowledge, truthfully and concisely with a human tone. If you "
+                "do not actually know, say so plainly in one line instead of guessing or inventing. "
+            )
             convo = [{"role": "system", "content": (
-                "You are CyberLord AI, the cybersecurity learning and platform assistant. "
+                groq_system +
                 "Give clear, accurate, beginner-friendly explanations. Prefer practical, "
                 "step-by-step defensive guidance. Support authorised security testing only; "
                 "do not help compromise systems, steal credentials, evade detection, deploy "
@@ -1655,7 +1717,7 @@ def ai_assistant():
             reply = ((choices[0].get("message") or {}).get("content") or "").strip() if choices else ""
             if not reply:
                 raise ValueError("Groq returned an empty response.")
-            return jsonify(reply=reply, mode="groq", model=groq_model,
+            return jsonify(reply=reply, mode="groq", model=groq_model, persona=persona,
                            live_sources="Groq response; verify important security findings against primary sources")
         except Exception as exc:
             app.logger.warning("Groq API unavailable; using local CyberLord knowledge fallback: %s", str(exc)[:240])
@@ -1668,8 +1730,8 @@ def ai_assistant():
         for item in contents:
             fallback_history.append({"role": "assistant" if item["role"] == "model" else "user",
                                      "content": item["parts"][0]["text"]})
-        reply = answer(latest, fallback_history)
-        return jsonify(reply=reply, mode="built-in-fallback",
+        reply = answer(fallback_latest, fallback_history, persona=persona, lesson=lesson)
+        return jsonify(reply=reply, mode="built-in-fallback", persona=persona,
                        live_sources="NIST NVD and CISA KEV when reachable")
     except Exception:
         app.logger.exception("CyberLord assistant error")

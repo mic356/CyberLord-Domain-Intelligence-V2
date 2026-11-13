@@ -189,6 +189,7 @@ _AMBIGUOUS = [
  ("how do i hack", "I can only help with authorized testing and learning. Are you trying to practice in your own lab, understand a concept defensively, or secure a system you own? Tell me which, and I'll point you to a legal path."),
 ]
 _UNCERTAINTY = ("Honest answer: I don't know that one from my built-in knowledge, and I don't want to guess. Here is what I can do: rephrase it, ask about a specific tool or CVE, or check a trusted source like NIST NVD or OWASP. What topic are you trying to cover?")
+_MAIN_DONT_KNOW = "Honestly, I don't know that one."
 
 def _pick(seq, seed_text):
     idx = sum(ord(c) for c in seed_text) % max(1, len(seq))
@@ -296,7 +297,14 @@ def _focus_phrase(q):
     return " ".join(words[:5])[:60] if words else ""
 
 
-def answer(query, history=None):
+def answer(query, history=None, persona="main", lesson=None):
+    """Built-in KB answer, shaped by persona.
+    persona="tutor": academy-only, off-topic -> clever redirect (never a flat
+    refusal), current-lesson material first. persona="main" (default): broad
+    answers, honestly says when it does not know instead of guessing.
+    lesson: optional dict with title/desc/content for the current lesson.
+    """
+    persona = persona if persona in ("tutor", "main") else "main"
     q = (query or "").strip()
     low = q.lower().strip(" .!?")
     if not q:
@@ -312,6 +320,43 @@ def answer(query, history=None):
         return ("CYBERLORD ACCOUNT & PLANS\nPro: 6,300 NGN or 4.50 USDT for 30 days. Pro Plus: 12,600 NGN or 9.00 USDT for 30 days. USDT networks supported by the current dashboard are TRC20 and BEP20; Paystack is temporarily disabled.\nA receipt, screenshot or bank reference alone does not activate a subscription. Payment must be independently verified by the server-side payment process. I cannot approve payments or change accounts. Never share passwords, OTPs, private keys or seed phrases in chat. For account-specific help contact michaelelvistito@gmail.com.")
     if any(x in low for x in ("how do i hack", "hack into", "break into", "crack password")):
         return "I can only help with authorized testing and learning. Are you trying to practice in your own lab, understand a concept defensively, or secure a system you own? Tell me which, and I'll point you to a legal path."
+    # Tutor: current lesson's material answers first, before the general KB.
+    if persona == "tutor" and lesson:
+        try:
+            lesson_text = " ".join([str(lesson.get("title", "")), str(lesson.get("desc", ""))] + list(lesson.get("content", []) or []))
+        except Exception:
+            lesson_text = ""
+        # Generic prompts like "explain this lesson" pull the lesson summary.
+        if low in ("explain this lesson", "explain this", "explain the lesson", "what is this lesson about", "summarize this lesson", "tell me about this lesson", "what did we cover", "recap this lesson"):
+            first = str(lesson.get("desc", "")).strip() or lesson_text[:420]
+            points = "\n".join(str(p).strip() for p in (lesson.get("content", []) or []) if str(p).strip())
+            summary = str(lesson.get("title", "")).strip() + ": " + first
+            if points:
+                summary += "\n\nKey ideas:\n" + points
+            return (summary + "\n\nWant me to drill into any one of those, or give a quick example using the same idea?")
+        if lesson_text and _tokens(q) & _tokens(lesson_text):
+            first = str(lesson.get("desc", "")).strip() or lesson_text[:420]
+            return ("Let's stay with this lesson, " + str(lesson.get("title", "")).strip() + ". " + first +
+                    "\n\nWant the next step on this, or a quick example using the same idea?")
+    # Tutor: academy topics only. Off-topic (no KB topic hit, or an obvious
+    # non-security subject) gets a clever redirect, never a generic answer.
+    if persona == "tutor":
+        _OFF_TOPIC = ("weather", "rain", "temperature", "sunny", "forecast", "football", "soccer",
+                      "basketball", "tennis", "cricket", "movie", "film", "music", "song",
+                      "sport", "game score", "recipe", "cook", "celebrity", "star sign",
+                      "horoscope", "stock price", "lottery", "joke", "meme", "pet", "dog",
+                      "cat", "baby", "wedding", "religion", "politic", "election", "currency",
+                      "bitcoin price", "ethereum price", "fashion", "holiday", "travel destination")
+        _tutor_off_topic = any(x in low for x in _OFF_TOPIC)
+        if _tutor_off_topic:
+            title = str((lesson or {}).get("title", "")).strip() if lesson else ""
+            return _tutor_redirect(q, lesson_title=title)
+        _t_matches = _topic_matches(q)
+        if not _t_matches:
+            title = str((lesson or {}).get("title", "")).strip() if lesson else ""
+            return _tutor_redirect(q, lesson_title=title)
+        # If the question tokens land mostly in the winning topic's title,
+        # return that topic (academy topics second priority).
     matches = _topic_matches(q)
     if matches:
         score, title, body = matches[0]
@@ -323,9 +368,36 @@ def answer(query, history=None):
             out.append(rest)
         out.append("\nWant me to go deeper on " + title + " or show a practical example next?")
         return "\n\n".join(out)
+    if persona == "tutor":
+        # Off-academy question: clever redirect, never a flat refusal.
+        title = str((lesson or {}).get("title", "")).strip() if lesson else ""
+        return _tutor_redirect(q, lesson_title=title)
+    # Main persona: broad - answer what we can, say plainly when we don't know.
     focus = _focus_phrase(q)
     if focus:
-        return ("Great question about " + focus + ". "
-                "I can cover the core idea, a safe hands-on example, and what to check next if you tell me whether you are learning, securing your own system, or running an authorized lab.")
-    return (_UNCERTAINTY + "\n\nSafety: I can help with authorized testing and defensive learning only, not unauthorized access or harm.")
+        return (_MAIN_DONT_KNOW + " But here's the honest version of what I can tell you about " + focus + ": "
+                "I can't verify that from my built-in knowledge, so I won't guess. Try a specific cybersecurity or CyberLord tool question, a CVE ID, or a trusted source like NIST NVD or OWASP and I'll go deep.")
+    return (_MAIN_DONT_KNOW + " " + _UNCERTAINTY + "\n\nSafety: I can help with authorized testing and defensive learning only, not unauthorized access or harm.")
+
+
+def _tutor_redirect(question, lesson_title="", lesson_topic=""):
+    topic = (lesson_topic or lesson_title or "cybersecurity").strip()
+    angle = {
+        "weather": "look at the sky the way a defender looks at logs, patterns and pressure changes",
+        "news": "treat headlines like threat intel: verify the source before you trust the signal",
+        "sport": "think of match strategy the way a defender thinks about positioning and timing",
+        "music": "think of rhythm and patterns, exactly how we spot anomalies hiding in logs",
+        "movie": "think of the plot twist the way an attacker hides a step, our job is to spot the gap",
+        "food": "think of a recipe the way we think of a checklist: right inputs, right order, no shortcuts",
+    }
+    low = (question or "").lower()
+    hook = next((v for k, v in angle.items() if k in low), None)
+    base = ("Nice question, I like the curiosity. In this lesson's world that one turns into "
+            + (hook or "something we can actually use here") + ".")
+    if topic and topic != "cybersecurity":
+        base += (" But let's stay on " + topic + " for now: we were just looking at it, "
+                 "and the fastest way to lock it in is to keep going for one more question.")
+    else:
+        base += " But let's stay on the lesson for now, one more question and it will click."
+    return base
 

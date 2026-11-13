@@ -73,7 +73,7 @@
       var res = await fetch("/api/ai-assistant", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({lesson_slug: LESSON, messages: history.slice(-12)})
+        body: JSON.stringify({persona:"tutor", lesson_slug: LESSON, messages: history.slice(-12)})
       });
       var data = await res.json();
       pending.remove();
