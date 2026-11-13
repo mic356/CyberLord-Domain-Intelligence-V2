@@ -12,6 +12,29 @@ document.querySelectorAll(".scan-form").forEach(form=>{
 });
 
 
+// Theme toggle: dark is default, light is opt-in. Stored in localStorage.
+(function(){
+  var root = document.documentElement;
+  var btn = document.getElementById("theme-toggle");
+  function sync(){
+    var light = root.dataset.theme === "light";
+    if (btn) btn.setAttribute("aria-pressed", String(light));
+    try{
+      var meta = document.getElementById("theme-color-meta");
+      if (meta) meta.content = light ? "#f4f7fb" : "#0b1220";
+    }catch(e){}
+  }
+  sync();
+  if (btn) {
+    btn.addEventListener("click", function(){
+      var next = root.dataset.theme === "light" ? "dark" : "light";
+      root.dataset.theme = next;
+      try{ localStorage.setItem("cl-theme", next); }catch(e){}
+      sync();
+    });
+  }
+})();
+
 // Keep the dashboard compact while allowing users to expand their full scan history.
 const historyToggle=document.getElementById("history-toggle");
 if(historyToggle){
