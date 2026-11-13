@@ -270,18 +270,38 @@ def _live_kev(query):
 
 
 _SMALL_TALK = {
-    "hi": "Hey there! What are we learning today?",
-    "hello": "Hello! Ask me anything about cybersecurity or your CyberLord tools.",
-    "hey": "Hey! What do you want to work on?",
-    "good morning": "Good morning! What can I help you with today?",
-    "good evening": "Good evening! What are we digging into?",
-    "how are you": "Doing great, thanks for asking. What can I help you with?",
-    "what's up": "Not much, just ready to help. What do you need?",
+    "hi": "Hey there! What's up? I can chat about pretty much anything, or tell you about the CyberLord website if you want.",
+    "hello": "Hello! How's your day going? Ask me anything, or ask me about CyberLord if you're curious.",
+    "hey": "Hey! What's on your mind today?",
+    "good morning": "Good morning! How can I help you today? We can talk about anything, or I can walk you through CyberLord.",
+    "good evening": "Good evening! Hope you're having a good day. What can I do for you?",
+    "how are you": "Doing great, thanks for asking! How about you, what's on your mind today?",
+    "what's up": "Not much, just here and ready to chat. What do you need?",
     "thanks": "You're welcome! Anything else on your mind?",
     "thank you": "You're welcome! Anything else I can help with?",
-    "bye": "See you later, happy learning!",
-    "goodbye": "See you later, happy learning!",
+    "bye": "See you later! Take care.",
+    "goodbye": "See you later! Take care.",
 }
+
+_CYBERLORD_SITE_INFO = (
+    "CyberLord is a domain security toolkit at cyberlord.name.ng. "
+    "It offers domain scans, a deep scan, the CyberLord Academy, an AI tutor, "
+    "an interaction board, a security centre, and advanced intelligence. "
+    "Plans are Free (NGN 0), Pro (NGN 6,300 for 30 days) and Pro Plus (NGN 12,600 for 30 days). "
+    "Pro unlocks more tools and academy courses, Pro Plus unlocks the advanced ones. "
+    "You can ask me how any part of the site works."
+)
+
+_CYBERLORD_SITE_KEYS = (
+    "cyberlord website", "cyberlord site", "what is cyberlord", "what does cyberlord do",
+    "about cyberlord", "tell me about cyberlord", "cyberlord features", "cyberlord plans",
+    "cyberlord pricing", "cyberlord price", "how much is cyberlord", "cyberlord free",
+    "cyberlord pro", "deep scan", "interaction board", "security centre", "advanced intelligence",
+    "cyberlord academy", "cyberlord tutor",
+)
+
+_GENERAL_OPENER = "Happy to chat about that."
+_GENERAL_DONT_KNOW = "Honestly, I don't know that one for sure, and I don't want to guess. If you give me a bit more detail I can try to help, or you could check a trusted source. What else can we talk about?"
 
 _CONVERSATIONAL_STARTERS = [
     "Good question. ", "Sure, let's walk through it. ", "Easy one. ",
@@ -308,9 +328,13 @@ def answer(query, history=None, persona="main", lesson=None):
     q = (query or "").strip()
     low = q.lower().strip(" .!?")
     if not q:
-        return "Ask me anything about cybersecurity or your CyberLord tools and I'll walk you through it."
+        if persona == "tutor":
+            return "Ask me anything about cybersecurity or your CyberLord tools and I'll walk you through it."
+        return "Hey! Chat with me about anything, or ask me about the CyberLord website and I'll walk you through it."
     if low in _SMALL_TALK:
         return _SMALL_TALK[low]
+    if persona == "main" and any(k in low for k in _CYBERLORD_SITE_KEYS):
+        return _CYBERLORD_SITE_INFO
     live = _live_cve(q)
     if live:
         return live
@@ -403,12 +427,14 @@ def answer(query, history=None, persona="main", lesson=None):
         # Off-academy question: clever redirect, never a flat refusal.
         title = str((lesson or {}).get("title", "")).strip() if lesson else ""
         return _tutor_redirect(q, lesson_title=title)
-    # Main persona: broad - answer what we can, say plainly when we don't know.
-    focus = _focus_phrase(q)
-    if focus:
-        return (_MAIN_DONT_KNOW + " But here's the honest version of what I can tell you about " + focus + ": "
-                "I can't verify that from my built-in knowledge, so I won't guess. Try a specific cybersecurity or CyberLord tool question, a CVE ID, or a trusted source like NIST NVD or OWASP and I'll go deep.")
-    return (_MAIN_DONT_KNOW + " " + _UNCERTAINTY + "\n\nSafety: I can help with authorized testing and defensive learning only, not unauthorized access or harm.")
+    # Main persona: friendly general assistant. Chat naturally on ANY topic,
+    # talk about the CyberLord website when asked, stay honest when unsure.
+    # Never redirect general greetings or everyday questions to cybersecurity.
+    if persona == "main":
+        focus = _focus_phrase(q)
+        if focus:
+            return (_GENERAL_DONT_KNOW + " (about " + focus + ")")
+        return _GENERAL_DONT_KNOW
 
 
 def _tutor_redirect(question, lesson_title="", lesson_topic=""):
