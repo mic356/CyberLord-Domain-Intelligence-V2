@@ -1,351 +1,202 @@
-// CyberLord Tutor voice: Web Speech API (speechSynthesis + SpeechRecognition) —
-// free, built into phone and desktop browsers. No API key, no cost. Degrades
-// silently when the browser has neither capability.
-//
-// ChatGPT-style voice bar: press and hold the mic to record, release to send.
-// A quick tap puts the transcript in the input for editing instead of sending.
-// Replies to a voice question are spoken aloud automatically.
-
+// CyberLord voice controls.
+// Speech-to-text uses the browser Web Speech API (no API key or server cost).
+// Tap the microphone once to start, then tap again to stop. The transcript is
+// placed in the message field for review/editing; the user presses Send.
 (function () {
   "use strict";
 
-  var LS = "cl-voice-replies";
+  var VOICE_PREF = "cl-voice-replies";
   var voiceOn = false;
-  try { voiceOn = localStorage.getItem(LS) === "1"; } catch (e) {}
-  // True while the user is mid-hold on a mic button.
-  var holding = false;
+  var activeRecognition = null;
+  var activeButton = null;
+  var finalTranscript = "";
+  var interimTranscript = "";
 
-  function ttsOK() {
-    try { return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window; }
-    catch (e) { return false; }
-  }
-  function sttOK() {
-    try { return !!window.SpeechRecognition || !!window.webkitSpeechRecognition; }
-    catch (e) { return false; }
-  }
-  if (!ttsOK() && !sttOK()) return;
+  try { voiceOn = localStorage.getItem(VOICE_PREF) === "1"; } catch (e) {}
 
-  function pickEnglishVoice() {
+  function recognitionConstructor() {
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  }
+  function speechSynthesisAvailable() {
+    return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+  }
+  function getInput(button) {
+    var form = button && button.closest("form");
+    return form ? form.querySelector("input[type='text'], input:not([type]), textarea") : null;
+  }
+  function updateButton(button, listening) {
+    if (!button) return;
+    button.classList.toggle("listening", listening);
+    button.setAttribute("aria-pressed", listening ? "true" : "false");
+    button.textContent = listening ? "■" : "🎙";
+    button.setAttribute("aria-label", listening ? "Stop voice recording" : "Start voice input");
+    button.title = listening ? "Tap to stop recording" : "Tap to speak";
+    if (listening) {
+      var bars = document.createElement("span");
+      bars.className = "voice-bars";
+      bars.setAttribute("aria-hidden", "true");
+      for (var i = 0; i < 5; i++) bars.appendChild(document.createElement("i"));
+      button.insertAdjacentElement("afterend", bars);
+    } else {
+      var next = button.nextElementSibling;
+      if (next && next.classList.contains("voice-bars")) next.remove();
+    }
+  }
+  function showMessage(form, message) {
+    var status = form && form.parentNode && form.parentNode.querySelector(".voice-status");
+    if (!status && form) {
+      status = document.createElement("small");
+      status.className = "voice-status";
+      status.setAttribute("role", "status");
+      form.insertAdjacentElement("afterend", status);
+    }
+    if (status) status.textContent = message || "";
+  }
+  function finishRecognition(button, input, form) {
+    if (button) updateButton(button, false);
+    activeRecognition = null;
+    activeButton = null;
+    var transcript = (finalTranscript || interimTranscript || "").trim();
+    if (input && transcript) {
+      input.value = transcript;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.focus();
+      showMessage(form, "Speech converted to text. Review it, then press Send.");
+    } else if (form) {
+      showMessage(form, "No speech was recognised. Please try again.");
+    }
+  }
+  function startRecording(button) {
+    var Ctor = recognitionConstructor();
+    var input = getInput(button);
+    var form = button.closest("form");
+    if (!Ctor) {
+      showMessage(form, "Voice input is not supported in this browser. Try Chrome on Android or desktop.");
+      return;
+    }
+    if (!input) {
+      showMessage(form, "The message input could not be found.");
+      return;
+    }
     try {
-      var voices = window.speechSynthesis.getVoices() || [];
-      for (var i = 0; i < voices.length; i++) {
-        if (voices[i] && /^en(-|_)/i.test(voices[i].lang || "")) return voices[i];
-      }
-      for (var j = 0; j < voices.length; j++) {
-        if (voices[j] && /english/i.test(voices[j].name || "")) return voices[j];
-      }
-    } catch (e) {}
-    return null;
-  }
-  if (ttsOK()) { try { window.speechSynthesis.onvoiceschanged = function () {}; } catch (e) {} }
+      var recognition = new Ctor();
+      activeRecognition = recognition;
+      activeButton = button;
+      finalTranscript = "";
+      interimTranscript = "";
+      recognition.lang = "en-US";
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      updateButton(button, true);
+      showMessage(form, "Listening… tap the microphone again when you finish.");
+      if (navigator.vibrate) { try { navigator.vibrate(20); } catch (e) {} }
 
-  // speak(text, force) — normally honors the voiceOn toggle; force bypasses it
-  // (used for the hands-free reply after a voice question).
-  function speak(text, force) {
-    if (!ttsOK() || (!force && !voiceOn)) return;
+      recognition.onresult = function (event) {
+        interimTranscript = "";
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+          var part = event.results[i][0] && event.results[i][0].transcript || "";
+          if (event.results[i].isFinal) finalTranscript += part + " ";
+          else interimTranscript += part;
+        }
+        var live = (finalTranscript + interimTranscript).trim();
+        if (live) {
+          input.value = live;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      };
+      recognition.onerror = function (event) {
+        var messages = {
+          "not-allowed": "Microphone permission was denied. Allow microphone access in your browser settings.",
+          "service-not-allowed": "The browser speech service is unavailable.",
+          "no-speech": "No speech detected. Please try again.",
+          "audio-capture": "No microphone was found. Check your device microphone."
+        };
+        showMessage(form, messages[event.error] || ("Voice input error: " + event.error));
+      };
+      recognition.onend = function () {
+        if (activeRecognition === recognition) {
+          finishRecognition(button, input, form);
+        }
+      };
+      recognition.start();
+    } catch (err) {
+      updateButton(button, false);
+      activeRecognition = null;
+      activeButton = null;
+      showMessage(form, "Could not start the microphone. Check browser permissions and try again.");
+    }
+  }
+  function stopRecording() {
+    if (!activeRecognition) return;
+    var rec = activeRecognition;
+    try { rec.stop(); } catch (e) {}
+  }
+
+  function bindMic(button) {
+    if (button.dataset.voiceBound === "1") return;
+    button.dataset.voiceBound = "1";
+    button.addEventListener("click", function () {
+      if (activeRecognition && activeButton === button) stopRecording();
+      else {
+        if (activeRecognition) stopRecording();
+        startRecording(button);
+      }
+    });
+  }
+
+  function speak(text) {
+    if (!voiceOn || !speechSynthesisAvailable()) return;
     try {
       window.speechSynthesis.cancel();
-      var clean = String(text || "").replace(/\s+/g, " ").trim().slice(0, 900);
-      if (!clean) return;
-      var utter = new SpeechSynthesisUtterance(clean);
-      utter.lang = "en-US";
-      utter.rate = 1.0;
-      var voice = pickEnglishVoice();
-      if (voice) utter.voice = voice;
-      window.speechSynthesis.speak(utter);
+      var utterance = new SpeechSynthesisUtterance(String(text || "").replace(/\s+/g, " ").trim().slice(0, 900));
+      utterance.lang = "en-US";
+      utterance.rate = 1;
+      window.speechSynthesis.speak(utterance);
     } catch (e) {}
   }
-  function stopSpeak() { try { if (ttsOK()) window.speechSynthesis.cancel(); } catch (e) {} }
-
-  // Auto-speak new bot replies when voice replies are ON, or when the last
-  // question was asked by voice. The composer marks bot bumps with
-  // data-voice="auto" (voice question) before the reply is appended.
-  function scan(root) {
-    var scope = root || document;
-    if (!scope.querySelectorAll) return;
-    scope.querySelectorAll(".tutor-msg.bot, .cl-ai-message.bot, .chat-msg.bot").forEach(function (el) {
-      if (el.dataset.voiceReady === "1") return;
-      el.dataset.voiceReady = "1";
-      var txt = el.textContent;
-      if (el.dataset.voice === "auto") speak(txt, true);
-      else if (voiceOn) speak(txt);
-    });
-  }
-
-  // Mark the in-flight question as voice/typed on the form before submit.
-  function markFormInput(form, wasVoice) {
-    if (!form) return;
-    form.dataset.voiceInput = wasVoice ? "voice" : "typed";
-  }
-
-  // When a composer submit fires, tag the next bot reply it appends. We do
-  // this by flagging the form and post-processing appended nodes through the
-  // observer: the observer already scans new bot nodes, so we only need the
-  // form flag to survive until then. Store it per thread element.
-  function flagNextBot(ctx, wasVoice) {
-    if (!ctx) return;
-    // ctx is the form; find its message list and set a pending flag.
-    var list = ctx.parentNode && ctx.parentNode.querySelector(
-      ".tutor-messages, .chat-thread, .cl-ai-thread");
-    if (!list) list = ctx.closest("section, aside, div") &&
-      ctx.closest("section, aside, div").querySelector(
-        ".tutor-messages, .chat-thread, .cl-ai-thread");
-    if (list) list.dataset.voicePending = wasVoice ? "voice" : "typed";
-  }
-
-  // ---- live voice transcript bubble ----
-  // While the user speaks, the words the speech engine has already
-  // recognized appear as a normal user text bubble in the chat (marked
-  // pending) so the conversation shows their question as text before
-  // it is sent. Only engine-recognized words are ever shown, never
-  // placeholder text. On send the composer reuses this bubble (see
-  // the voicePending check in each composer) instead of adding a
-  // duplicate; on quick-tap the preview is discarded and the text
-  // is parked in the input instead.
-  function findThread(form) {
-    if (!form) return null;
-    var list = form.parentNode && form.parentNode.querySelector(
-      ".tutor-messages, .chat-thread, .cl-ai-body, .cl-ai-thread");
-    if (!list) {
-      var near = form.closest("section, aside, div");
-      if (near) list = near.querySelector(".tutor-messages, .chat-thread, .cl-ai-body, .cl-ai-thread");
-    }
-    return list || null;
-  }
-  function userBubbleClass(list) {
-    if (list) {
-      if (list.classList.contains("cl-ai-body") || list.classList.contains("cl-ai-thread")) return "cl-ai-message user";
-      if (list.classList.contains("tutor-messages")) return "tutor-msg user";
-    }
-    return "chat-msg user";
-  }
-  function showLiveVoiceBubble(form, text) {
-    if (!form || !text) return null;
-    var list = findThread(form);
-    if (!list) return null;
-    var bubble = list.querySelector("[data-voice-pending='1']");
-    if (!bubble) {
-      bubble = document.createElement("div");
-      bubble.className = userBubbleClass(list);
-      bubble.setAttribute("data-voice-pending", "1");
-      list.appendChild(bubble);
-    }
-    bubble.textContent = text;
-    if (list.scrollTop !== undefined) list.scrollTop = list.scrollHeight;
-    return bubble;
-  }
-  function discardLiveVoiceBubble(form) {
-    var list = findThread(form);
-    if (!list) return;
-    var bubble = list.querySelector("[data-voice-pending='1']");
-    if (bubble) bubble.remove();
-  }
-
-  // ---- speaker toggle at the bottom of each composer ----
-  function refreshToggles() {
-    document.querySelectorAll("[data-voice-toggle]").forEach(function (b) {
-      b.setAttribute("aria-pressed", voiceOn ? "true" : "false");
-      b.classList.toggle("on", voiceOn);
-      b.textContent = voiceOn ? "🔊" : "🔈";
-    });
-  }
-  function bindToggle(b) {
-    if (b.dataset.voiceBound === "1") return;
-    b.dataset.voiceBound = "1";
-    b.addEventListener("click", function () {
+  function bindSpeaker(button) {
+    if (button.dataset.voiceBound === "1") return;
+    button.dataset.voiceBound = "1";
+    button.addEventListener("click", function () {
       voiceOn = !voiceOn;
-      try { localStorage.setItem(LS, voiceOn ? "1" : "0"); } catch (e) {}
-      refreshToggles();
-      if (!voiceOn) stopSpeak();
+      try { localStorage.setItem(VOICE_PREF, voiceOn ? "1" : "0"); } catch (e) {}
+      button.setAttribute("aria-pressed", voiceOn ? "true" : "false");
+      button.classList.toggle("on", voiceOn);
+      button.textContent = voiceOn ? "🔊" : "🔈";
+      button.title = voiceOn ? "Voice replies on" : "Voice replies off";
+      if (!voiceOn && speechSynthesisAvailable()) window.speechSynthesis.cancel();
     });
+    button.setAttribute("aria-pressed", voiceOn ? "true" : "false");
+    button.classList.toggle("on", voiceOn);
+    button.textContent = voiceOn ? "🔊" : "🔈";
   }
 
-  // ---- tap-and-hold voice bar ----
-  // Press (mousedown/touchstart) starts recording, release (mouseup/touchend)
-  // stops; a short hold fills the input for editing, a longer hold sends.
-  // While recording, recognized words appear as a live user text bubble.
-  var HOLD_MS = 350; // under this, treat as a tap: fill input, do not send
-  function bindMic(b) {
-    if (!sttOK()) { b.style.display = "none"; return; }
-    if (b.dataset.micBound === "1") return;
-    b.dataset.micBound = "1";
-    // Long-press must not bring up the context menu on mobile.
-    b.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-
-    var rec = null, pressStart = 0, released = false, transcript = "", done = false, pointerIn = true, formEl = null;
-
-    function setListening(on) {
-      holding = !!on;
-      b.classList.toggle("listening", !!on);
-      b.classList.toggle("voice-holding", !!on);
-      b.textContent = on ? "●" : "🎙";
-      b.setAttribute("aria-label", on ? "Listening… release to send" : "Press and hold to talk");
-      setBars(b, on);
-      if (on && window.navigator && navigator.vibrate) { try { navigator.vibrate(20); } catch (e) {} }
-    }
-    function setBars(btn, on) {
-      var bars;
-      if (on) {
-        bars = document.createElement("span");
-        bars.className = "voice-bars";
-        bars.setAttribute("aria-hidden", "true");
-        for (var i = 0; i < 5; i++) bars.appendChild(document.createElement("i"));
-        btn.insertAdjacentElement("afterend", bars);
-      } else {
-        var el = btn.nextElementSibling;
-        if (el && el.classList && el.classList.contains("voice-bars")) el.remove();
-        document.querySelectorAll(".voice-bars").forEach(function (x) { x.remove(); });
-      }
-    }
-    function start() {
-      var Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!Ctor) return;
-      try {
-        rec = new Ctor();
-        rec.lang = "en-US";
-        rec.interimResults = true;
-        rec.maxAlternatives = 1;
-        rec.continuous = true;
-        transcript = ""; done = false; released = false;
-        formEl = b.closest("form");
-        rec.onresult = function (ev) {
-          var text = "";
-          for (var i = 0; i < ev.results.length; i++) {
-            if (ev.results[i] && ev.results[i][0]) text += ev.results[i][0].transcript;
-          }
-          transcript = (text || "").trim();
-          // Show the recognized words as a user text bubble as they land.
-          if (formEl) showLiveVoiceBubble(formEl, transcript);
-        };
-        rec.onerror = function () {
-        if (formEl) discardLiveVoiceBubble(formEl);
-      };
-        rec.onend = function () {
-          if (released) finish();
-        };
-        setListening(true);
-        rec.start();
-      } catch (e) { setListening(false); }
-    }
-    function stop() {
-      if (rec && !done && !released) {
-        released = true;
-        try { rec.stop(); } catch (e) {}
-        // Some browsers never fire onend after stop; finish after a beat.
-        setTimeout(function () { if (!done) finish(); }, 800);
-      } else if (!rec) {
-        finish();
-      }
-    }
-    function finish() {
-      if (done) return;
-      done = true;
-      setListening(false);
-      var text = transcript || "";
-      rec = null;
-      var form = b.closest("form");
-      var input = form ? form.querySelector("input[type='text'], input:not([type])") : null;
-      if (!text) { if (form) discardLiveVoiceBubble(form); return; }
-      var quick = (Date.now() - pressStart) < HOLD_MS;
-      if (quick) {
-        // Quick tap: discard the live preview, park the transcript in
-        // the input for editing. When that parked text is then sent,
-        // the composer's own submit handler renders it as a normal
-        // user text bubble, exactly like a typed question.
-        discardLiveVoiceBubble(form);
-        if (input) { input.value = text; input.focus(); }
-        return;
-      }
-      // Hold: the live bubble already shows the words as text before
-      // sending. Keep it as the user's bubble (composers reuse the
-      // pending bubble instead of adding a duplicate) and submit.
-      if (input) input.value = text;
-      markFormInput(form, true);
-      flagNextBot(form, true);
-      if (form) {
-        if (form.requestSubmit) form.requestSubmit();
-        else form.dispatchEvent(new Event("submit", { cancelable: true }));
-      }
-    }
-
-    function press(e) {
-      if (e && e.cancelable) e.preventDefault();
-      pressStart = Date.now();
-      start();
-    }
-    function release() {
-      if (rec || holding) stop();
-    }
-    b.addEventListener("mousedown", press);
-    window.addEventListener("mouseup", release);
-    b.addEventListener("touchstart", press, { passive: false });
-    window.addEventListener("touchend", release);
-    window.addEventListener("touchcancel", release);
-    // Slide off the button with the pointer held: keep recording until release.
-    document.addEventListener("mouseleave", function () { pointerIn = false; });
-    // Keyboard: Enter or Space on the focused button records while held.
-    b.addEventListener("keydown", function (e) {
-      if ((e.key === "Enter" || e.key === " ") && !e.repeat) { e.preventDefault(); press(e); }
-    });
-    b.addEventListener("keyup", function (e) {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); release(); }
+  function scanReplies(root) {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll(".cl-ai-message.bot, .tutor-msg.bot, .chat-msg.bot").forEach(function (node) {
+      if (node.dataset.voiceScanned === "1") return;
+      node.dataset.voiceScanned = "1";
+      if (voiceOn) speak(node.textContent);
     });
   }
-
-  // Track typed vs voice submissions: a normal submit is typed unless the mic
-  // already claimed it. The form's submit listener below runs before the
-  // composer's own handler thanks to capture priority.
-  function watchForms(scope) {
-    var root = scope || document;
-    if (!root.querySelectorAll) return;
-    root.querySelectorAll("form").forEach(function (form) {
-      if (form.dataset.voiceWatch === "1") return;
-      form.dataset.voiceWatch = "1";
-      form.addEventListener("submit", function () {
-        if (form.dataset.voiceInput === "voice") return; // mic already flagged it
-        form.dataset.voiceInput = "typed";
-        flagNextBot(form, false);
-      }, true);
-      form.addEventListener("submit", function () {
-        setTimeout(function () { form.dataset.voiceInput = ""; }, 0);
-      });
-    });
+  function wire(root) {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll("[data-mic-btn]").forEach(bindMic);
+    root.querySelectorAll("[data-voice-toggle]").forEach(bindSpeaker);
   }
 
-  function wireComposers(scope) {
-    if (!scope.querySelectorAll) return;
-    scope.querySelectorAll("[data-voice-toggle]").forEach(bindToggle);
-    scope.querySelectorAll("[data-mic-btn]").forEach(bindMic);
-    watchForms(scope);
-    refreshToggles();
-  }
-  wireComposers(document);
-
-  scan(document);
-  try {
-    var observer = new MutationObserver(function (mutations) {
-      mutations.forEach(function (m) {
-        m.addedNodes.forEach(function (node) {
+  wire(document);
+  scanReplies(document);
+  if (window.MutationObserver && document.body) {
+    new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        mutation.addedNodes.forEach(function (node) {
           if (node.nodeType !== 1) return;
-          wireComposers(node);
-          if (node.matches && node.matches(".tutor-msg.bot, .cl-ai-message.bot, .chat-msg.bot")) {
-            // Claim the pending flag from the owning thread so a voice
-            // question's reply is spoken even with the toggle off.
-            var t = node.closest(".tutor-messages, .chat-thread, .cl-ai-thread");
-            if (t && t.dataset.voicePending === "voice") node.dataset.voice = "auto";
-            if (t) delete t.dataset.voicePending;
-            scan(node.parentNode || document);
-          } else if (node.querySelectorAll) {
-            node.querySelectorAll(".tutor-msg.bot, .cl-ai-message.bot, .chat-msg.bot").forEach(function (el) {
-              var t = el.closest(".tutor-messages, .chat-thread, .cl-ai-thread");
-              if (t && t.dataset.voicePending === "voice") el.dataset.voice = "auto";
-              if (t) delete t.dataset.voicePending;
-            });
-            scan(node);
-          }
+          wire(node);
+          scanReplies(node);
         });
       });
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  } catch (e) {}
+    }).observe(document.body, { childList: true, subtree: true });
+  }
 })();
