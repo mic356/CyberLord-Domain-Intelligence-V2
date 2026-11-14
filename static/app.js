@@ -210,7 +210,14 @@ document.querySelectorAll(".tool-card").forEach(card=>{
         const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({persona:"tutor",lesson_slug:slug,messages:[{role:"user",content:text}]})});
         const data=await res.json();
         pending.remove();
-        if(!res.ok) throw new Error(data.error||"The tutor is temporarily unavailable.");
+        if(!res.ok){
+          if(res.status===429){
+            var lock=card.querySelector(".tutor-lock")||document.getElementById("tutor-lock");
+            if(lock) lock.hidden=false;
+            input.disabled=true; form.querySelector("button[type=submit]").disabled=true;
+          }
+          throw new Error(data.error||"The tutor is temporarily unavailable.");
+        }
         add(data.reply,"bot");
       }catch(err){ pending.textContent=err.message||"Something went wrong. Please try again."; }
     });

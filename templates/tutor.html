@@ -4,6 +4,11 @@
   <h1>CyberLord Tutor</h1>
   <p class="muted">Ask any cybersecurity question below. Tap the speaker at the bottom to hear answers read aloud, or tap the mic and just talk to it.</p>
 </div>
+{% if tutor_pro %}
+<p class="tutor-pill">Tutor Pro: unlimited questions</p>
+{% elif tutor_remaining is not none %}
+<p class="tutor-pill">{{ tutor_remaining }} free questions left today. <a href="{{ url_for('dashboard') }}#plans">Unlock Tutor Pro</a></p>
+{% endif %}
 
 <section class="tutor-dashboard" id="tutor-dashboard" data-lesson="{{ lesson_slug or '' }}">
   <div class="chat-thread" id="chat-thread" aria-live="polite">
@@ -16,6 +21,12 @@
     <button type="button" class="btn mic-btn" data-mic-btn aria-label="Press and hold to talk" title="Press and hold to talk — release to send">🎙</button>
     <button type="button" class="btn" id="chat-clear">Clear chat</button>
   </form>
+<div class="tutor-lock" id="tutor-lock" hidden>
+  <h3>Free tutor limit reached</h3>
+  <p>You have used your {{ tutor_limit }} free tutor questions for today. Unlock Tutor Pro to keep asking, with voice tutor and Code Lab included.</p>
+  <p><strong>Tutor Pro: ₦6,300 for 30 days (4.50 USDT).</strong></p>
+  <a class="btn primary" href="{{ url_for('dashboard') }}#plans">Unlock Tutor Pro</a>
+</div>
   <p class="muted small">Answers are educational and defensive only. Your chat history on this page is kept for this browser session only.</p>
   <p class="muted small">Stuck on a lesson? <a href="{{ url_for('academy') }}">Back to the Academy</a> and use the tutor panel on any lesson.</p>
 </section>
@@ -87,7 +98,16 @@
       });
       var data = await res.json();
       pending.remove();
-      if(!res.ok) throw new Error(data.error || "The tutor is temporarily unavailable.");
+      if(!res.ok){
+        if(res.status === 429 && (data.upgrade_url || data.tutor_remaining === 0)){
+          var lock = document.getElementById("tutor-lock");
+          if(lock) lock.hidden = false;
+          input.disabled = true; form.querySelector("button[type=submit]").disabled = true;
+          pending.textContent = data.error || "You have reached your free tutor limit today.";
+          scroll(); return;
+        }
+        throw new Error(data.error || "The tutor is temporarily unavailable.");
+      }
       add(data.reply, "bot");
       history.push({role:"assistant", content:data.reply});
       save();

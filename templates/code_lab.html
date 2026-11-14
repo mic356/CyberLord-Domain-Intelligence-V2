@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Code Lab | CyberLord Academy{% endblock %}
+{% block content %}
+<section class="academy-page">
+  <div class="page-head">
+    <div>
+      <span class="eyebrow">Tutor Pro feature</span>
+      <h1>Code Lab - Python practice, sandboxed</h1>
+      <p>Paste small Python snippets and run them in a restricted sandbox. No network, no file writes, no shell. Forbidden modules such as os, socket, subprocess and ctypes are blocked. Code runs for a maximum of 5 seconds in a disposable temp folder.</p>
+    </div>
+    <div class="head-actions">
+      <a class="button secondary" href="{{ url_for('academy_terminal') }}">Training Terminal</a>
+      <a class="button secondary" href="{{ url_for('academy') }}">Back to Academy</a>
+    </div>
+  </div>
+
+  {% if not tutor_pro %}
+  <div class="info-card upsell">
+    <h2>Tutor Pro required</h2>
+    <p>Code Lab is included with Tutor Pro, which also gives unlimited tutor questions and voice tutor access for 30 days.</p>
+    <p><strong>Tutor Pro: ₦6,300/month or 4.50 USDT.</strong> Payment is verified manually like other CyberLord plans, and it expires after 30 days.</p>
+    <a class="button" href="{{ url_for('dashboard') }}#plans">See Tutor Pro pricing</a>
+  </div>
+  {% endif %}
+
+  <form id="codeForm" class="code-card">
+    <label for="codeInput">Python snippet</label>
+    <textarea id="codeInput" rows="14" spellcheck="false">print("hello from the Code Lab")
+for i in range(1, 4):
+    print(i, i * i)
+
+def greet(name):
+    return "welcome, " + name
+
+print(greet("learner"))</textarea>
+    <div class="code-actions">
+      <button class="button" type="submit" id="runBtn">Run in sandbox</button>
+      <button class="button secondary" type="button" id="clearBtn">Clear</button>
+      <span class="muted">Max 4,000 characters. Time and memory limited.</span>
+    </div>
+  </form>
+
+  <div class="info-card output-card">
+    <h2>Output</h2>
+    <pre id="codeOut">Run your code to see output here.</pre>
+  </div>
+
+  <div class="lab-grid">
+    <div class="info-card">
+      <h2>Try these</h2>
+      <ul>
+        <li>Loops, functions, lists, and dictionaries.</li>
+        <li>Small string and number practice from academy lessons.</li>
+        <li>Ask the tutor to explain an error message after you run it.</li>
+      </ul>
+    </div>
+    <div class="info-card">
+      <h2>Blocked on purpose</h2>
+      <p>import os, import socket, import subprocess, os.system, open(), eval(), exec(), ctypes, and network calls. The sandbox will refuse them with a clear message.</p>
+    </div>
+  </div>
+</section>
+
+<style>
+.academy-page{max-width:1120px;margin:0 auto;padding:28px 18px 60px}
+.page-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-bottom:20px}
+.eyebrow{text-transform:uppercase;letter-spacing:.12em;color:#8a97ad;font-size:12px}
+.page-head h1{font-size:34px;margin:8px 0}
+.page-head p{color:#b8c2d4;max-width:760px;line-height:1.6}
+.head-actions{display:flex;gap:10px;flex-wrap:wrap}
+.code-card,.info-card{background:#0d1420;border:1px solid #263244;border-radius:12px;padding:18px}
+.code-card label{font-weight:700;display:block;margin-bottom:10px}
+.code-card textarea{width:100%;box-sizing:border-box;background:#070b12;color:#e5eefc;border:1px solid #2b3a52;border-radius:10px;padding:14px;font-family:ui-monospace,Menlo,Consolas,monospace;line-height:1.55}
+.code-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.muted{color:#8a97ad;font-size:13px}
+.output-card{margin-top:16px}
+.output-card pre{background:#070b12;border:1px solid #263244;border-radius:10px;padding:14px;min-height:120px;white-space:pre-wrap;color:#c8f5d2;overflow:auto}
+.upsell{margin-bottom:18px}
+.lab-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}
+.info-card p,.info-card li{color:#b8c2d4;line-height:1.6}
+@media(max-width:760px){.lab-grid{grid-template-columns:1fr}}
+</style>
+
+<script>
+const form = document.getElementById('codeForm');
+const code = document.getElementById('codeInput');
+const out = document.getElementById('codeOut');
+const runBtn = document.getElementById('runBtn');
+document.getElementById('clearBtn').addEventListener('click', () => { code.value = ''; code.focus(); });
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  runBtn.disabled = true;
+  out.textContent = 'Running in sandbox...';
+  try {
+    const r = await fetch('/api/code-lab/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code: code.value})});
+    const data = await r.json();
+    if (!r.ok || data.ok === false) {
+      out.textContent = data.error || 'Code Lab request failed.';
+      return;
+    }
+    let text = data.output || '';
+    if (data.stderr) text += '\n' + data.stderr;
+    if (data.timed_out) text += '\nSandbox stopped the code after the time limit.';
+    out.textContent = text || '(no output)';
+  } catch (err) {
+    out.textContent = 'Could not reach Code Lab. Please try again.';
+  } finally {
+    runBtn.disabled = false;
+  }
+});
+</script>
+{% endblock %}

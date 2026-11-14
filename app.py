@@ -197,7 +197,14 @@ PLANS = {
     "free": {"name": "FREE", "price": 0, "ngn": 0, "usdt": "0.00", "rank": 0},
     "pro": {"name": "PRO", "price": 6300, "ngn": 6300, "usdt": "4.50", "rank": 1},
     "pro_plus": {"name": "PRO PLUS", "price": 12600, "ngn": 12600, "usdt": "9.00", "rank": 2},
+    # Tutor Pro is a separate add-on entitlement (see tutor_pro_expires_at on User).
+    # rank stays 0 so it never unlocks PRO / PRO PLUS scan tools or courses on its own;
+    # it only unlocks unlimited tutor chat + voice UI + Code Lab.
+    "tutor_pro": {"name": "TUTOR PRO", "price": 6300, "ngn": 6300, "usdt": "4.50", "rank": 0},
 }
+TUTOR_FREE_DAILY_LIMIT = 10
+TUTOR_PRO_NGN = 6300
+TUTOR_PRO_USDT = "4.50"
 USDT_WALLETS = {
     "trc20": "TSLdKMFJB3pqWMkkZoUfdo5j2GVh2ANHSw",
     "bep20": "0xab22fd86fbf75f7082436b25c0f851d4d7484e32",
@@ -222,6 +229,10 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     plan = db.Column(db.String(20), default="free", nullable=False)
     plan_expires_at = db.Column(db.DateTime)
+    # Separate add-on: Tutor Pro (unlimited tutor + Code Lab) for 30 days.
+    # Kept distinct from `plan` so a PRO / PRO PLUS user can add Tutor Pro
+    # without losing their main plan.
+    tutor_pro_expires_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -296,6 +307,14 @@ class BoardPost(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
+class TutorUsage(db.Model):
+    """One row per tutor question, used for the free daily tutor limit."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    day = db.Column(db.String(10), nullable=False, index=True)  # UTC YYYY-MM-DD
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
 class BoardReply(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     post_id = db.Column(db.Integer, db.ForeignKey("board_post.id"), nullable=False, index=True)
@@ -347,11 +366,55 @@ def refresh_subscription(user):
 def activate_subscription(user, payment):
     """Start a fresh 30-day term only after server-side payment verification."""
     now = datetime.utcnow()
+    if payment.plan == "tutor_pro":
+        # Add-on: do not overwrite the main plan (PRO / PRO PLUS / free).
+        user.tutor_pro_expires_at = now + timedelta(days=30)
+        payment.status = "success"
+        payment.verified_at = now
+        payment.expires_at = user.tutor_pro_expires_at
+        db.session.commit()
+        return
     user.plan = payment.plan
     user.plan_expires_at = now + timedelta(days=30)
     payment.status = "success"
     payment.verified_at = now
     payment.expires_at = user.plan_expires_at
+    db.session.commit()
+
+
+def tutor_pro_active(user=None):
+    """True only while a verified Tutor Pro add-on is unexpired."""
+    user = current_user if user is None else user
+    if not user:
+        return False
+    refresh_subscription(user)
+    expiry = getattr(user, "tutor_pro_expires_at", None)
+    if expiry and expiry <= datetime.utcnow():
+        user.tutor_pro_expires_at = None
+        db.session.commit()
+        return False
+    return bool(expiry)
+
+
+def tutor_usage_today(user=None):
+    user = current_user if user is None else user
+    if not user or getattr(user, "id", None) is None:
+        return 0
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    return TutorUsage.query.filter_by(user_id=user.id, day=today).count()
+
+
+def tutor_remaining(user=None):
+    if tutor_pro_active(user):
+        return None  # unlimited
+    return max(0, TUTOR_FREE_DAILY_LIMIT - tutor_usage_today(user))
+
+
+def record_tutor_use(user=None):
+    user = current_user if user is None else user
+    if not user or getattr(user, "id", None) is None:
+        return
+    db.session.add(TutorUsage(user_id=user.id, day=datetime.utcnow().strftime("%Y-%m-%d")))
     db.session.commit()
 
 def allowed_tool(tool):
@@ -967,7 +1030,7 @@ def reset_password(token):
 def dashboard():
     refresh_subscription(current_user)
     history = ScanHistory.query.filter_by(user_id=current_user.id).order_by(ScanHistory.created_at.desc()).limit(50).all()
-    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS)
+    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS, tutor_pro=tutor_pro_active(current_user), tutor_remaining=tutor_remaining(current_user), tutor_limit=TUTOR_FREE_DAILY_LIMIT, tutor_pro_expires_at=getattr(current_user, "tutor_pro_expires_at", None), tutor_pro_status=tutor_pro_active(current_user))
 
 # Academy lessons and their exercise questions now live in academy_questions.py
 # (add practitioner-level questions there; see the how-to at the top of that file).
@@ -1202,7 +1265,7 @@ def tutor():
     browser session (sessionStorage) by templates/tutor.html."""
     lesson_slug = (request.args.get("lesson") or "").strip()
     lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == lesson_slug), None)
-    return render_template("tutor.html", lesson_slug=lesson["slug"] if lesson else "")
+    return render_template("tutor.html", lesson_slug=lesson["slug"] if lesson else "", tutor_pro=tutor_pro_active(current_user), tutor_remaining=tutor_remaining(current_user), tutor_limit=TUTOR_FREE_DAILY_LIMIT, tutor_pro_expires_at=getattr(current_user, "tutor_pro_expires_at", None))
 
 
 @app.route("/interaction-board")
@@ -1475,7 +1538,7 @@ def payment_usdt_submit():
     plan = request.form.get("plan", "")
     network = request.form.get("network", "").lower()
     tx_hash = request.form.get("tx_hash", "").strip()
-    if plan not in ("pro", "pro_plus") or network not in USDT_WALLETS:
+    if plan not in ("pro", "pro_plus", "tutor_pro") or network not in USDT_WALLETS:
         flash("Select a valid plan and USDT network.", "error")
         return redirect(url_for("dashboard") + "#plans")
     valid_hash = (re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash) if network == "bep20" else re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash))
@@ -1512,7 +1575,7 @@ def payment_usdt_submit():
 def payment_bank_submit():
     plan = request.form.get("plan", "")
     bank_reference = request.form.get("bank_reference", "").strip()
-    if plan not in ("pro", "pro_plus") or not bank_reference or len(bank_reference) > 115:
+    if plan not in ("pro", "pro_plus", "tutor_pro") or not bank_reference or len(bank_reference) > 115:
         flash("Select a plan and enter your bank transfer reference.", "error")
         return redirect(url_for("dashboard") + "#plans")
     reference = "BANK-" + bank_reference
@@ -1537,7 +1600,7 @@ def payment_initialize():
         flash("Paystack is temporarily disabled while the account is awaiting approval.", "warning")
         return redirect(url_for("dashboard") + "#plans")
     plan=request.form.get("plan") or (request.get_json(silent=True) or {}).get("plan")
-    if plan not in ("pro","pro_plus"): return jsonify(error="Invalid plan"), 400
+    if plan not in ("pro","pro_plus","tutor_pro"): return jsonify(error="Invalid plan"), 400
     secret=os.getenv("PAYSTACK_SECRET_KEY")
     if not secret: return jsonify(error="Paystack is not configured on the server."), 503
     reference="CLD-"+secrets.token_urlsafe(18)
@@ -1751,6 +1814,12 @@ def ai_assistant():
     persona = str(body.get("persona") or body.get("mode") or "").strip().lower()
     if persona not in ("tutor", "main"):
         persona = "tutor" if lesson_slug else "main"
+    # Tutor Pro gating: free tutor is limited, Tutor Pro is unlimited.
+    # The main (dashboard) assistant is never limited by this.
+    if persona == "tutor":
+        if not tutor_pro_active(current_user) and tutor_usage_today(current_user) >= TUTOR_FREE_DAILY_LIMIT:
+            return jsonify(error="You have used your free tutor questions for today (%d). Upgrade to Tutor Pro for unlimited tutor questions." % TUTOR_FREE_DAILY_LIMIT, tutor_pro=False, tutor_remaining=0, upgrade_url=url_for("dashboard") + "#plans"), 429
+        record_tutor_use(current_user)
     lesson = None
     lesson_questions_block = ""
     if lesson_slug:
@@ -1784,7 +1853,7 @@ def ai_assistant():
                     "Do NOT redirect non-cybersecurity topics back to cybersecurity and do NOT force a security angle. "
                     "You can also answer about the CyberLord website itself: it offers domain scans, deep scan, "
                     "CyberLord Academy, the AI tutor, the interaction board, the security centre, and advanced "
-                    "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600. "
+                    "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). "
                     "Be truthful and concise with a warm, human tone, like a helpful friend. "
                     "If you do not actually know, say so plainly in one line instead of guessing or inventing. "
                     "The user is also studying lesson '" + str(lesson.get("title", "")) + "'; only refer to it if it fits the conversation. "
@@ -1801,7 +1870,7 @@ def ai_assistant():
                 "Do NOT redirect non-cybersecurity topics back to cybersecurity and do NOT force a security angle. "
                 "You can also answer about the CyberLord website itself: it offers domain scans, deep scan, "
                 "CyberLord Academy, the AI tutor, the interaction board, the security centre, and advanced "
-                "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600. "
+                "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). "
                 "Answer truthfully and concisely with a warm, human tone, like a helpful friend. "
                 "If you do not actually know, say so plainly in one line instead of guessing or inventing a wrong answer. "
                 "Never invent CyberLord account, payment, scan or subscription status."
@@ -1864,7 +1933,7 @@ def ai_assistant():
                     "cybersecurity and do NOT force a security angle. You can also answer about the CyberLord "
                     "website itself: it offers domain scans, deep scan, CyberLord Academy, the AI tutor, the "
                     "interaction board, the security centre, and advanced intelligence. Pricing is Free NGN 0, "
-                    "Pro NGN 6,300, Pro Plus NGN 12,600. Answer truthfully and concisely with a warm, human tone, "
+                    "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). Answer truthfully and concisely with a warm, human tone, "
                     "like a helpful friend. If you do not actually know, say so plainly in one line instead of "
                     "guessing or inventing. The security guardrails below apply only to security-related requests; "
                     "for general chat, just answer normally. "
@@ -1951,7 +2020,7 @@ def ai_assistant():
                 "cybersecurity and do NOT force a security angle. You can also answer about the CyberLord "
                 "website itself: it offers domain scans, deep scan, CyberLord Academy, the AI tutor, the "
                 "interaction board, the security centre, and advanced intelligence. Pricing is Free NGN 0, "
-                "Pro NGN 6,300, Pro Plus NGN 12,600. Answer truthfully and concisely with a warm, human tone, "
+                "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). Answer truthfully and concisely with a warm, human tone, "
                 "like a helpful friend. If you do not actually know, say so plainly in one line instead of "
                 "guessing or inventing. The security guardrails below apply only to security-related requests; "
                 "for general chat, just answer normally. "
@@ -2000,6 +2069,8 @@ def ai_assistant():
                                      "content": item["parts"][0]["text"]})
         reply = answer(fallback_latest, fallback_history, persona=persona, lesson=lesson)
         return jsonify(reply=reply, mode="built-in-fallback", persona=persona,
+                       tutor_pro=tutor_pro_active(current_user) if persona == "tutor" else None,
+                       tutor_remaining=tutor_remaining(current_user) if persona == "tutor" else None,
                        live_sources="NIST NVD and CISA KEV when reachable")
     except Exception:
         app.logger.exception("CyberLord assistant error")
@@ -2328,6 +2399,370 @@ def run_advanced_intelligence(tool):
         app.logger.exception("Advanced intelligence module failed")
         return jsonify(ok=False,error="The investigation could not be completed. Please try again later."),500
 
+
+# ---------------------------------------------------------------------------
+# Academy Training Terminal + Code Lab (Tutor Pro)
+#
+# Safety model (deliberate, keep it this way):
+# * Terminal: strict whitelist executor. No shell, no subprocess, no real
+#   network, no real filesystem. Every command is parsed and answered from a
+#   fixed in-memory practice-lab model. Unknown / hostile input is rejected.
+#   The only "targets" are the built-in lab hosts; any other host is refused.
+# * Code Lab: small Python snippets only, run in a separate child process
+#   with a hard timeout, CPU/RLIMIT, no network (socket blocked), and the
+#   working directory is an empty temp dir that is deleted afterwards.
+#   Forbidden modules / attributes are blocked before execution by an AST
+#   check, and the child also installs a blocked-import guard.
+# ---------------------------------------------------------------------------
+import ast as _ast
+import resource as _resource
+import sys as _sys
+import tempfile as _tempfile
+
+LAB_HOSTS = {"lab.local", "practice.lab.local", "10.0.0.1", "localhost"}
+TERMINAL_ALLOWED = {"help", "nmap", "dig", "whois", "ping", "ls", "cd", "cat", "pwd", "echo", "clear", "theharvester"}
+_LAB_FILES = {
+    "/home/user": ["readme.txt", "notes.txt", "practice/"],
+    "/home/user/practice": ["scan-notes.txt", "dns-notes.txt"],
+    "/": ["home/"],
+}
+_LAB_FILE_TEXT = {
+    "/home/user/readme.txt": "Welcome to the CyberLord practice lab.\nThis is a safe, simulated terminal. Nothing here touches the real internet.\nTry: help, nmap lab.local, dig lab.local, theharvester -d example.com -b google\n",
+    "/home/user/notes.txt": "Lab notes:\n- nmap shows open ports on the lab host only.\n- dig shows simulated DNS records.\n- whois shows simulated registration data.\n- theharvester shows simulated public OSINT-style results (fictional data).\n",
+    "/home/user/practice/scan-notes.txt": "Practice task 1: run 'nmap lab.local' and note which ports are open.\nPractice task 2: run 'dig lab.local' and compare the A record with the nmap host.\n",
+    "/home/user/practice/dns-notes.txt": "Practice task: run 'dig MX lab.local' and 'dig TXT lab.local'.\nWrite down what SPF-like record you see and what it means.\n",
+}
+_NMAP_LAB = (
+    "Starting Nmap 7.94 ( https://nmap.org ) at 01:00 UTC\n"
+    "Nmap scan report for lab.local (10.0.0.1)\n"
+    "Host is up (0.00012s latency).\n"
+    "Not shown: 997 closed tcp ports (reset)\n"
+    "PORT      STATE SERVICE\n"
+    "22/tcp    open  ssh\n"
+    "80/tcp    open  http\n"
+    "443/tcp   open  https\n"
+    "\n"
+    "Nmap done: 1 IP address (1 host up) scanned in 0.42 seconds\n"
+    "(Practice lab output. Simulated, no real scan was performed.)\n"
+)
+
+
+def _terminal_state():
+    st = session.get("terminal_state") or {"cwd": "/home/user"}
+    if st.get("cwd") not in _LAB_FILES:
+        st["cwd"] = "/home/user"
+    return st
+
+
+def terminal_execute(line):
+    """Whitelist executor. Returns (output_text, is_error). Never runs a shell."""
+    raw = (line or "").strip()
+    if not raw:
+        return "", False
+    if len(raw) > 300:
+        return "Command too long (max 300 characters).", True
+    # Reject shell metacharacters outright: this is not a shell.
+    if any(ch in raw for ch in (";", "&", "|", ">", "<", "`", "$", "\\", "\n", "\r", "(", ")")):
+        return "Rejected: shell operators are not allowed in the practice terminal. Try 'help'.", True
+    parts = raw.split()
+    cmd = parts[0].lower()
+    args = parts[1:]
+    if cmd == "clear":
+        return "__CLEAR__", False
+    if cmd == "help":
+        return (
+            "Practice lab terminal - safe commands only. Type one command per line.\n"
+            "Available commands:\n"
+            "  help                         show this help\n"
+            "  nmap <host>                  simulated port scan of the lab host only (try: nmap lab.local)\n"
+            "  dig [type] <host>            simulated DNS lookup (types: A, MX, TXT, NS; default A)\n"
+            "  whois <host>                 simulated registration lookup for the lab host\n"
+            "  ping <host>                  simulated ping of the lab host\n"
+            "  theharvester -d <domain> -b google   simulated OSINT-style public data (fictional)\n"
+            "  ls [path]                    list the practice filesystem\n"
+            "  cd <path>                    change directory (try: cd practice)\n"
+            "  cat <file>                   read a practice file\n"
+            "  pwd                          show current directory\n"
+            "  echo <text>                  print text\n"
+            "  clear                        clear the screen\n"
+            "Only lab.local can be scanned. Any other target is refused.\n"
+        ), False
+    if cmd not in TERMINAL_ALLOWED:
+        return "Command not allowed in the practice lab: '%s'. Type 'help' for the safe command list." % cmd, True
+
+    st = _terminal_state()
+
+    if cmd == "pwd":
+        return st["cwd"], False
+    if cmd == "echo":
+        return " ".join(args)[:300], False
+    if cmd == "ls":
+        path = args[0] if args else st["cwd"]
+        if path in (".", ""):
+            path = st["cwd"]
+        elif not path.startswith("/"):
+            path = (st["cwd"].rstrip("/") + "/" + path) if st["cwd"] != "/" else "/" + path
+        path = path.rstrip("/") or "/"
+        if path in _LAB_FILES:
+            return "\n".join(_LAB_FILES[path]), False
+        return "ls: cannot access '%s': No such file or directory" % (args[0] if args else path), True
+    if cmd == "cd":
+        if not args:
+            st["cwd"] = "/home/user"
+        else:
+            target = args[0]
+            if target == "..":
+                parent = "/".join(st["cwd"].split("/")[:-1]) or "/"
+                st["cwd"] = parent
+            elif target in (".", "~"):
+                pass
+            else:
+                cand = target if target.startswith("/") else ((st["cwd"].rstrip("/") + "/" + target) if st["cwd"] != "/" else "/" + target)
+                cand = cand.rstrip("/") or "/"
+                if cand in _LAB_FILES:
+                    st["cwd"] = cand
+                else:
+                    return "cd: no such directory: %s" % target, True
+        session["terminal_state"] = st
+        session.modified = True
+        return "", False
+    if cmd == "cat":
+        if not args:
+            return "cat: missing file name. Try: cat readme.txt", True
+        name = args[0]
+        cand = name if name.startswith("/") else ((st["cwd"].rstrip("/") + "/" + name) if st["cwd"] != "/" else "/" + name)
+        if cand in _LAB_FILE_TEXT:
+            return _LAB_FILE_TEXT[cand], False
+        return "cat: %s: No such file or directory" % name, True
+
+    # Network-style commands: lab host only, simulated output, no real I/O.
+    host = None
+    if cmd in ("nmap", "whois", "ping"):
+        host = (args[-1] if args else "").lower()
+    elif cmd == "dig":
+        host = (args[-1] if args else "").lower()
+    elif cmd == "theharvester":
+        lowered = [a.lower() for a in args]
+        domain = ""
+        if "-d" in lowered:
+            i = lowered.index("-d")
+            if i + 1 < len(args):
+                domain = args[i + 1].lower()
+        if not domain:
+            return "Usage: theharvester -d <domain> -b google", True
+        if not re.fullmatch(r"[a-z0-9.-]{1,253}", domain) or ".." in domain:
+            return "Rejected: invalid domain.", True
+        return (
+            "TheHarvester v4.7.0 (simulated practice output - fictional data)\n"
+            "Target: %s  Source: google\n"
+            "-----------------------------------------------------------------\n"
+            "Emails found (simulated):\n"
+            "  admin@%s\n"
+            "  support@%s\n"
+            "Hosts found (simulated):\n"
+            "  www.%s\n"
+            "  mail.%s\n"
+            "Note: this is lesson-linked simulated output for learning only.\n"
+            "No real OSINT collection was performed.\n" % (domain, domain, domain, domain, domain)
+        ), False
+
+    if cmd == "nmap":
+        if any(a.startswith("--script") for a in args):
+            return "Rejected: that nmap option is not available in the practice lab.", True
+        if any(a.startswith("-") and a not in ("-sS", "-sT", "-Pn", "-p", "-sV") for a in args):
+            return "Rejected: only basic nmap flags are allowed in the practice lab. Try: nmap lab.local", True
+        if host not in LAB_HOSTS:
+            return "Refused: the practice lab can only scan its own lab host. Try: nmap lab.local", True
+        return _NMAP_LAB, False
+    if cmd == "ping":
+        if host not in LAB_HOSTS:
+            return "Refused: ping is only allowed for the lab host. Try: ping lab.local", True
+        return ("PING lab.local (10.0.0.1) 56(84) bytes of data.\n"
+                "64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=0.12 ms\n"
+                "64 bytes from 10.0.0.1: icmp_seq=2 ttl=64 time=0.10 ms\n"
+                "64 bytes from 10.0.0.1: icmp_seq=3 ttl=64 time=0.11 ms\n"
+                "--- lab.local ping statistics ---\n"
+                "3 packets transmitted, 3 received, 0% packet loss\n"
+                "(Simulated output.)\n"), False
+    if cmd == "whois":
+        if host not in LAB_HOSTS:
+            return "Refused: whois in the practice lab only covers the lab host. Try: whois lab.local", True
+        return ("Domain Name: LAB.LOCAL\n"
+                "Registry Domain ID: LAB-LOCAL-PRACTICE\n"
+                "Registrar: CyberLord Practice Registrar (simulated)\n"
+                "Creation Date: 2024-01-01T00:00:00Z\n"
+                "Registry Expiry Date: 2028-01-01T00:00:00Z\n"
+                "Name Server: ns1.lab.local\n"
+                "Status: This is fictional practice data for learning only.\n"), False
+    if cmd == "dig":
+        if host not in LAB_HOSTS:
+            return "Refused: dig in the practice lab only covers the lab host. Try: dig lab.local", True
+        rtype = "A"
+        if len(args) >= 2 and args[0].upper() in ("A", "MX", "TXT", "NS"):
+            rtype = args[0].upper()
+        records = {
+            "A": "lab.local.  300  IN  A  10.0.0.1",
+            "MX": "lab.local.  300  IN  MX  10 mail.lab.local.",
+            "TXT": 'lab.local.  300  IN  TXT  "v=spf1 -all"',
+            "NS": "lab.local.  300  IN  NS  ns1.lab.local.",
+        }
+        return ("; <<>> DiG 9.18.0 (simulated practice output) >> %s %s\n"
+                ";; QUESTION SECTION:\n;lab.local.  IN  %s\n\n"
+                ";; ANSWER SECTION:\n%s\n\n"
+                ";; Query time: 2 msec\n;; SERVER: 10.0.0.1#53 (lab.local)\n"
+                ";; WHEN: Sat Nov 14 01:00:00 UTC 2026\n" % (rtype, host, rtype, records[rtype])), False
+    return "Command not allowed in the practice lab.", True
+
+
+@app.route("/academy/terminal")
+@login_required
+def academy_terminal():
+    return render_template("terminal.html", tutor_pro=tutor_pro_active(current_user))
+
+
+@app.route("/api/terminal/run", methods=["POST"])
+@login_required
+def terminal_run():
+    body = request.get_json(silent=True) or {}
+    line = str(body.get("command") or "")[:300]
+    if rate_limited(key="terminal:" + client_ip() + ":" + str(current_user.id), limit=60, window=60):
+        return jsonify(ok=False, error="Too many terminal commands. Wait a moment and try again."), 429
+    output, is_error = terminal_execute(line)
+    return jsonify(ok=not is_error, output=output, cwd=_terminal_state().get("cwd", "/home/user"))
+
+
+# --- Code Lab: sandboxed Python snippets (Tutor Pro) ---
+
+CODE_LAB_MAX_CHARS = 4000
+CODE_LAB_TIMEOUT = 5
+_CODE_FORBIDDEN_MODULES = {
+    "os", "sys", "subprocess", "socket", "ctypes", "importlib", "pathlib",
+    "shutil", "pty", "multiprocessing", "threading", "requests", "urllib",
+    "http", "ftplib", "telnetlib", "webbrowser", "runpy", "inspect",
+    "builtins", "pkgutil", "code", "codeop",
+}
+_CODE_FORBIDDEN_ATTRS = {
+    "system", "popen", "exec", "eval", "open", "compile", "__import__",
+    "fork", "spawn", "execv", "execve", "kill", "remove", "unlink", "rmdir",
+    "mkdir", "makedirs", "rename", "chmod", "chown", "symlink", "link",
+    "socket", "connect", "urlopen", "request", "getattr",
+}
+
+
+def _code_lab_check(source):
+    """AST screen. Returns (ok, reason)."""
+    if len(source) > CODE_LAB_MAX_CHARS:
+        return False, "Code too long (max %d characters)." % CODE_LAB_MAX_CHARS
+    try:
+        tree = _ast.parse(source)
+    except SyntaxError as e:
+        return False, "Syntax error: %s" % e
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Import):
+            for a in node.names:
+                root = a.name.split(".")[0]
+                if root in _CODE_FORBIDDEN_MODULES:
+                    return False, "Import of '%s' is not allowed in the Code Lab." % root
+        elif isinstance(node, _ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            if root in _CODE_FORBIDDEN_MODULES:
+                return False, "Import of '%s' is not allowed in the Code Lab." % root
+        elif isinstance(node, _ast.Attribute):
+            if node.attr in _CODE_FORBIDDEN_ATTRS or node.attr.startswith("__"):
+                return False, "Use of '%s' is not allowed in the Code Lab." % node.attr
+        elif isinstance(node, _ast.Name):
+            if node.id in _CODE_FORBIDDEN_ATTRS or node.id in ("__import__", "eval", "exec", "open", "compile"):
+                return False, "Use of '%s' is not allowed in the Code Lab." % node.id
+        elif isinstance(node, _ast.Constant) and isinstance(node.value, str):
+            low = node.value.lower()
+            if "os.system" in low or "subprocess" in low or "__import__" in low:
+                return False, "That pattern is not allowed in the Code Lab."
+    return True, ""
+
+
+_CHILD = (
+    "import builtins, sys, os, resource\n"
+    "resource.setrlimit(resource.RLIMIT_CPU, (5, 5))\n"
+    "resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))\n"
+    "resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))\n"
+    "resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))\n"
+    "try:\n"
+    "    import socket\n"
+    "    socket.socket = None\n"
+    "    socket.create_connection = None\n"
+    "except Exception:\n"
+    "    pass\n"
+    "_blocked = {'os', 'sys', 'subprocess', 'socket', 'ctypes', 'importlib', 'pathlib', 'shutil', 'requests', 'urllib', 'http', 'multiprocessing', 'pty'}\n"
+    "_real_import = builtins.__import__\n"
+    "_real_open = builtins.open\n"
+    "_real_compile = builtins.compile\n"
+    "_real_print = builtins.print\n"
+    "def _guard(name, *a, **k):\n"
+    "    root = name.split('.')[0] if name else ''\n"
+    "    if root in _blocked:\n"
+    "        raise ImportError('blocked in Code Lab sandbox: ' + root)\n"
+    "    return _real_import(name, *a, **k)\n"
+    "os.chdir(os.environ.get('CODE_LAB_CWD', '.'))\n"
+    "with _real_open('snippet.py', 'r') as _f:\n"
+    "    _src = _f.read()\n"
+    "_b = dict(vars(builtins))\n"
+    "_b['__import__'] = _guard\n"
+    "_b['open'] = None\n"
+    "_b['eval'] = None\n"
+    "_b['exec'] = None\n"
+    "_b['compile'] = None\n"
+    "_b['print'] = _real_print\n"
+    "try:\n"
+    "    _code = _real_compile(_src, 'snippet.py', 'exec')\n"
+    "    exec(_code, {'__builtins__': _b, '__name__': '__main__'})\n"
+    "except Exception as _e:\n"
+    "    _real_print('Error: %s: %s' % (type(_e).__name__, _e))\n"
+)
+
+
+def run_sandboxed_code(source):
+    """Run a snippet in a child process. Returns (stdout, stderr, timed_out)."""
+    ok, reason = _code_lab_check(source)
+    if not ok:
+        return "", reason, False
+    with _tempfile.TemporaryDirectory(prefix="codelab-") as td:
+        with open(os.path.join(td, "snippet.py"), "w") as f:
+            f.write(source)
+        env = {"PATH": "/usr/bin:/bin", "CODE_LAB_CWD": td, "PYTHONNOUSERSITE": "1"}
+        try:
+            proc = subprocess.run(
+                [_sys.executable, "-I", "-c", _CHILD],
+                cwd=td, env=env, capture_output=True, text=True,
+                timeout=CODE_LAB_TIMEOUT,
+            )
+            out = (proc.stdout or "")[:4000]
+            err = (proc.stderr or "")[:2000]
+            return out, err, False
+        except subprocess.TimeoutExpired:
+            return "Timed out after %d seconds. The Code Lab sandbox stopped your code." % CODE_LAB_TIMEOUT, "", True
+
+
+@app.route("/code-lab")
+@login_required
+def code_lab():
+    return render_template("code_lab.html", tutor_pro=tutor_pro_active(current_user))
+
+
+@app.route("/api/code-lab/run", methods=["POST"])
+@login_required
+def code_lab_run():
+    if not tutor_pro_active(current_user):
+        return jsonify(ok=False, error="Code Lab is a Tutor Pro feature. Upgrade to Tutor Pro for unlimited tutor questions, voice, and Code Lab access.", tutor_pro=False, upgrade_url=url_for("dashboard") + "#plans"), 403
+    if rate_limited(key="codelab:" + client_ip() + ":" + str(current_user.id), limit=20, window=60):
+        return jsonify(ok=False, error="Too many Code Lab runs. Wait a moment and try again."), 429
+    body = request.get_json(silent=True) or {}
+    source = str(body.get("code") or "")
+    if not source.strip():
+        return jsonify(ok=False, error="Paste some Python code first."), 400
+    out, err, timed_out = run_sandboxed_code(source)
+    return jsonify(ok=True, output=out, stderr=err, timed_out=timed_out)
+
+
 @app.route("/health")
 def health(): return jsonify(status="ok",service="CyberLord Domain Intelligence")
 
@@ -2341,6 +2776,8 @@ with app.app_context():
     with db.engine.begin() as conn:
         if "plan_expires_at" not in user_cols:
             conn.execute(text('ALTER TABLE "user" ADD COLUMN plan_expires_at TIMESTAMP NULL'))
+        if "tutor_pro_expires_at" not in user_cols:
+            conn.execute(text('ALTER TABLE "user" ADD COLUMN tutor_pro_expires_at TIMESTAMP NULL'))
         for name, definition in [("currency", "VARCHAR(10) NOT NULL DEFAULT 'NGN'"), ("network", "VARCHAR(20) NULL"), ("tx_hash", "VARCHAR(140) NULL"), ("expires_at", "TIMESTAMP NULL")]:
             if name not in payment_cols:
                 conn.execute(text(f"ALTER TABLE payment ADD COLUMN {name} {definition}"))
