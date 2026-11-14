@@ -163,8 +163,8 @@ def form_str(name, max_length):
 # ---------------------------------------------------------------------------
 CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline'; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data: https:; "
     "connect-src 'self' https:; "
@@ -2563,216 +2563,18 @@ import resource as _resource
 import sys as _sys
 import tempfile as _tempfile
 
-LAB_HOSTS = {"lab.local", "practice.lab.local", "10.0.0.1", "localhost"}
-TERMINAL_ALLOWED = {"help", "nmap", "dig", "whois", "ping", "ls", "cd", "cat", "pwd", "echo", "clear", "theharvester"}
-_LAB_FILES = {
-    "/home/user": ["readme.txt", "notes.txt", "practice/"],
-    "/home/user/practice": ["scan-notes.txt", "dns-notes.txt"],
-    "/": ["home/"],
-}
-_LAB_FILE_TEXT = {
-    "/home/user/readme.txt": "Welcome to the CyberLord practice lab.\nThis is a safe, simulated terminal. Nothing here touches the real internet.\nTry: help, nmap lab.local, dig lab.local, theharvester -d example.com -b google\n",
-    "/home/user/notes.txt": "Lab notes:\n- nmap shows open ports on the lab host only.\n- dig shows simulated DNS records.\n- whois shows simulated registration data.\n- theharvester shows simulated public OSINT-style results (fictional data).\n",
-    "/home/user/practice/scan-notes.txt": "Practice task 1: run 'nmap lab.local' and note which ports are open.\nPractice task 2: run 'dig lab.local' and compare the A record with the nmap host.\n",
-    "/home/user/practice/dns-notes.txt": "Practice task: run 'dig MX lab.local' and 'dig TXT lab.local'.\nWrite down what SPF-like record you see and what it means.\n",
-}
-_NMAP_LAB = (
-    "Starting Nmap 7.94 ( https://nmap.org ) at 01:00 UTC\n"
-    "Nmap scan report for lab.local (10.0.0.1)\n"
-    "Host is up (0.00012s latency).\n"
-    "Not shown: 997 closed tcp ports (reset)\n"
-    "PORT      STATE SERVICE\n"
-    "22/tcp    open  ssh\n"
-    "80/tcp    open  http\n"
-    "443/tcp   open  https\n"
-    "\n"
-    "Nmap done: 1 IP address (1 host up) scanned in 0.42 seconds\n"
-    "(Practice lab output. Simulated, no real scan was performed.)\n"
-)
-
-
-def _terminal_state():
-    st = session.get("terminal_state") or {"cwd": "/home/user"}
-    if st.get("cwd") not in _LAB_FILES:
-        st["cwd"] = "/home/user"
-    return st
-
-
-def terminal_execute(line):
-    """Whitelist executor. Returns (output_text, is_error). Never runs a shell."""
-    raw = (line or "").strip()
-    if not raw:
-        return "", False
-    if len(raw) > 300:
-        return "Command too long (max 300 characters).", True
-    # Reject shell metacharacters outright: this is not a shell.
-    if any(ch in raw for ch in (";", "&", "|", ">", "<", "`", "$", "\\", "\n", "\r", "(", ")")):
-        return "Rejected: shell operators are not allowed in the practice terminal. Try 'help'.", True
-    parts = raw.split()
-    cmd = parts[0].lower()
-    args = parts[1:]
-    if cmd == "clear":
-        return "__CLEAR__", False
-    if cmd == "help":
-        return (
-            "Practice lab terminal - safe commands only. Type one command per line.\n"
-            "Available commands:\n"
-            "  help                         show this help\n"
-            "  nmap <host>                  simulated port scan of the lab host only (try: nmap lab.local)\n"
-            "  dig [type] <host>            simulated DNS lookup (types: A, MX, TXT, NS; default A)\n"
-            "  whois <host>                 simulated registration lookup for the lab host\n"
-            "  ping <host>                  simulated ping of the lab host\n"
-            "  theharvester -d <domain> -b google   simulated OSINT-style public data (fictional)\n"
-            "  ls [path]                    list the practice filesystem\n"
-            "  cd <path>                    change directory (try: cd practice)\n"
-            "  cat <file>                   read a practice file\n"
-            "  pwd                          show current directory\n"
-            "  echo <text>                  print text\n"
-            "  clear                        clear the screen\n"
-            "Only lab.local can be scanned. Any other target is refused.\n"
-        ), False
-    if cmd not in TERMINAL_ALLOWED:
-        return "Command not allowed in the practice lab: '%s'. Type 'help' for the safe command list." % cmd, True
-
-    st = _terminal_state()
-
-    if cmd == "pwd":
-        return st["cwd"], False
-    if cmd == "echo":
-        return " ".join(args)[:300], False
-    if cmd == "ls":
-        path = args[0] if args else st["cwd"]
-        if path in (".", ""):
-            path = st["cwd"]
-        elif not path.startswith("/"):
-            path = (st["cwd"].rstrip("/") + "/" + path) if st["cwd"] != "/" else "/" + path
-        path = path.rstrip("/") or "/"
-        if path in _LAB_FILES:
-            return "\n".join(_LAB_FILES[path]), False
-        return "ls: cannot access '%s': No such file or directory" % (args[0] if args else path), True
-    if cmd == "cd":
-        if not args:
-            st["cwd"] = "/home/user"
-        else:
-            target = args[0]
-            if target == "..":
-                parent = "/".join(st["cwd"].split("/")[:-1]) or "/"
-                st["cwd"] = parent
-            elif target in (".", "~"):
-                pass
-            else:
-                cand = target if target.startswith("/") else ((st["cwd"].rstrip("/") + "/" + target) if st["cwd"] != "/" else "/" + target)
-                cand = cand.rstrip("/") or "/"
-                if cand in _LAB_FILES:
-                    st["cwd"] = cand
-                else:
-                    return "cd: no such directory: %s" % target, True
-        session["terminal_state"] = st
-        session.modified = True
-        return "", False
-    if cmd == "cat":
-        if not args:
-            return "cat: missing file name. Try: cat readme.txt", True
-        name = args[0]
-        cand = name if name.startswith("/") else ((st["cwd"].rstrip("/") + "/" + name) if st["cwd"] != "/" else "/" + name)
-        if cand in _LAB_FILE_TEXT:
-            return _LAB_FILE_TEXT[cand], False
-        return "cat: %s: No such file or directory" % name, True
-
-    # Network-style commands: lab host only, simulated output, no real I/O.
-    host = None
-    if cmd in ("nmap", "whois", "ping"):
-        host = (args[-1] if args else "").lower()
-    elif cmd == "dig":
-        host = (args[-1] if args else "").lower()
-    elif cmd == "theharvester":
-        lowered = [a.lower() for a in args]
-        domain = ""
-        if "-d" in lowered:
-            i = lowered.index("-d")
-            if i + 1 < len(args):
-                domain = args[i + 1].lower()
-        if not domain:
-            return "Usage: theharvester -d <domain> -b google", True
-        if not re.fullmatch(r"[a-z0-9.-]{1,253}", domain) or ".." in domain:
-            return "Rejected: invalid domain.", True
-        return (
-            "TheHarvester v4.7.0 (simulated practice output - fictional data)\n"
-            "Target: %s  Source: google\n"
-            "-----------------------------------------------------------------\n"
-            "Emails found (simulated):\n"
-            "  admin@%s\n"
-            "  support@%s\n"
-            "Hosts found (simulated):\n"
-            "  www.%s\n"
-            "  mail.%s\n"
-            "Note: this is lesson-linked simulated output for learning only.\n"
-            "No real OSINT collection was performed.\n" % (domain, domain, domain, domain, domain)
-        ), False
-
-    if cmd == "nmap":
-        if any(a.startswith("--script") for a in args):
-            return "Rejected: that nmap option is not available in the practice lab.", True
-        if any(a.startswith("-") and a not in ("-sS", "-sT", "-Pn", "-p", "-sV") for a in args):
-            return "Rejected: only basic nmap flags are allowed in the practice lab. Try: nmap lab.local", True
-        if host not in LAB_HOSTS:
-            return "Refused: the practice lab can only scan its own lab host. Try: nmap lab.local", True
-        return _NMAP_LAB, False
-    if cmd == "ping":
-        if host not in LAB_HOSTS:
-            return "Refused: ping is only allowed for the lab host. Try: ping lab.local", True
-        return ("PING lab.local (10.0.0.1) 56(84) bytes of data.\n"
-                "64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=0.12 ms\n"
-                "64 bytes from 10.0.0.1: icmp_seq=2 ttl=64 time=0.10 ms\n"
-                "64 bytes from 10.0.0.1: icmp_seq=3 ttl=64 time=0.11 ms\n"
-                "--- lab.local ping statistics ---\n"
-                "3 packets transmitted, 3 received, 0% packet loss\n"
-                "(Simulated output.)\n"), False
-    if cmd == "whois":
-        if host not in LAB_HOSTS:
-            return "Refused: whois in the practice lab only covers the lab host. Try: whois lab.local", True
-        return ("Domain Name: LAB.LOCAL\n"
-                "Registry Domain ID: LAB-LOCAL-PRACTICE\n"
-                "Registrar: CyberLord Practice Registrar (simulated)\n"
-                "Creation Date: 2024-01-01T00:00:00Z\n"
-                "Registry Expiry Date: 2028-01-01T00:00:00Z\n"
-                "Name Server: ns1.lab.local\n"
-                "Status: This is fictional practice data for learning only.\n"), False
-    if cmd == "dig":
-        if host not in LAB_HOSTS:
-            return "Refused: dig in the practice lab only covers the lab host. Try: dig lab.local", True
-        rtype = "A"
-        if len(args) >= 2 and args[0].upper() in ("A", "MX", "TXT", "NS"):
-            rtype = args[0].upper()
-        records = {
-            "A": "lab.local.  300  IN  A  10.0.0.1",
-            "MX": "lab.local.  300  IN  MX  10 mail.lab.local.",
-            "TXT": 'lab.local.  300  IN  TXT  "v=spf1 -all"',
-            "NS": "lab.local.  300  IN  NS  ns1.lab.local.",
-        }
-        return ("; <<>> DiG 9.18.0 (simulated practice output) >> %s %s\n"
-                ";; QUESTION SECTION:\n;lab.local.  IN  %s\n\n"
-                ";; ANSWER SECTION:\n%s\n\n"
-                ";; Query time: 2 msec\n;; SERVER: 10.0.0.1#53 (lab.local)\n"
-                ";; WHEN: Sat Nov 14 01:00:00 UTC 2026\n" % (rtype, host, rtype, records[rtype])), False
-    return "Command not allowed in the practice lab.", True
-
+# NOTE: The Academy Training Terminal is now a REAL in-browser terminal.
+# Its command execution happens entirely in the visitor's browser (xterm.js
+# shell + Pyodide Python + in-browser virtual filesystem), so the server
+# NEVER receives or executes user shell commands. The old server-side
+# whitelist simulator (/api/terminal/run -> terminal_execute) has been
+# removed entirely: no request path lets user input reach a server shell,
+# subprocess, or the real filesystem. See TERMINAL_SETUP.md.
 
 @app.route("/academy/terminal")
 @login_required
 def academy_terminal():
     return render_template("terminal.html", tutor_pro=tutor_pro_active(current_user))
-
-
-@app.route("/api/terminal/run", methods=["POST"])
-@login_required
-def terminal_run():
-    body = request.get_json(silent=True) or {}
-    line = str(body.get("command") or "")[:300]
-    if rate_limited(key="terminal:" + client_ip() + ":" + str(current_user.id), limit=60, window=60):
-        return jsonify(ok=False, error="Too many terminal commands. Wait a moment and try again."), 429
-    output, is_error = terminal_execute(line)
-    return jsonify(ok=not is_error, output=output, cwd=_terminal_state().get("cwd", "/home/user"))
 
 
 # --- Code Lab: sandboxed Python snippets (Tutor Pro) ---

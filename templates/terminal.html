@@ -6,7 +6,7 @@
     <div>
       <span class="eyebrow">Academy section</span>
       <h1>Training Terminal</h1>
-      <p>Practice lab, safe commands only. This is a simulated Kali-style terminal for learning. It never touches the real internet, never scans real targets, and cannot run shell commands or install anything. The only host you can use is <strong>lab.local</strong>.</p>
+      <p>Practice lab. This is a <strong>real in-browser Linux-style terminal</strong>: standard commands genuinely execute inside your own browser (xterm.js shell, Pyodide Python, in-browser virtual filesystem). Nothing you type is sent to the CyberLord server for execution. Your server never runs it. Type <code>help</code> to see what works.</p>
     </div>
     <div class="head-actions">
       <a class="button secondary" href="{{ url_for('academy') }}">Back to Academy</a>
@@ -14,107 +14,376 @@
     </div>
   </div>
 
-  <div class="terminal-card">
-    <div class="terminal-topbar">
-      <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
-      <span class="terminal-title">cyberlord@lab: ~/practice - practice lab, safe commands only</span>
-      <span class="terminal-badge">SIMULATED</span>
+  <div class="terminal-layout">
+    <div class="terminal-card">
+      <div class="terminal-topbar">
+        <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
+        <span class="terminal-title">cyberlord@lab: ~/practice - practice lab, real in-browser terminal</span>
+        <span class="terminal-badge" id="engineBadge">LOADING…</span>
+      </div>
+      <div id="terminal" class="terminal-host" aria-label="In-browser terminal"></div>
+      <p class="terminal-note">Real commands run in your browser: ls, cd, pwd, cat, echo, grep, mkdir, touch, rm, cp, mv, wc, head, tail, sort, uniq, python3, python. Files live in an in-browser virtual filesystem that resets on refresh. Network tools like nmap/dig/ping are not included, the browser cannot do raw scanning. Use the AI assist panel for the right command or an error explanation.</p>
     </div>
-    <div id="terminalOut" class="terminal-out" aria-live="polite"></div>
-    <form id="terminalForm" class="terminal-form" autocomplete="off">
-      <label id="terminalPrompt" for="terminalInput">&gt;</label>
-      <input id="terminalInput" type="text" placeholder="type help and press Enter" maxlength="300" spellcheck="false" />
-      <button class="button" type="submit">Run</button>
-    </form>
-    <p class="terminal-note">Commands allowed: help, nmap lab.local, dig, whois, ping, ls, cd, cat, pwd, echo, clear, theharvester -d domain -b google. Everything outside that list is rejected. Outputs are simulated for learning.</p>
+    <aside class="ai-panel" aria-label="AI assist">
+      <div class="ai-head">
+        <strong>AI assist</strong>
+        <span class="muted" id="aiStatus">Main assistant, terminal context attached</span>
+      </div>
+      <form id="aiForm" class="ai-form" autocomplete="off">
+        <textarea id="aiInput" rows="3" placeholder="Ask for the right command, or paste an error…"></textarea>
+        <button class="button" type="submit" id="aiSend">Ask AI</button>
+      </form>
+      <div id="aiOut" class="ai-out">Ask after running something, and the assistant sees your last commands.</div>
+      <button class="button secondary" type="button" id="aiExplain">Explain last error</button>
+    </aside>
   </div>
 
   <div class="lab-grid">
     <div class="info-card">
       <h2>Practice tasks</h2>
       <ol>
-        <li>Run <code>nmap lab.local</code> and note the open ports.</li>
-        <li>Run <code>dig lab.local</code> and compare the A record.</li>
-        <li>Run <code>theharvester -d example.com -b google</code> and explain why this is simulated people-data style output.</li>
-        <li>Use <code>ls</code>, <code>cd practice</code>, and <code>cat scan-notes.txt</code>.</li>
+        <li>Run <code>ls</code>, then <code>cd practice</code> and <code>cat scan-notes.txt</code>.</li>
+        <li>Try <code>echo hello</code>, <code>grep scan practice/scan-notes.txt</code>, <code>mkdir notes</code>, <code>touch notes/todo.txt</code>, <code>rm notes/todo.txt</code>.</li>
+        <li>Run real Python: <code>python3 -c "print(2 + 2)"</code> or type <code>python3</code> for the interactive prompt, then <code>print("hello from python")</code>.</li>
+        <li>Run <code>help</code> for the full command list, then ask the AI panel for the right command if you get stuck.</li>
       </ol>
     </div>
     <div class="info-card">
       <h2>What this is not</h2>
-      <p>Not a real Kali install, not a real scanner, not an attack tool. Real scanning and OSINT belong on dedicated labs with legal permission. Here, every result is fictional and fixed in advance.</p>
+      <p>Not a real Kali install and not a scanner. Everything executes on your own device in a sandboxed virtual filesystem, so it cannot touch the CyberLord server, your real files, or the network. Real scanning and OSINT belong on dedicated labs with legal permission.</p>
     </div>
   </div>
 </section>
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
 <style>
-.academy-page{max-width:1120px;margin:0 auto;padding:28px 18px 60px}
+.academy-page{max-width:1200px;margin:0 auto;padding:28px 18px 60px}
 .page-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-bottom:20px}
 .eyebrow{text-transform:uppercase;letter-spacing:.12em;color:#8a97ad;font-size:12px}
 .page-head h1{font-size:34px;margin:8px 0}
 .page-head p{color:#b8c2d4;max-width:720px;line-height:1.6}
 .head-actions{display:flex;gap:10px;flex-wrap:wrap}
+.terminal-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
 .terminal-card{background:#070b12;border:1px solid #263244;border-radius:14px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
 .terminal-topbar{display:flex;align-items:center;gap:8px;padding:11px 14px;background:#0d1420;border-bottom:1px solid #263244}
 .dot{width:11px;height:11px;border-radius:50%;display:inline-block}
 .dot-red{background:#ff5f57}.dot-yellow{background:#febc2e}.dot-green{background:#28c840}
 .terminal-title{color:#d6deeb;font-size:13px;margin-left:8px;flex:1}
-.terminal-badge{font-size:11px;letter-spacing:.08em;color:#8ee6a1;border:1px solid #245c38;padding:3px 8px;border-radius:999px}
-.terminal-out{height:360px;overflow:auto;padding:16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#c8f5d2;white-space:pre-wrap;line-height:1.55;font-size:14px}
-.terminal-out .cmd{color:#fff}.terminal-out .err{color:#ff9a9a}.terminal-out .prompt{color:#7dd3fc}
-.terminal-form{display:flex;gap:10px;padding:12px;background:#0a0f18;border-top:1px solid #263244;align-items:center}
-.terminal-form label{font-family:ui-monospace,Menlo,Consolas,monospace;color:#7dd3fc}
-.terminal-form input{flex:1;background:#0f1724;color:#e5eefc;border:1px solid #2b3a52;border-radius:8px;padding:11px 12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.terminal-badge{font-size:11px;letter-spacing:.08em;color:#8ee6a1;border:1px solid #245c38;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.terminal-host{height:460px;padding:8px;background:#070b12}
 .terminal-note{color:#8a97ad;padding:0 16px 14px;background:#0a0f18;margin:0;font-size:13px}
+.ai-panel{background:#0d1420;border:1px solid #263244;border-radius:14px;padding:16px;position:sticky;top:16px}
+.ai-head{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.ai-head .muted{color:#8a97ad;font-size:12px}
+.ai-form{display:flex;flex-direction:column;gap:10px}
+.ai-form textarea{background:#070b12;color:#e5eefc;border:1px solid #2b3a52;border-radius:10px;padding:11px;font-family:ui-monospace,Menlo,Consolas,monospace;resize:vertical;min-height:72px}
+.ai-out{background:#070b12;border:1px solid #263244;border-radius:10px;padding:13px;margin:12px 0;min-height:140px;max-height:300px;overflow:auto;white-space:pre-wrap;color:#d6deeb;line-height:1.6;font-size:13px}
+.ai-out.loading{color:#8a97ad}
+#aiExplain{width:100%}
 .lab-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}
 .info-card{background:#0d1420;border:1px solid #263244;border-radius:12px;padding:18px}
 .info-card h2{margin-top:0}
 .info-card p,.info-card li{color:#b8c2d4;line-height:1.6}
 code{color:#bfe3ff}
-@media(max-width:760px){.lab-grid{grid-template-columns:1fr}.terminal-form{flex-wrap:wrap}}
+.muted{color:#8a97ad}
+@media(max-width:900px){.terminal-layout{grid-template-columns:1fr}.ai-panel{position:static}}
+@media(max-width:760px){.lab-grid{grid-template-columns:1fr}.terminal-host{height:380px}}
 </style>
 
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script>
-const out = document.getElementById('terminalOut');
-const form = document.getElementById('terminalForm');
-const input = document.getElementById('terminalInput');
-const promptEl = document.getElementById('terminalPrompt');
-let cwd = '/home/user';
-
-function printText(text, cls) {
-  const d = document.createElement('div');
-  if (cls) d.className = cls;
-  d.textContent = text;
-  out.appendChild(d);
-  out.scrollTop = out.scrollHeight;
-}
-function printCmd(text) {
-  const d = document.createElement('div');
-  d.className = 'cmd';
-  const s = document.createElement('span'); s.className='prompt'; s.textContent = 'user@lab:' + cwd + '$ ';
-  d.appendChild(s); d.appendChild(document.createTextNode(text));
-  out.appendChild(d);
-  out.scrollTop = out.scrollHeight;
-}
-printText('CyberLord Academy Training Terminal - practice lab, safe commands only', 'cmd');
-printText('Type help for the safe command list. Only lab.local can be used. Nothing here is real.', '');
-
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const cmd = input.value.trim();
-  if (!cmd) return;
-  printCmd(cmd);
-  input.value = '';
-  if (cmd.toLowerCase() === 'clear') { out.innerHTML = ''; return; }
-  try {
-    const r = await fetch('/api/terminal/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({command: cmd})});
-    const data = await r.json();
-    if (data.cwd) { cwd = data.cwd; }
-    if (data.output) printText(data.output, data.ok ? '' : 'err');
-    if (data.error) printText(data.error, 'err');
-  } catch (err) {
-    printText('Terminal request failed. Please try again.', 'err');
+(function(){
+  // ---- in-browser virtual filesystem ----
+  const VFS = {
+    "/home/user": {readme: "Welcome to the CyberLord practice lab.\nThis is a REAL in-browser terminal. Everything runs on your device.\nTry: ls -la, cat readme, python3 -c \"print('hi')\"\n"},
+    "/home/user/practice": {
+      "scan-notes.txt": "Practice task 1: list files, cd into practice.\nPractice task 2: grep a word in this file, e.g. grep task scan-notes.txt\n",
+      "dns-notes.txt": "Practice task: read this file with cat, count lines with wc.\n"
+    }
+  };
+  let cwd = "/home/user";
+  function norm(p){
+    if(!p) return cwd;
+    if(p === "~") return "/home/user";
+    let full = p.startsWith("/") ? p : (cwd === "/" ? "/"+p : cwd + "/" + p);
+    const out = [];
+    for(const seg of full.split("/")){ if(seg===""||seg===".") continue; if(seg==="..") out.pop(); else out.push(seg); }
+    return "/" + out.join("/");
   }
-});
-input.focus();
+  function parentOf(p){ const i = p.lastIndexOf("/"); return i<=0?"/":p.slice(0,i); }
+  function baseOf(p){ return p.slice(p.lastIndexOf("/")+1); }
+  function ensureDir(p){ if(!VFS[p]) VFS[p]={}; }
+  function listDir(p){ return VFS[p] ? Object.keys(VFS[p]).sort() : null; }
+  function isDir(p){
+    if(VFS[p]) return true;
+    for(const k in VFS){ const dir = k.slice(0, k.lastIndexOf("/")||1); if(dir === p) return true; }
+    return false;
+  }
+  function getFile(p){
+    const par = parentOf(p), name = baseOf(p);
+    if(VFS[par] && typeof VFS[par][name] === "string") return VFS[par][name];
+    return null;
+  }
+  function setFile(p, content){ VFS[parentOf(p)] = VFS[parentOf(p)] || {}; VFS[parentOf(p)][baseOf(p)] = content; }
+
+  // ---- terminal ----
+  const host = document.getElementById("terminal");
+  const badge = document.getElementById("engineBadge");
+  const term = new Terminal({theme:{background:"#070b12",foreground:"#c8f5d2",cursor:"#7dd3fc",selectionBackground:"#1e3a5f"},fontSize:14,scrollback:2000,convertEol:true});
+  term.open(host);
+  const fit = new FitAddon.FitAddon(); term.loadAddon(fit); fit.fit();
+  window.addEventListener("resize", ()=>{ try{ fit.fit(); }catch(e){} });
+  term.writeln("CyberLord Academy Training Terminal - practice lab");
+  term.writeln("Real commands execute in your browser. Type help, then try ls / python3.");
+
+  // ---- Pyodide (real Python, client-side) ----
+  let pyodide = null, pyReady = false;
+  const pyQueue = [];
+  window.loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.26.4/full/"}).then((py)=>{
+    pyodide = py;
+    pyReady = true;
+    badge.textContent = "REAL - BROWSER";
+    term.writeln("[python3 ready - real Python via Pyodide]");
+    // flush queued runs
+    while(pyQueue.length){ const {code, resolve} = pyQueue.shift(); runPyNow(code, resolve, true); }
+  }).catch((e)=>{
+    badge.textContent = "PYTHON OFFLINE";
+    term.writeln("[python3 unavailable: could not load Pyodide from CDN. Shell commands still work.]");
+  });
+  function runPy(code, resolve){
+    if(pyReady) runPyNow(code, resolve, false); else pyQueue.push({code, resolve});
+  }
+  function runPyNow(code, resolve, fromQueue){
+    let out = "";
+    try{
+      pyodide.setStdout({batched:(s)=>{ out += s + "\n"; }});
+      pyodide.setStderr({batched:(s)=>{ out += s + "\n"; }});
+      pyodide.runPython(code);
+      resolve(out.replace(/\n$/,""));
+    }catch(e){
+      resolve(String(e&&e.message?e.message:e));
+    }
+  }
+
+  // ---- shell ----
+  const history = []; let histIdx = -1;
+  let lineBuf = "", cursor = 0;
+  let pyMode = false; // python3 REPL
+  let busy = false;
+  function prompt(){ return (pyMode ? ">>> " : "user@lab:" + cwd + "$ "); }
+  function redraw(){ term.write("\r\x1b[K" + prompt() + lineBuf); }
+  term.write(prompt());
+  term.onData((data)=>{
+    if(busy) return;
+    if(pyMode){
+      // python REPL: collect lines until blank line or single-line statement
+      if(data === "\r"){
+        term.write("\r\n");
+        const code = lineBuf; lineBuf = "";
+        if(code.trim()==="exit()" || code.trim()==="quit()"){ pyMode=false; term.writeln("Python exited."); term.write(prompt()); return; }
+        if(pyMode && code.trim() && !code.trim().endsWith(":")){
+          busy = true;
+          runPy(code, (out)=>{ busy=false; if(out) term.writeln(out); if(pyMode) term.write(prompt()); });
+          return;
+        }
+        if(pyMode && code.trim()==="") term.write(prompt());
+        return;
+      }
+      if(data === "\x7f"){ if(lineBuf.length){ lineBuf=lineBuf.slice(0,-1); term.write("\b \b"); } return; }
+      if(data >= " "){ lineBuf += data; term.write(data); }
+      return;
+    }
+    if(data === "\r"){
+      term.write("\r\n");
+      const cmd = lineBuf; lineBuf = "";
+      if(cmd.trim()){ history.push(cmd); histIdx = history.length; }
+      exec(cmd);
+      return;
+    }
+    if(data === "\x7f"){ if(lineBuf.length){ lineBuf=lineBuf.slice(0,-1); term.write("\b \b"); } return; }
+    if(data === "\x1b[A"){ if(histIdx>0){ histIdx--; lineBuf=history[histIdx]; redraw(); } return; }
+    if(data === "\x1b[B"){ if(histIdx<history.length){ histIdx++; lineBuf=history[histIdx]||""; redraw(); } return; }
+    if(data === "\x03"){ term.write("^C\r\n" + prompt()); lineBuf=""; return; }
+    if(data === "\x04"){ if(!lineBuf) return; return; }
+    if(data >= " "){ lineBuf += data; term.write(data); }
+  });
+
+  function tokenize(str){
+    const tokens=[]; let cur="", q=null;
+    for(let i=0;i<str.length;i++){
+      const c=str[i];
+      if(q){ if(c===q) q=null; else cur+=c; }
+      else if(c==='"'||c==="'"){ q=c; }
+      else if(c===" "){ if(cur){tokens.push(cur);cur="";} }
+      else cur+=c;
+    }
+    if(cur) tokens.push(cur);
+    return tokens;
+  }
+
+  function exec(raw){
+    const line = raw.trim();
+    if(!line){ term.write(prompt()); return; }
+    if(line === "clear"){ term.clear(); term.write(prompt()); return; }
+    if(line === "python3" || line === "python"){
+      if(!pyReady){ term.writeln("python3 is still loading, try again in a moment."); term.write(prompt()); return; }
+      pyMode = true; term.writeln("Python 3 (Pyodide, in-browser). Type exit() to leave."); term.write(prompt()); return;
+    }
+    const parts = tokenize(line);
+    const cmd = parts[0], args = parts.slice(1);
+    const out = runCommand(cmd, args, line);
+    if(typeof out === "function"){ busy = true; out.then((txt)=>{ busy=false; if(txt) term.writeln(txt); term.write(prompt()); }); return; }
+    if(out !== null && out !== undefined && out !== "") term.writeln(out);
+    term.write(prompt());
+  }
+
+  function runCommand(cmd, args, fullLine){
+    switch(cmd){
+      case "help": return [
+        "Real in-browser commands (execute on your device):",
+        "  help                 this help",
+        "  ls [-la] [path]      list files",
+        "  cd <path>            change directory",
+        "  pwd                  current directory",
+        "  cat <file>           print file",
+        "  echo <text>          print text",
+        "  grep <pat> <file>    find a word in a file",
+        "  mkdir <dir>          make a directory",
+        "  touch <file>         create an empty file",
+        "  rm <file>            delete a file",
+        "  cp / mv <src> <dst>  copy / move",
+        "  wc [-l] <file>       count lines/words/chars",
+        "  head / tail <file>   first / last lines",
+        "  sort <file>          sort lines",
+        "  python3              enter real Python (Pyodide) REPL",
+        "  python3 -c \"code\"    run one python line",
+        "  clear                clear screen",
+        "Files start in /home/user: readme, practice/. They reset on refresh."
+      ].join("\n");
+      case "echo": return args.join(" ");
+      case "pwd": return cwd;
+      case "ls": {
+        let a = args.filter(x=>x!=="-la" && x!=="-l" && x!=="-a");
+        const target = a.length? norm(a[0]) : cwd;
+        if(getFile(target) !== null) return baseOf(target);
+        const entries = listDir(target);
+        if(!entries) return "ls: cannot access '" + (a[0]||target) + "': No such file or directory";
+        if(!entries.length) return "";
+        return entries.map(n=>{ const v=VFS[target][n]; return (typeof v==="object" || isDir(target + (target==="/" ? "" : "/") + n) && !String(v).length) && typeof v!=="string" ? n + "/" : n; }).join("\n") + (args.includes("-la") ? "\n(total " + entries.length + ")" : "");
+      }
+      case "cd": {
+        if(!args.length){ cwd = "/home/user"; return ""; }
+        const target = norm(args[0]);
+        if(isDir(target)){ cwd = target; return ""; }
+        return "cd: no such directory: " + args[0];
+      }
+      case "cat": {
+        if(!args.length) return "cat: missing file name";
+        const t = getFile(norm(args[0]));
+        if(t === null) return "cat: " + args[0] + ": No such file or directory";
+        return t.replace(/\n$/,"");
+      }
+      case "grep": {
+        if(args.length < 2) return "Usage: grep <pattern> <file>";
+        const t = getFile(norm(args[args.length-1]));
+        if(t === null) return "grep: " + args[args.length-1] + ": No such file or directory";
+        const hits = t.split("\n").filter(l=>l.includes(args[0]));
+        return hits.join("\n");
+      }
+      case "mkdir": {
+        if(!args.length) return "mkdir: missing operand";
+        const t = norm(args[0]);
+        if(isDir(t)) return "mkdir: cannot create directory '" + args[0] + "': File exists";
+        ensureDir(t); return "";
+      }
+      case "touch": {
+        if(!args.length) return "touch: missing file name";
+        const t = norm(args[0]);
+        if(getFile(t)===null) setFile(t, "");
+        return "";
+      }
+      case "rm":
+        if(!args.length) return "rm: missing operand";
+        { const t = norm(args[0]); const par=parentOf(t), name=baseOf(t);
+          if(VFS[par] && name in VFS[par]){ delete VFS[par][name]; return ""; }
+          return "rm: cannot remove '" + args[0] + "': No such file or directory"; }
+      case "cp":
+        if(args.length<2) return "Usage: cp <src> <dst>";
+        { const src=getFile(norm(args[0])); if(src===null) return "cp: cannot stat '" + args[0] + "'";
+          setFile(norm(args[1]), src); return ""; }
+      case "mv":
+        if(args.length<2) return "Usage: mv <src> <dst>";
+        { const src=getFile(norm(args[0])); const t=norm(args[1]);
+          if(src!==null){ setFile(t, src); const par=parentOf(norm(args[0])); delete VFS[par][baseOf(norm(args[0]))]; return ""; }
+          const sdir = norm(args[0]);
+          if(VFS[sdir]){ const content=VFS[sdir]; delete VFS[sdir]; VFS[t]=content; return ""; }
+          return "mv: cannot stat '" + args[0] + "'"; }
+      case "wc": {
+        if(!args.length) return "wc: missing file name";
+        const f = args[args.length-1]; const t=getFile(norm(f));
+        if(t===null) return "wc: " + f + ": No such file or directory";
+        const lines = t.split("\n").filter(Boolean).length, words = t.split(/\s+/).filter(Boolean).length;
+        if(args.includes("-l")) return String(lines);
+        return lines + " " + words + " " + t.length + " " + f;
+      }
+      case "head": case "tail": {
+        if(!args.length) return cmd + ": missing file name";
+        const t=getFile(norm(args[args.length-1]));
+        if(t===null) return cmd + ": " + args[args.length-1] + ": No such file or directory";
+        const ls = t.split("\n");
+        return (cmd==="head" ? ls.slice(0,10) : ls.slice(-10)).join("\n");
+      }
+      case "sort": {
+        if(!args.length) return "sort: missing file name";
+        const t=getFile(norm(args[args.length-1]));
+        if(t===null) return "sort: " + args[args.length-1] + ": No such file or directory";
+        return t.split("\n").sort().join("\n");
+      }
+      case "python3": case "python": {
+        if(!pyReady) return "python3 is still loading, try again in a moment.";
+        const idx = args.indexOf("-c");
+        if(idx>=0 && args[idx+1]){ return new Promise((res)=>runPy(args[idx+1], res)); }
+        pyMode = true;
+        return null; // prompt switched externally
+      }
+      default:
+        return cmd + ": command not found. Type help.";
+    }
+  }
+
+  // ---- AI assist panel ----
+  const recent = [];
+  const origExec = exec;
+  // capture recent commands by hooking writeln via history
+  setInterval(()=>{
+    if(history.length && recent[recent.length-1] !== history[history.length-1]){
+      recent.push(history[history.length-1]); if(recent.length>10) recent.shift();
+    }
+  }, 500);
+  const aiForm = document.getElementById("aiForm");
+  const aiInput = document.getElementById("aiInput");
+  const aiOut = document.getElementById("aiOut");
+  const aiStatus = document.getElementById("aiStatus");
+  async function askAI(question){
+    aiOut.classList.add("loading"); aiOut.textContent = "Asking the assistant…";
+    aiStatus.textContent = "Asking…";
+    const ctx = recent.length ? "\nRecent terminal commands:\n" + recent.map(c=>"$ " + c).join("\n") : "";
+    try{
+      const r = await fetch("/api/ai-assistant", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({persona:"main", lesson_slug:"", messages:[{role:"user", content:"I am practicing in the CyberLord Academy in-browser Linux terminal. " + question + ctx + "\n\nGive me the exact command to run, or explain the error, in plain steps. Keep it short."}]})});
+      const data = await r.json();
+      aiOut.textContent = data.reply || data.error || "No reply yet. Try again.";
+      aiStatus.textContent = "Main assistant (persona: " + (data.persona||"main") + ")";
+    }catch(e){
+      aiOut.textContent = "Could not reach the assistant. Check your connection and try again (the terminal itself still works offline).";
+      aiStatus.textContent = "Assistant unreachable";
+    }finally{
+      aiOut.classList.remove("loading");
+    }
+  }
+  aiForm.addEventListener("submit", (e)=>{ e.preventDefault(); const q = aiInput.value.trim(); if(!q) return; askAI(q); });
+  document.getElementById("aiExplain").addEventListener("click", ()=>{ askAI("Explain the last error I got and what to run instead."); });
+})();
 </script>
 {% endblock %}
