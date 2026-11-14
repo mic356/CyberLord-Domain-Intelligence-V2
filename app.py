@@ -1140,7 +1140,7 @@ def academy_quiz_generate():
     provider = "practice-bank"
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip() or "gemini-3.5-flash"
+    model = _gemini_model()
     if api_key:
         try:
             resp = requests.post(
@@ -1831,6 +1831,16 @@ _LIVE_IMAGE_KEYS = ("picture", "pictures", "image", "images", "photo", "photos",
 _LIVE_WEATHER_KEYS = ("weather", "forecast", "wether", "wheather", "temperature", "rain", "sunny", "cloudy", "humidity", "climate")
 _LIVE_NEWS_KEYS = ("news", "headline", "headlines", "top stories", "latest news", "what is happening", "newz")
 
+def _gemini_model():
+    # Valid stable Gemini names per Google docs 14 Nov 2026.
+    # gemini-3.5-flash is deprecated (auto-routed to gemini-3.6-flash),
+    # gemini-2.5-flash is deprecated (auto-routed to gemini-3.5-flash-lite),
+    # gemini-3.5-flash-lite is REAL stable, gemini-3.8-flash is REAL stable.
+    m = (os.getenv("GEMINI_MODEL", "") or "").strip()
+    if m in ("gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.7-flash"):
+        m = ""
+    return m or "gemini-3.5-flash-lite"
+
 def _main_live_guard(q):
     """Return ('cyber'|'site'|'images'|'weather'|'news'|'live'|None) for main persona."""
     low = (q or "").lower()
@@ -1858,7 +1868,7 @@ def _current_datetime_line():
 @app.route("/api/ai-assistant", methods=["POST"])
 @login_required
 def ai_assistant():
-    """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. Provider chain: Gemini (gemini-3.8-flash) -> Groq (openai/gpt-oss-20b) -> built-in base. On any failure it silently falls back to the next provider, then to the built-in base, so the site stays fully functional without a key."""
+    """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. Provider chain: Gemini (gemini-3.5-flash-lite default, or valid GEMINI_MODEL) -> Groq (openai/gpt-oss-20b) -> built-in base. On any failure it silently falls back to the next provider, then to the built-in base, so the site stays fully functional without a key."""
     now = time.time()
     window = session.get("ai_rate_window", [])
     window = [stamp for stamp in window if now - stamp < 60]
@@ -1997,7 +2007,7 @@ def ai_assistant():
         return jsonify(error="Please enter a question."), 400
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
+    model = _gemini_model()
     if api_key:
         try:
             endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -2048,12 +2058,9 @@ def ai_assistant():
                 "generationConfig": {"temperature": 0.55, "maxOutputTokens": 1200, "candidateCount": 1},
             }
             # Gemini Google Search grounding for main persona live questions only.
-            # Tool name varies by model/api version ("google_search" newer, "googleSearch" older);
-            # include google_search and fall back gracefully if the API rejects it.
-            if _live_guard == "live":
+            # Docs: REST generateContent uses tools=[{"google_search":{}}] (generateContent API). JS/Vertex uses googleSearch camelCase. Old code used googleSearch for weather/news, which the REST generateContent API rejects with 400, so grounded calls failed while plain calls (no tools) succeeded. Use google_search for all live guards. If a grounded request is rejected, retry once without tools before falling back to Groq/built-in, so chat still answers.
+            if _live_guard in ("live", "weather", "news"):
                 payload["tools"] = [{"google_search": {}}]
-            elif _live_guard in ("weather", "news"):
-                payload["tools"] = [{"googleSearch": {}}]
             # Gemini can take longer than a short web-request timeout and may
             # return temporary 429/5xx capacity errors. Retry only transient
             # failures a limited number of times with exponential backoff.
@@ -2103,6 +2110,21 @@ def ai_assistant():
             _ls = ["Google Search grounding"] if _live_guard in ("live", "weather", "news") else "Gemini response; verify important security findings against primary sources"
             return jsonify(reply=reply, mode="gemini", model=model, persona=persona, live_sources=_ls, images=_images[:4])
         except Exception as exc:
+            # If grounding was attached and the API rejected it, retry once plain (no tools) so only the search fails, not the whole chat.
+            _grounded_exc = exc
+            if "payload" in locals() and isinstance(payload, dict) and payload.pop("tools", None):
+                try:
+                    _r = requests.post(endpoint, headers={"Content-Type":"application/json","x-goog-api-key":api_key}, json=payload, timeout=(10,60))
+                    _r.raise_for_status()
+                    _d = _r.json()
+                    _c = _d.get("candidates") or []
+                    _parts = ((_c[0].get("content") or {}).get("parts") or []) if _c else []
+                    _reply = "\n".join(_p.get("text","") for _p in _parts if isinstance(_p, dict)).strip()
+                    if _reply:
+                        app.logger.warning("Gemini grounding rejected, plain retry succeeded: %s", str(_grounded_exc)[:180])
+                        return jsonify(reply=_reply, mode="gemini", model=model, persona=persona, live_sources=["Gemini response; search grounding unavailable"], images=[])
+                except Exception:
+                    pass
             app.logger.warning("Gemini API unavailable; trying next provider: %s", str(exc)[:240])
 
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
