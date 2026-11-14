@@ -1,4 +1,74 @@
-{% extends "base.html" %}{% block title %}Free Website Security Check & Email Leak Test{% endblock %}{% block structured_data %}<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"CyberLord Domain Intelligence","url":"https://cyberlord.name.ng/","applicationCategory":"SecurityApplication","operatingSystem":"Web","inLanguage":"en","isAccessibleForFree":true,"description":"Free website security checks, domain intelligence and email exposure checks.","offers":{"@type":"Offer","price":"0","priceCurrency":"NGN"},"publisher":{"@id":"https://cyberlord.name.ng/#organization"}}</script>{% endblock %}{% block description %}Free website security check and email leak test. Scan any domain, check for breaches and see what to fix first.{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}Free Website Security Check & Email Leak Test
+<div class="review-popup-overlay" id="review-popup-overlay" hidden>
+  <div class="review-popup" role="dialog" aria-modal="true" aria-labelledby="review-popup-title">
+    <button type="button" class="review-popup-close" id="review-popup-close" aria-label="Close">&times;</button>
+    <div id="review-popup-form-wrap">
+      <h3 id="review-popup-title">Enjoying CyberLord? Leave a review</h3>
+      <div class="review-popup-stars" id="review-popup-stars" role="radiogroup" aria-label="Your rating">
+        <button type="button" data-rating="1" aria-label="1 star">&#9734;</button><button type="button" data-rating="2" aria-label="2 stars">&#9734;</button><button type="button" data-rating="3" aria-label="3 stars">&#9734;</button><button type="button" data-rating="4" aria-label="4 stars">&#9734;</button><button type="button" data-rating="5" aria-label="5 stars">&#9734;</button>
+      </div>
+      <input type="hidden" id="review-popup-rating" value="">
+      <label class="visually-hidden" for="review-popup-text">Your review (optional)</label>
+      <textarea id="review-popup-text" maxlength="500" rows="3" placeholder="Your review (optional)"></textarea>
+      <p id="review-popup-msg" class="review-popup-msg" aria-live="polite"></p>
+      <button type="button" class="btn primary" id="review-popup-submit">Submit review</button>
+    </div>
+    <div id="review-popup-thanks" hidden>
+      <h3>Thanks for your review!</h3>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var KEY = "cl_review_popup_seen";
+  try { if (localStorage.getItem(KEY)) return; } catch (e) { }
+  var overlay = document.getElementById("review-popup-overlay");
+  var formWrap = document.getElementById("review-popup-form-wrap");
+  var thanks = document.getElementById("review-popup-thanks");
+  var stars = document.querySelectorAll("#review-popup-stars button");
+  var ratingInput = document.getElementById("review-popup-rating");
+  var textInput = document.getElementById("review-popup-text");
+  var msg = document.getElementById("review-popup-msg");
+  var submitBtn = document.getElementById("review-popup-submit");
+  var chosen = 0;
+  function paint() {
+    stars.forEach(function (b) {
+      var r = parseInt(b.getAttribute("data-rating"), 10);
+      b.textContent = r <= chosen ? "\u2605" : "\u2606";
+      b.setAttribute("aria-checked", r === chosen ? "true" : "false");
+    });
+  }
+  function markSeen() { try { localStorage.setItem(KEY, "1"); } catch (e) { } }
+  function close() { overlay.hidden = true; markSeen(); }
+  function open() { overlay.hidden = false; }
+  stars.forEach(function (b) {
+    b.setAttribute("role", "radio"); b.setAttribute("aria-checked", "false");
+    b.addEventListener("click", function () {
+      chosen = parseInt(b.getAttribute("data-rating"), 10);
+      ratingInput.value = String(chosen); paint(); msg.textContent = "";
+    });
+  });
+  document.getElementById("review-popup-close").addEventListener("click", close);
+  overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+  submitBtn.addEventListener("click", function () {
+    if (!chosen) { msg.textContent = "Please tap a star rating first."; return; }
+    submitBtn.disabled = true; msg.textContent = "Submitting...";
+    fetch("/api/reviews", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rating: chosen, text: textInput.value || "" })
+    }).then(function (resp) {
+      if (!resp.ok) throw new Error("bad");
+      formWrap.hidden = true; thanks.hidden = false; markSeen();
+      setTimeout(close, 2000);
+    }).catch(function () {
+      msg.textContent = "Could not submit. Please try again.";
+      submitBtn.disabled = false;
+    });
+  });
+  setTimeout(open, 3000);
+})();
+</script>
+{% endblock %}{% block structured_data %}<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"CyberLord Domain Intelligence","url":"https://cyberlord.name.ng/","applicationCategory":"SecurityApplication","operatingSystem":"Web","inLanguage":"en","isAccessibleForFree":true,"description":"Free website security checks, domain intelligence and email exposure checks.","offers":{"@type":"Offer","price":"0","priceCurrency":"NGN"},"publisher":{"@id":"https://cyberlord.name.ng/#organization"}}</script>{% endblock %}{% block description %}Free website security check and email leak test. Scan any domain, check for breaches and see what to fix first.{% endblock %}{% block content %}
 <section class="landing-hero">
  <div class="hero-copy"><div class="eyebrow pill-eyebrow"><span class="live-dot"></span> YOUR DIGITAL DEFENCE WORKSPACE</div>
   <h1>See the risks.<br><span>Own your security.</span></h1>
@@ -45,17 +115,17 @@
 </section>
 <section class="reviews-section" id="reviews">
  <div class="section-intro"><div class="eyebrow">WHAT PEOPLE SAY</div><h2>Reviews from<br><span>our visitors.</span></h2>
- {% if review_summary and review_summary.review_count %}<p class="reviews-average">Average rating: {{ review_summary.average_rating }} / 5 from {{ review_summary.review_count }} approved review{{ 's' if review_summary.review_count != 1 else '' }}</p>{% else %}<p>Be the first to review CyberLord. Approved reviews show here.</p>{% endif %}</div>
+ {% if review_summary and review_summary.review_count %}<p class="reviews-average">Average rating: {{ review_summary.average_rating }} / 5 from {{ review_summary.review_count }} approved review{{ 's' if review_summary.review_count != 1 else '' }}</p>{% else %}<p>Be the first to review CyberLord. Reviews show here as soon as they are submitted.</p>{% endif %}</div>
  {% if review_summary and review_summary.reviews %}<div class="review-grid">{% for review in review_summary.reviews %}<article class="review-card"><div class="review-stars" aria-label="{{ review.rating }} out of 5 stars">{{ '★' * review.rating }}{{ '☆' * (5 - review.rating) }}</div><p>{{ review.text }}</p><footer>{{ review.name }} · {{ review.created_at.strftime('%Y-%m-%d') if (review.created_at and review.created_at.strftime is defined) else '' }}</footer></article>{% endfor %}</div>{% endif %}
  <form class="review-form" method="post" action="{{ url_for('api_submit_review') }}">
   <h3>Leave a review</h3>
   <label>Your name (optional)<input type="text" name="name" maxlength="60" placeholder="anonymous" autocomplete="name"></label>
   <label>Rating
    <select name="rating" required><option value="">Choose a rating</option><option value="5">★★★★★ (5)</option><option value="4">★★★★ (4)</option><option value="3">★★★ (3)</option><option value="2">★★ (2)</option><option value="1">★ (1)</option></select></label>
-  <label>Your review<textarea name="text" maxlength="500" rows="3" required placeholder="How was your experience with CyberLord?"></textarea></label>
+  <label>Your review<textarea name="text" maxlength="500" rows="3" placeholder="How was your experience with CyberLord? (optional)"></textarea></label>
   {% if not current_user.is_authenticated %}<label>Your email (optional, only stored for logged-in accounts)<input type="email" name="email" maxlength="120" placeholder="you@example.com" autocomplete="email"></label>{% endif %}
   <button class="btn primary" type="submit">Submit review</button>
-  <p class="review-note">Reviews are checked before they appear publicly.</p>
+  <p class="review-note">Reviews appear here instantly after you submit.</p>
  </form>
 </section>
 <section class="final-cta"><div class="eyebrow">START WITH THE BASICS. GROW INTO THE DETAILS.</div><h2>Your next security insight<br>starts here.</h2><p>Create a free account and explore the CyberLord workspace.</p><a class="btn dark-cta" href="{{ url_for('register') }}">Launch CyberLord <span>↗</span></a></section>

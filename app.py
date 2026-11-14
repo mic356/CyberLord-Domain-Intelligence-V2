@@ -1918,11 +1918,11 @@ def api_submit_review():
     if not ok:
         return jsonify(error=err), 400
     if not request.is_json:
-        flash("Thanks! Your review is waiting for approval and will show on this page once approved.", "success")
+        flash("Thanks! Your review is live.", "success")
         return redirect(url_for("index") + "#reviews")
     return jsonify(
-        message="Thanks! Your review is waiting for approval and will show on this page once approved.",
-        status="pending", id=row["id"] if row else None
+        message="Thanks! Your review is live.",
+        status="approved", id=row["id"] if row else None
     ), 201
 
 

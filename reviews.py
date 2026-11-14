@@ -1,8 +1,9 @@
 """Public site reviews for CyberLord.
 
 Visitors leave a star rating (1-5) plus short text on the homepage.
-New reviews start as "pending" and only appear publicly after the
-owner approves them in the existing /admin area.
+Since the instant-publish update, new reviews start as "approved" and
+appear publicly right away. The admin panel still handles legacy
+"pending" rows (approve / reject).
 
 Storage:
 - Neon Postgres via LEARNING_DATABASE_URL (psycopg) when set.
@@ -47,8 +48,8 @@ def validate_review(name, rating, text, email=""):
     if rating_int < 1 or rating_int > 5:
         return False, "Rating must be between 1 and 5."
     text_clean = clean_text(text)
-    if not text_clean:
-        return False, "Please write a few words about your experience."
+    # Text is optional now: a star-only review is allowed.
+    # (The comment is still capped at 500 chars when provided.)
     if len(text_clean) > REVIEW_TEXT_LIMIT:
         return False, "Review text must be %d characters or fewer." % REVIEW_TEXT_LIMIT
     if _BANNED_RE.search(text_clean) or _BANNED_RE.search(clean_text(name)):
@@ -75,7 +76,7 @@ CREATE TABLE IF NOT EXISTS site_reviews (
     rating INTEGER NOT NULL,
     text TEXT NOT NULL DEFAULT '',
     email TEXT DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'pending',
+    status TEXT NOT NULL DEFAULT 'approved',
     created_at REAL NOT NULL
 )
 """
@@ -86,7 +87,7 @@ CREATE TABLE IF NOT EXISTS site_reviews (
     rating INTEGER NOT NULL,
     text TEXT NOT NULL DEFAULT '',
     email TEXT DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'pending',
+    status TEXT NOT NULL DEFAULT 'approved',
     created_at DOUBLE PRECISION NOT NULL
 )
 """
@@ -150,7 +151,7 @@ class ReviewStore:
         return _connect_sqlite(self.sqlite_path)
 
     def submit(self, name, rating, text, email=""):
-        """Validate and insert as pending. Returns (ok, error, row_or_None)."""
+        """Validate and insert as approved (instant publish). Returns (ok, error, row_or_None)."""
         ok, err = validate_review(name, rating, text, email)
         if not ok:
             return False, err, None
@@ -166,14 +167,14 @@ class ReviewStore:
                 if self.backend == "postgres":
                     cur.execute(
                         "INSERT INTO site_reviews (name, rating, text, email, status, created_at)"
-                        " VALUES (%s, %s, %s, %s, 'pending', %s) RETURNING id",
+                        " VALUES (%s, %s, %s, %s, 'approved', %s) RETURNING id",
                         (name_clean, rating_int, text_clean, email_clean, now),
                     )
                     row_id = cur.fetchone()[0]
                 else:
                     cur.execute(
                         "INSERT INTO site_reviews (name, rating, text, email, status, created_at)"
-                        " VALUES (?, ?, ?, ?, 'pending', ?)",
+                        " VALUES (?, ?, ?, ?, 'approved', ?)",
                         (name_clean, rating_int, text_clean, email_clean, now),
                     )
                     row_id = cur.lastrowid
@@ -185,7 +186,7 @@ class ReviewStore:
         return True, "", {
             "id": row_id, "name": name_clean, "rating": rating_int,
             "text": text_clean, "email": email_clean,
-            "status": "pending", "created_at": now,
+            "status": "approved", "created_at": now,
         }
 
     def list_approved(self, limit=20):

@@ -1,6 +1,6 @@
 """Tests for public site reviews (reviews.py + /api/reviews wiring).
 
-Covers: submit + validation, pending-by-default, list/average, rate
+Covers: submit + validation, instant-publish (approved), list/average, rate
 limit, spam guards, sqlite fallback, and the Flask API endpoints.
 Run: python3 -m pytest test_reviews.py -q   (or python3 test_reviews.py)
 """
@@ -42,7 +42,8 @@ def main():
     check("rating text rejected", not validate_review("ada", "x", "great site")[0])
     check("rating bool rejected", not validate_review("ada", True, "great site")[0])
     check("rating 2.5 rejected", not validate_review("ada", 2.5, "great site")[0])
-    check("empty text rejected", not validate_review("ada", 5, "")[0])
+    check("empty text ok (star-only review)", validate_review("ada", 5, "")[0])
+    check("empty text + no name ok", validate_review("", 5, "")[0])
     check("too-long text rejected", not validate_review("ada", 5, "x" * 501)[0])
     check("500-char text ok", validate_review("ada", 5, "word " * 100)[0])
     check("profanity blocked", not validate_review("ada", 5, "this is shit")[0])
@@ -52,20 +53,18 @@ def main():
     # -- store: submit / pending / approve / list / average --
     store, path = _fresh()
     ok, err, row = store.submit("ada", 5, "great site")
-    check("submit ok", ok and row["status"] == "pending", err)
-    check("pending not public", store.public_summary()["review_count"] == 0)
+    check("submit ok, instantly approved", ok and row["status"] == "approved", err)
+    check("approved review public", store.public_summary()["review_count"] == 1 and store.public_summary()["average_rating"] == 5.0)
     ok6, err6, _ = store.submit("x", 6, "bad rating")
     check("rating 6 rejected", not ok6)
     store.submit("bob", 4, "very good tools")
-    check("approve 1", store.set_status(1, "approved"))
-    summ = store.public_summary()
-    check("one approved, avg 5.0", summ["review_count"] == 1 and summ["average_rating"] == 5.0)
-    store.set_status(2, "approved")
     summ = store.public_summary()
     check("two approved, avg 4.5", summ["review_count"] == 2 and summ["average_rating"] == 4.5)
     check("latest first", summ["reviews"][0]["name"] == "bob")
-    check("pending list empty after approvals", store.list_by_status("pending") == [])
+    check("no pending rows", store.list_by_status("pending") == [])
     check("reject keeps out of public", store.set_status(2, "rejected") and store.public_summary()["review_count"] == 1)
+    # Legacy pending rows still work through the admin store API.
+    check("legacy pending can be approved", store.set_status(2, "pending") and store.set_status(2, "approved"))
 
     # -- sqlite fallback path (no LEARNING_DATABASE_URL) --
     check("sqlite backend chosen", store.backend == "sqlite")
@@ -96,35 +95,30 @@ def main():
     check("POST rating 6 -> 400", r.status_code == 400, str(r.status_code))
 
     r = c.post("/api/reviews", json={"name": "ada", "rating": 5, "text": "great site, very helpful tools"})
-    check("POST valid -> 201 pending", r.status_code == 201 and r.json.get("status") == "pending", str(r.status_code))
+    check("POST valid -> 201 approved (instant publish)", r.status_code == 201 and r.json.get("status") == "approved", str(r.status_code))
 
-    # Pending must not show publicly.
-    r = c.get("/api/reviews")
-    check("pending review hidden", r.json["review_count"] == 0)
-
-    # Approve directly in the store, then it must show with average.
-    rid = r.json.get("id")
-    # (id from the 201; re-fetch via store for safety)
-    st = reviews_mod.get_store()
-    all_pending = st.list_by_status("pending")
-    check("one pending stored", len(all_pending) == 1)
-    st.set_status(all_pending[0]["id"], "approved")
+    # Approved review shows publicly right away.
     r = c.get("/api/reviews")
     check("approved review public, avg 5.0", r.json["review_count"] == 1 and r.json["average_rating"] == 5.0)
+    st = reviews_mod.get_store()
+    check("no pending stored", st.list_by_status("pending") == [])
+    # Star-only POST (no text) publishes instantly too.
+    rr = c.post("/api/reviews", json={"rating": 5})
+    check("star-only POST -> 201 approved", rr.status_code == 201 and rr.json.get("status") == "approved", str(rr.status_code))
 
     # Rate limit: default 5 per hour per IP. Earlier posts in this run
-    # already used 2 slots, so the last posts must hit the limit.
+    # already used 3 slots (incl. the rejected 400 one), so only 2 more pass.
     codes = []
     for i in range(5):
         rr = c.post("/api/reviews", json={"name": f"r{i}", "rating": 4, "text": f"another review {i}"})
         codes.append(rr.status_code)
-    check("rate limit kicks in", 429 in codes and codes.count(201) == 3, str(codes))
+    check("rate limit kicks in", 429 in codes and codes.count(201) == 2, str(codes))
     r = c.post("/api/reviews", json={"name": "last", "rating": 4, "text": "one too many"})
     check("over-limit post returns 429", r.status_code == 429, str(r.status_code))
 
     # Homepage renders with the reviews section.
     r = c.get("/")
-    check("homepage 200 with reviews section", r.status_code == 200 and b"Leave a review" in r.data)
+    check("homepage 200 with reviews + popup", r.status_code == 200 and b"Leave a review" in r.data and b"review-popup" in r.data and b"Enjoying CyberLord? Leave a review" in r.data)
 
     print()
     if failures:
