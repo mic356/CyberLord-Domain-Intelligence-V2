@@ -1988,6 +1988,17 @@ _LIVE_IMAGE_KEYS = ("picture", "pictures", "image", "images", "photo", "photos",
 _LIVE_WEATHER_KEYS = ("weather", "forecast", "wether", "wheather", "temperature", "rain", "sunny", "cloudy", "humidity", "climate")
 _LIVE_NEWS_KEYS = ("news", "headline", "headlines", "top stories", "latest news", "what is happening", "newz")
 
+# Questions that are about a price, a currency, or a crypto asset. These
+# must never be answered by the datetime-direct clock path, even if they
+# contain the word "current" ("what is the current bitcoin price").
+_LIVE_PRICE_KEYS = (
+    "price", "prices", "cost", "usd", "naira", "ngn", "bitcoin", "btc",
+    "ethereum", "eth", "stock", "shares", "exchange rate", "dollar",
+)
+
+def _is_live_price_question(low):
+    return any(k in low for k in _LIVE_PRICE_KEYS)
+
 def _gemini_model():
     # Valid stable Gemini names per Google docs 14 Nov 2026.
     # gemini-3.5-flash is deprecated (auto-routed to gemini-3.6-flash),
@@ -2011,6 +2022,9 @@ def _main_live_guard(q):
         return "weather"
     if any(k in low for k in _LIVE_NEWS_KEYS):
         return "news"
+    # A price/crypto question is a live question, never a clock question.
+    if _is_live_price_question(low):
+        return "live"
     if any(k in low for k in _LIVE_TRIGGER_KEYS) or _TIME_QUESTION_RE.search(low):
         return "live"
     return None
@@ -2051,7 +2065,10 @@ def ai_assistant():
         return jsonify(reply="That is one for the tutor, head to the Academy tutor and they will walk you through it. The Academy covers Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, and Career Path & Certifications, so pick the course that matches your question and the tutor will help step by step.", mode="tutor-redirect", persona=persona, live_sources=[])
     if persona == "main":
         _low_q = (fallback_latest or "").lower()
-        if _TIME_QUESTION_RE.search(_low_q):
+        # Never let the datetime-direct clock path answer a price/crypto
+        # question just because it contains "current"
+        # ("what is the current bitcoin price").
+        if _TIME_QUESTION_RE.search(_low_q) and not _is_live_price_question(_low_q):
             _now = datetime.now(_LAGOS_TZ)
             _exact = _now.strftime("Today is %A, %B %d, %Y, and the exact time is %-I:%M %p").lstrip("0")
             return jsonify(reply=_exact + " (Lagos time). It is the current time in Lagos, Nigeria.", mode="datetime-direct", persona=persona, live_sources=["Server clock (Africa/Lagos)"])
@@ -2219,8 +2236,18 @@ def ai_assistant():
                 "contents": contents,
                 "generationConfig": {"temperature": 0.55, "maxOutputTokens": 1200, "candidateCount": 1},
             }
-            # Gemini Google Search grounding for main persona live questions only.
-            # Docs: REST generateContent uses tools=[{"google_search":{}}] (generateContent API). JS/Vertex uses googleSearch camelCase. Old code used googleSearch for weather/news, which the REST generateContent API rejects with 400, so grounded calls failed while plain calls (no tools) succeeded. Use google_search for all live guards. If a grounded request is rejected, retry once without tools before falling back to Groq/built-in, so chat still answers.
+            # Live info asks for a SEARCH inside Gemini: that is a tool call, not
+            # a sentence in the prompt. The grounded request is
+            # tools=[{"google_search": {}}] at the top level of the
+            # generateContent request body. The JS/Vertex spelling
+            # {"googleSearch": {}} is rejected by the generateContent REST API
+            # with HTTP 400, plain calls without tools still succeed, and
+            # that mismatch is why live questions used to come back with
+            # "search grounding unavailable". The exact API error body is
+            # logged server-side on every non-2xx so the real cause shows in
+            # Render logs (it is not a chat reply). If a grounded request is
+            # rejected, retry once without tools before falling back to
+            # Groq/built-in, so chat still answers.
             if _live_guard in ("live", "weather", "news"):
                 payload["tools"] = [{"google_search": {}}]
             # Gemini can take longer than a short web-request timeout and may
@@ -2236,6 +2263,20 @@ def ai_assistant():
                         timeout=(10, 60),
                     )
                     if response.status_code not in (408, 429, 500, 502, 503, 504):
+                        if response.status_code >= 400:
+                            # Loud failure path: log the EXACT error body
+                            # Gemini sent back, verbatim, so the real cause
+                            # (bad tool spelling, key tier, model not billed,
+                            # search not enabled) shows in Render logs
+                            # instead of being flattened into a generic
+                            # "grounding unavailable".
+                            app.logger.error(
+                                "Gemini API HTTP %s (grounding attached=%s, model=%s): %s",
+                                response.status_code,
+                                bool(payload.get("tools")),
+                                model,
+                                (response.text or "")[:800],
+                            )
                         response.raise_for_status()
                         break
                     if attempt == 2:
@@ -2277,16 +2318,34 @@ def ai_assistant():
             if "payload" in locals() and isinstance(payload, dict) and payload.pop("tools", None):
                 try:
                     _r = requests.post(endpoint, headers={"Content-Type":"application/json","x-goog-api-key":api_key}, json=payload, timeout=(10,60))
+                    if _r.status_code >= 400:
+                        app.logger.error(
+                            "Gemini plain retry also failed HTTP %s (model=%s): %s",
+                            _r.status_code, model, (_r.text or "")[:800],
+                        )
                     _r.raise_for_status()
                     _d = _r.json()
                     _c = _d.get("candidates") or []
                     _parts = ((_c[0].get("content") or {}).get("parts") or []) if _c else []
                     _reply = "\n".join(_p.get("text","") for _p in _parts if isinstance(_p, dict)).strip()
                     if _reply:
-                        app.logger.warning("Gemini grounding rejected, plain retry succeeded: %s", str(_grounded_exc)[:180])
+                        app.logger.error(
+                            "Gemini GROUNDING REJECTED (model=%s): the grounded call failed and only the plain retry answered. Original error: %s",
+                            model, str(_grounded_exc)[:400],
+                        )
                         return jsonify(reply=_reply, mode="gemini", model=model, persona=persona, live_sources=["Gemini response; search grounding unavailable"], images=[])
-                except Exception:
+                except Exception as _retry_exc:
+                    app.logger.error(
+                        "Gemini plain retry failed after grounding rejection (model=%s): %s",
+                        model, str(_retry_exc)[:400],
+                    )
                     pass
+            app.logger.error(
+                "Gemini API exception (model=%s, grounding attached=%s): %s",
+                model,
+                bool(isinstance(payload, dict) and payload.get("tools")) if "payload" in locals() else False,
+                str(exc)[:400],
+            )
             app.logger.warning("Gemini API unavailable; trying next provider: %s", str(exc)[:240])
 
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
