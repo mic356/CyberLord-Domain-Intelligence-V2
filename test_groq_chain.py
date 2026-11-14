@@ -45,7 +45,8 @@ c.post("/login", data={"email": "groqtest@test.local", "password": "testpass123"
 
 def ask():
     appmod._rate_store.clear()
-    return c.post("/api/ai-assistant", json={"messages": [{"role": "user", "content": "what is phishing"}]})
+    # main persona, general question (phishing in main is tutor-redirect)
+    return c.post("/api/ai-assistant", json={"persona": "main", "messages": [{"role": "user", "content": "tell me about toyota corolla"}]})
 
 # 1) no keys -> built-in KB answers
 os.environ.pop("GEMINI_API_KEY", None)
@@ -75,7 +76,7 @@ body = r.get_json() or {}
 groq_calls = [u for u in seen.get("calls", []) if "api.groq.com/openai/v1/chat/completions" in u]
 check("fake GROQ: request hit Groq endpoint", len(groq_calls) >= 1, str(seen.get("calls")))
 check("fake GROQ: OpenAI-compatible body with model+messages",
-      seen.get("groq_json", {}).get("model") == "llama-3.3-70b-versatile" and bool(seen.get("groq_json", {}).get("messages")),
+      seen.get("groq_json", {}).get("model") in ("llama-3.3-70b-versatile", "openai/gpt-oss-20b") and bool(seen.get("groq_json", {}).get("messages")),
       str(seen.get("groq_json", {}))[:200])
 check("fake GROQ: Authorization bearer header",
       seen.get("groq_headers", {}).get("Authorization") == "Bearer fake-key-123", str(seen.get("groq_headers")))
@@ -97,7 +98,7 @@ def fake_post_ok(url, **kw):
 with mock.patch.object(appmod.requests, "post", fake_post_ok):
     r = ask()
 body = r.get_json() or {}
-check("groq success: mode=groq", body.get("mode") == "groq" and body.get("model") == "llama-3.3-70b-versatile", str(body)[:160])
+check("groq success: mode=groq", body.get("mode") == "groq" and body.get("model") in ("llama-3.3-70b-versatile", "openai/gpt-oss-20b"), str(body)[:160])
 
 print("FAILURES:", fails or "none")
 sys.exit(1 if fails else 0)
