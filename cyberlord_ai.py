@@ -206,18 +206,120 @@ GENERAL_HOWTO = [
 GENERAL_CHAT = [
     ("hello there", "Hello there! Good to see you. What is on your mind today?"),
     ("thank you so much", "You are very welcome. Anything else I can help with?"),
-    ("are you a robot", "Sort of, I am an AI assistant built into CyberLord, made by Nozomio Labs. I can chat, explain things, check the weather and headlines, and even find pictures. What do you need?"),
-    ("what is your name", "I am CyberLord AI, the assistant inside CyberLord, built by Nozomio Labs. What can I do for you?"),
-    ("tell me about yourself", "I am CyberLord AI, the assistant inside CyberLord, built by Nozomio Labs. Ask me anything: general questions, how-tos, the weather, today's headlines, a picture, or about the CyberLord site itself. Cybersecurity lessons belong to the Academy tutor, and I will point you there for those."),
+    ("are you a robot", "Sort of, I am Oga, the AI voice of CyberLord, made by Nozomio Labs. I can chat, explain things, check the weather and headlines, and even find pictures. What do you need?"),
+    ("who are you", "I am Oga, the main CyberLord AI, built by Nozomio Labs for cyberlord.name.ng. I chat on anything, walk you round the CyberLord site, and point your cyber questions to the Academy tutor. What is on your mind today?"),
+    ("what is your name", "I am Oga, the main CyberLord AI. Call me Oga, that is the name. What can I do for you?"),
+    ("tell me about yourself", "I am Oga, the main CyberLord AI, built by Nozomio Labs. Ask me anything: general questions, how-tos, the weather, today's headlines, a picture, or about the CyberLord site itself. Cybersecurity lessons belong to the Academy tutor, and I will point you there for those."),
     ("good night", "Good night, sleep well. I will be here whenever you need me."),
     ("see you", "See you later. Take care."),
     ("what's your favourite colour", "I do not have a favourite, colours are not really my thing. But I can tell you that blue is the most popular colour in the world. Anything you want to know?"),
     ("do you have a boyfriend", "Ha, no. I am an AI assistant, no boyfriend required. What can I help you with?"),
-    ("are you human", "Nope, I am an AI assistant built into CyberLord by Nozomio Labs. Ask me anything."),
-    ("what can i call you", "Call me CyberLord AI, that is what I am. What would you like to know?"),
+    ("are you human", "Nope, I am Oga, the AI voice of CyberLord, built by Nozomio Labs. Ask me anything."),
+    ("what can i call you", "Call me Oga, that is the name. What would you like to know?"),
     ("how many languages do you speak", "I can handle English and some of the everyday bits of other languages, but English is my home ground. Try me on something."),
 ]
 
+
+# Toyota deep-dive (main persona, general knowledge).
+# Stable facts only; live prices, post-knowledge recalls and unverifiable
+# model-year specs get an honest "I don't know" instead of a guess.
+TOYOTA_TOPICS = [
+    ("what is toyota", "TOYOTA: Toyota Motor Corporation is a Japanese multinational automaker headquartered in Toyota City, Aichi, Japan. It was founded in 1937 by Kiichiro Toyoda as Toyota Motor Corporation, though its roots go to Sakichi Toyoda's loom business and the Toyota Gosei company of 1926. Toyota is one of the largest automakers in the world by production and sales, known for reliability, hybrid leadership (it pioneered the mass-market Prius), and the Lexus luxury brand. Its Nigerian arm is Toyota Nigeria Ltd, and the brand is one of the most trusted car brands in Nigeria."),
+    ("when was toyota founded", "Toyota was founded in 1937 as Toyota Motor Corporation by Kiichiro Toyoda in Koromo (now Toyota City), Japan. The family business began with Sakichi Toyoda's automatic loom company in 1926; Kiichiro's automobile division produced its first passenger car, the AA, in 1936, and the motor company was formally set up in 1937."),
+    ("who founded toyota", "Kiichiro Toyoda founded Toyota Motor Corporation in 1937. His father, Sakichi Toyoda, founded the Toyoda loom works, whose patents funded the young automobile business. His son Eiji Toyoda later built the production system (the Toyota Production System) that made Toyota famous for quality."),
+    ("toyota headquarters", "Toyota's global headquarters is in Toyota City, Aichi Prefecture, Japan. Its many regional subsidiaries include Toyota Nigeria Ltd, which handles sales and service for Toyota vehicles in Nigeria."),
+    ("what does toyota mean", "The name Toyota comes from the family name Toyoda, changed to Toyota because the new spelling needs eight strokes in Japanese katakana, considered lucky, and because it sounds cleaner internationally. The Toyota logo's three ovals represent the customer, the product, and a heart of trust between them."),
+    ("toyota history", "Toyota's history in brief: Sakichi Toyoda founded a loom business in 1926; his son Kiichiro Toyoda started automobiles in the 1930s and founded Toyota Motor Corporation in 1937. The Crown launched in 1955 as its first all-original design. The Corolla arrived in 1966 and became the world's best-selling car nameplate. Toyota pioneered mass-market hybrids with the Prius in 1997, and launched the TNGA platform from 2015. Lexus, its luxury brand, launched in the US in 1989."),
+    ("what is toyota corolla", "The Toyota Corolla is a compact car, in production since 1966, one of the best-selling nameplates in automotive history with more than 50 million sold worldwide. It is famous for reliability, low running costs and strong resale value. Generations are identified by code names (E100, E110, E120 and so on). The Corolla is offered as a sedan, hatchback, wagon and, in its Cross form, a compact SUV; hybrid versions are sold in many markets including Nigeria."),
+    ("when did corolla come out", "The Toyota Corolla launched in Japan in 1966 (the E10 generation, internally designated KE10). It was designed as an affordable, practical family car and quickly became a global export success. The name comes from the Latin word for a small crown, matching the Crown sedan above it."),
+    ("best selling car of all time corolla", "Yes, the Toyota Corolla is widely described as the best-selling car nameplate in history, with more than 50 million units across all generations, badges and body styles since 1966. The claim counts the nameplate family (sedan, hatchback, wagon, Cross and others), which is why it tops the list ahead of single models like the Golf or F-Series."),
+    ("toyota corolla generations", "Corolla generations are tracked by chassis codes: E10 (1966), E20, E30, E40, E50, E60, E70 (1979), E80 (1983), E90 (1987), E100 (1991), E110 (1995), E120/E130 (2000), E140/E150 (2006), E160 (2012), E170 (2013), E180 (2014), E210 (2019) and current E210-family variants. The E120 and E140 families are especially common as tokunbo (imported) cars in Nigeria."),
+    ("toyota corolla engine", "Corolla engines across generations range from 1.3 to 2.0 litres. Common ones include the 1ZR-FE and 2ZR-FE (1.8L) in the E140/E150, the 1NZ-FE/2NZ-FE in smaller markets, and the 2ZR-FAE in the E170. Hybrid Corollas (E210) use a 1.8L 2ZR-FXE Atkinson-cycle engine with an electric motor. The exact engine depends on your year and market, so check the VIN or engine stamp for your exact car."),
+    ("toyota camry", "The Toyota Camry is a midsize sedan, in production since 1982 (as the Celica Camry in Japan from 1982, standalone Camry from 1983). It is one of Toyota's global best sellers and the best-selling passenger car in the US for many years. Generations run from XV10 (1992) through XV20, XV30, XV40 (2006), XV50 (2011), XV70 (2018) and the current XV80 (2024). It is known for comfort, reliability and strong resale value, and is a staple of Nigerian roads, both officially sold and tokunbo."),
+    ("when did camry launch", "The Toyota Camry began in 1982 as the Celica Camry in Japan and became a standalone nameplate in 1983. It was positioned between the Corolla and the Crown, and the name comes from the Japanese 'kanmuri', meaning crown. It has since had eight generations and is Toyota's flagship midsize sedan worldwide."),
+    ("toyota camry engine", "Recent Camry engines: the XV70 (2018-2024) uses a 2.5L Dynamic Force 4-cylinder (A25A-FKS) or, in hybrid form, a 2.5L Atkinson engine with electric drive; the current XV80 (2024) is hybrid-only globally. Earlier generations used 2AZ-FE (2.4L), 2AR-FE (2.5L) and 3.5L V6 (2GR-FE) engines. The exact engine depends on your year and market, so read the engine stamp under the hood."),
+    ("toyota hilux", "The Toyota Hilux is a midsize pickup truck, in production since 1968, built on the rugged IMV platform. It is famous worldwide for durability, simple mechanics and off-road ability, and is a sales leader in Africa, Southeast Asia, Australia and Latin America. Generations include the 4th (1988-1997), 5th (1997-2005), 6th (2005-2015, 'Vigo') and 7th (2015-present, 'Revo'/'Rocco'). In Nigeria the Hilux is widely used by companies, NGOs, security fleets and individuals for work and tough terrain."),
+    ("when did hilux start", "The Toyota Hilux launched in 1968 as the RN10, replacing the Stout and Briska. It was the first Toyota pickup with a cabin body style and independent front suspension, and evolved into one of the world's most durable workhorses. The name comes from 'high' and 'luxury', reflecting a utility truck with car-like comfort."),
+    ("toyota hilux generations", "Hilux generations (roughly): 1st 1968-1978 (RN10), 2nd 1978-1988 (RN40/RN50), 3rd 1988-1997 (RN85), 4th 1997-2005 (RN105), 5th 2005-2015 (Vigo, AN10/AN20), 6th 2015-present (Revo/Rocco, AN120/AN130). The Vigo and Revo generations are the ones you see most in Nigeria. Trim names like SR5, Invincible and Rocco vary by market. Exact specs depend on year and destination market."),
+    ("toyota hilux engine", "The current (2015 onward) Hilux uses a 2.4L diesel (2GD-FTB, single turbo) or 2.8L diesel (1GD-FTV, turbo/intercooled) in most markets, and a 2.7L petrol in some. The Vigo generation mainly used a 2.5L diesel (2KD-FTV) with a 3.0L diesel (1KD-FTV) on higher trims, plus petrol options. Power and torque figures vary by tune and market; check the engine stamp and VIN plate."),
+    ("toyota hilux towing capacity", "Toyota quotes the 2015 onward Hilux with a braked towing capacity of around 3,500 kg in many markets (single-cab and double-cab diesel trims); unbraked towing is lower, and payload is around 800-1000 kg depending on cab and trim. Earlier Vigo models towed up to about 3,000 kg braked. Limits vary by market and trim, so check the VIN plate and owner's manual for your exact truck."),
+    ("toyota land cruiser", "The Toyota Land Cruiser is a large SUV and pickup lineup, in production since 1951, famous for extreme durability, off-road capability and long service life in harsh conditions. The series include the 40, 60, 70, 80, 100, 200 and current 300 series. The Land Cruiser is a status and workhorse vehicle in Nigeria, widely used by government, companies and families. There is also the Land Cruiser Prado, a slightly smaller sibling, and the separate Land Cruiser 70 series for heavy-duty work."),
+    ("when did land cruiser come out", "The Toyota Land Cruiser line began in 1951 as the Toyota BJ, a four-wheel-drive Jeep-style vehicle built for military and police use. The 20 series followed in 1955, the 40 series (FJ40) in 1960, and the big SUV line grew through the 60, 80, 100, 200 and 300 series. 'Land Cruiser' became the official name in 1954."),
+    ("toyota land cruiser 300 series", "The Land Cruiser 300 series launched in 2021 as the successor to the 200 series. It is built on the TNGA-F platform, uses twin-turbo V6 petrol (3.5L) or diesel (3.3L) engines in most markets (no V8), and has a more modern interior and safety kit. The 300 series is the full-size flagship Land Cruiser sold in Nigeria and globally. Exact specs depend on market and trim; check the VIN plate."),
+    ("toyota land cruiser prado", "The Land Cruiser Prado is Toyota's slightly smaller, more comfortable 4x4 SUV, sold alongside the full-size Land Cruiser. Generations: 90 series (1996), 120 series (2002), 150 series (2009) and the current 250 series (2023, also called the new Prado). The Prado uses body-on-frame construction, a 2.4L or 2.8L diesel or a hybrid petrol in some markets, and is a very common family and executive SUV in Nigeria."),
+    ("is land cruiser same as prado", "No. The Land Cruiser 300 is the full-size flagship (bigger, more expensive, more powerful), while the Land Cruiser Prado (current 250 series) is the smaller, slightly more compact sibling. Both are body-on-frame 4x4s, both are very capable, and both are common in Nigeria. The Prado is the one most buyers cross-shop against the Fortuner; the 300 series sits a class above."),
+    ("toyota rav4", "The RAV4 is a compact crossover SUV, in production since 1994, credited with popularising the crossover segment. Generations: XA10 (1994), XA20 (2000), XA30 (2005), XA40 (2012), XA50 (2018) and the current XA60 (2024). The RAV4 is known for practicality, AWD availability, hybrid and plug-in hybrid options, and strong reliability. In Nigeria it is a popular family SUV, especially the XA40 and XA50 generations, sold new and as tokunbo."),
+    ("when did rav4 come out", "The Toyota RAV4 launched in Japan in 1994 (XA10) as a small 3-door and 5-door crossover. Its name means 'Recreational Active Vehicle with 4-wheel drive', though many sold today are front-wheel drive. It helped define the modern crossover category, smaller than a traditional SUV but with SUV looks and AWD options. The current generation is the XA60 (2024 onward)."),
+    ("toyota rav4 hybrid", "The RAV4 Hybrid pairs a 2.5L Atkinson-cycle petrol engine with front and rear electric motors (e-AWD standard on hybrid in many markets). Combined output is around 219 hp (FWD) to 222 hp (AWD), with fuel economy roughly 40 mpg combined (about 5.9 L/100 km) in US ratings. The plug-in hybrid (Prime/XSE PHEV) adds a larger battery and about 40 miles (64 km) of electric range. Figures vary by market; hybrids have no conventional starter or alternator, so battery and inverter health matter at high mileage."),
+    ("toyota yaris", "The Toyota Yaris is a subcompact hatchback (and sedan in some markets), in production since 1999, designed for affordable urban driving. Generations include the XP10 (1999), XP90 (2005), XP130 (2011), XP150 (2013, sedan-focused) and the current XP210 (2019). The Yaris is known for low running costs, simple mechanicals and city-friendly size, and is a common small car in Nigeria, often imported as tokunbo."),
+    ("toyota yaris cross", "The Yaris Cross is the small crossover SUV version of the Yaris, launched in 2020. It sits on the GA-B platform, with front-wheel drive standard and optional hybrid (1.5L Atkinson petrol plus electric motor) in many markets, and optional AWD. It is positioned between the Yaris hatchback and the RAV4. In Nigeria it is sold as a compact family crossover; exact engine and trim depend on market."),
+    ("toyota supra", "The Toyota Supra is a sports coupe. The original MkI-IV Supras ran from 1978 to 2002 (the MkIV with the 2JZ-GTE turbo engine is the most famous), then the name returned in 2019 (A90/A91, the 'MkV'), co-developed with BMW (built on the BMW Z4 platform, using BMW engines, badged and tuned by Toyota). The current Supra offers a 2.0L turbo or 3.0L turbo inline-six, in manual or automatic. It is a halo sports car, not the practical family Toyota, and is rare in Nigeria."),
+    ("toyota supra mk4 2jz", "The MkIV Supra (1993-2002, A80) is the most celebrated Supra, powered by the 2JZ-GTE 3.0L twin-turbo inline-six, famous for its strength and tuning potential. Stock output was around 276 hp in Japan (gentlemen's agreement) and about 320 hp in the US. The 2JZ engine's reputation comes from its solid block, iron crank and over-engineering. The MkIV is a collector car now; clean examples command high prices and fakes exist, so provenance checks matter."),
+    ("toyota prius", "The Toyota Prius is the world's most famous hybrid car, launched in Japan in 1997 as the first mass-produced hybrid. It pairs a petrol engine (Atkinson-cycle, 1.5L or 1.8L depending on generation) with electric motors and a battery, switching seamlessly between petrol, electric and combined drive. The Prius is famous for fuel economy (often 50-57 mpg US combined depending on year) and low running costs. Generations: NHW10 (1997), NHW11 (2000), NHW20 (2003), ZVW30 (2009), ZVW50 (2015), and the current ZVW60 (2022)."),
+    ("when did prius come out", "The Toyota Prius launched in Japan in December 1997 (NHW10), the world's first mass-produced hybrid car. It went global in 2000 (NHW11) and became a symbol of fuel-efficient motoring. The name 'Prius' is Latin for 'prior to' or 'before', suggesting a car ahead of its time. Toyota has since applied hybrid technology across its range."),
+    ("how does prius hybrid work", "The Prius hybrid system (Toyota Hybrid Synergy Drive) works like this: at low speed and light load, only the electric motor drives the car and the petrol engine is off; under harder load, the petrol engine runs and shares driving with the motor; during braking, energy is recaptured into the battery (regenerative braking); and the battery is recharged by the engine and braking, never by plugging in. The system uses a planetary gearset so there is no conventional gearbox, and a Prius has no starter motor or alternator. On the highway at steady speed, the petrol engine does most of the work."),
+    ("toyota hybrid system", "Toyota's hybrid system combines a petrol engine (usually Atkinson-cycle for efficiency) with one or two electric motors, an inverter, and a battery pack. The electronic control unit blends engine and motor power seamlessly, so the driver just drives. Toyota hybrids have no conventional starter or alternator; the motor starts the engine. Fuel economy is typically 40-57 mpg US combined depending on model (Prius highest, RAV4 Hybrid and Highlander lower). Hybrid batteries typically last 8-10 years or 150,000-200,000 km with care. Toyota hybrids are known for reliability, but hybrid-specific diagnostics need a qualified technician."),
+    ("toyota tnga", "TNGA (Toyota New Global Architecture) is Toyota's modular vehicle platform introduced from 2015. It splits into TNGA-C (compact: Corolla, C-HR, Yaris Cross), TNGA-B (small: Yaris), TNGA-K (midsize: Camry, RAV4, Highlander, Sienna), TNGA-F (body-on-frame: Land Cruiser 300, Hilux, Tundra, Sequoia, 4Runner, Tacoma), TNGA-L (rear-wheel-drive: Lexus and rear-drive cars) and e-TNGA (electric: bZ4X). TNGA lowers the centre of gravity, stiffens the body and improves handling and efficiency across the range."),
+    ("what is tnga platform toyota", "TNGA is Toyota's global modular platform (Toyota New Global Architecture), launched from 2015. Cars share engines, gearboxes, seats and electronics while riding on different-sized platforms (TNGA-C compact, TNGA-K midsize, TNGA-F truck/SUV, e-TNGA electric). The Corolla/C-HR/Yaris Cross use TNGA-C, Camry/RAV4/Highlander use TNGA-K, and Land Cruiser/Hilux use TNGA-F."),
+    ("toyota lexus", "Lexus is Toyota's luxury brand, launched in the US in 1989. It builds luxury cars on Toyota platforms and technology, with a reputation for reliability that matches Toyota's. Models include the ES (sedan, based on the Camry), RX (midsize SUV, the best seller), NX, GX, TX, LX (based on the Land Cruiser), UX, IS, LC and the electric RZ. Lexus is sold officially in Nigeria by Toyota Nigeria."),
+    ("toyota fortuner", "The Toyota Fortuner is a midsize body-on-frame SUV built on the Hilux platform, in production since 2005. Generations: AN50/AN60 (2005), AN150 (2015) and the current AN160 (2024). It is a rugged 7-seater SUV, common in Nigeria, Southeast Asia, Africa and South America. The diesel (2.4L 2GD or 2.8L 1GD) is the popular engine."),
+    ("toyota hilux common problems", "Common Hilux issues owners report: 1) The 2KD-FTV diesel (pre-2015) can develop injector wear and EGR clogging, causing smoke and rough running; keep up fuel-filter changes and use clean diesel. 2) The 1GD/2GD diesels (2015+) are generally robust but can suffer turbo and DPF issues if short trips are the norm. 3) Front suspension and ball joints wear on rough roads; check bushes and steering at service. 4) Rust on the chassis in coastal or salty areas. Always confirm with a qualified mechanic for your exact year, and check the VIN history before buying used; never skip a pre-purchase inspection."),
+    ("toyota corolla common problems", "Common Corolla issues owners report: 1) CVT fluid changes are often skipped; fresh CVT fluid every 60,000-100,000 km extends CVT life. 2) 2009-2013 1.8L (2ZR-FE) engines had a well-known oil-consumption issue on some cars; check oil level weekly and service on time. 3) 2003-2008 models had Toyota's airbag recall for Takata inflators; verify recall completion by VIN. 4) Battery and alternator wear can cause no-start complaints on older cars. Always verify by VIN and a pre-purchase inspection rather than trusting a list."),
+    ("toyota corolla cvt problems", "The Corolla CVT (K313, in 2014-2019 E170 models) is generally reliable compared to many CVTs, but the main complaints are whining noise on acceleration, delayed engagement when cold, and shudder at low speed, often traced to low or degraded CVT fluid. The fix is a fluid and filter change with the correct Toyota CVT fluid, done by a specialist. CVT fluid changes every 60,000-100,000 km are cheap insurance. If a CVT has failed, replacement is expensive, so test-drive carefully and check service history before buying."),
+    ("toyota reliable car", "Toyota earned its reliability reputation through conservative engineering, proven engines and gearboxes, and decades of quality control. The Corolla, Camry, Hilux and Land Cruiser regularly top reliability rankings. Toyota hybrids (Prius, Camry Hybrid, RAV4 Hybrid) also score very highly because the hybrid system has few moving parts. Reliability still depends on maintenance, fuel quality and how the car is driven; a Toyota is not a car you can neglect."),
+    ("toyota maintenance schedule", "Toyota's general maintenance rhythm (confirm in your owner's manual): engine oil and filter every 5,000-10,000 km or 6 months (sooner in dusty Nigerian conditions); air filter every 20,000-40,000 km; engine coolant every 4 years or 80,000 km; brake fluid every 2 years; CVT fluid every 60,000-100,000 km; spark plugs every 80,000-100,000 km; and a full inspection at every service. Keep records; they protect resale value."),
+    ("how often change toyota engine oil", "Toyota generally recommends engine oil changes every 5,000-10,000 km or every 6 months, whichever comes first, but Nigeria's dust, heat and traffic jams mean the shorter end (5,000 km) is safer. Always use oil of the correct viscosity (0W-20 or 5W-30 for most modern Toyotas) and change the filter with every change."),
+    ("toyota nigeria", "Toyota Nigeria Ltd is the official distributor for Toyota and Lexus vehicles in Nigeria, with head offices in Lagos and dealers across the country. It sells new Corolla, Camry, Hilux, Land Cruiser, Prado, Fortuner, RAV4, Yaris and Lexus models, with warranty and after-sales support. Alongside official sales, many Toyotas enter Nigeria as tokunbo (used imports). Toyota is one of the most popular car brands in Nigeria because of reliability, resale value, parts availability and fuel economy."),
+    ("toyota cars in nigeria", "Toyota is one of Nigeria's best-selling car brands. The most common models on Nigerian roads are the Corolla, Camry, Hilux, Land Cruiser and Prado, RAV4, Yaris, Fortuner and Lexus models. Many are sold new by Toyota Nigeria Ltd, and many more arrive as tokunbo (used imports) from the US, Canada, Europe and the UAE. Toyotas hold value well in Nigeria and parts are widely available; that is why they dominate resale markets from Lagos to Kano. Model years and trims vary a lot on used imports, so VIN checks matter."),
+    ("toyota tokunbo", "Tokunbo means a used imported car, usually from the US, Canada, Europe or the UAE. Tokunbo Toyotas make up a huge share of cars on Nigerian roads because they are cheaper than new and often better equipped. Before buying a tokunbo Toyota, check: the VIN for accident and mileage history, panel gaps and paint for accident signs, the engine and gearbox for leaks and shifting, and the dashboard warning lights on a cold start. Always do a pre-purchase inspection by an independent mechanic; never trust the seller's word alone."),
+    ("how to check toyota vin", "A Toyota VIN (Vehicle Identification Number) is 17 characters on a plate at the base of the windshield (driver side) and on the door jamb. The first character tells the country of manufacture (J = Japan, 1/2/4/5 = USA/Canada/Mexico, for example), the 4th-8th characters give the model and engine, and the 10th character is the model year. You can run the VIN through Toyota's official recall page and through reputable history services for accidents and mileage. For tokunbo cars, also cross-check the mileage and accident signs physically."),
+    ("toyota recall check", "You can check for open recalls on a Toyota by entering the 17-character VIN on Toyota's official recall page (toyota.com/recall for the US, or your local Toyota site). Recalls are free at authorised dealers. Notable past Toyota recalls include Takata airbags (many models, 2000s-2010s). Always verify your exact VIN rather than assuming your car is or is not affected."),
+    ("does toyota make electric cars", "Yes. Toyota sells the bZ4X (on the e-TNGA platform) as its first dedicated battery-electric SUV, and the bZ3 sedan in China and some markets. Toyota's main electric strategy so far has been hybrids (Prius, Corolla, Camry, RAV4, Highlander, Sienna, Lexus RX/ES), which it calls a bridge to full electric. Toyota's global range remains hybrid-led today. For live model availability in Nigeria, check Toyota Nigeria or toyota.com."),
+    ("toyota vs honda", "Toyota vs Honda, the honest breakdown: Toyota wins on long-term reliability reputation, resale value, parts availability and hybrid leadership; Honda wins on driving feel, cabin packaging and engine character in some segments. In Nigeria, Toyota holds value better and parts are easier to find, which is why Toyotas dominate the resale market. Honda (Accord, Civic, CR-V) is a strong second choice and often cheaper to buy used. For long-term cost of ownership in Nigeria, Toyota usually comes out ahead."),
+    ("toyota vs lexus reliability", "Lexus is Toyota's luxury brand and its reliability is essentially Toyota reliability with luxury trim. Lexus models built on Toyota platforms (ES vs Camry, RX vs Highlander, LX vs Land Cruiser) share engines and gearboxes with their Toyota siblings. In independent rankings, Lexus often scores at or near the very top, slightly ahead of Toyota, mainly because Lexus buyers tend to maintain more carefully."),
+    ("toyota full hybrid vs mild hybrid", "Mild hybrids (common on some European models) use a small motor to assist the engine and recover braking energy, but cannot drive on electricity alone. Toyota's full hybrids (Prius, Corolla Hybrid, Camry Hybrid, RAV4 Hybrid) can drive on electric power alone at low speed, switch off the petrol engine in traffic, and use a larger battery and more powerful motors. That is why Toyota hybrids deliver 40-57 mpg. Almost every Toyota hybrid sold today is a full hybrid."),
+    ("toyota cvt", "Toyota's CVT (Continuously Variable Transmission) is fitted to Corolla, Yaris, C-HR and other models. It has no fixed gears, so it holds the engine in the efficient rev range, which is why fuel economy is good. Toyota's CVT is generally regarded as reliable when maintained; the key maintenance item is CVT fluid changes every 60,000-100,000 km with the correct fluid, done by a specialist. Symptoms of CVT trouble include whining, shuddering and delayed engagement."),
+    ("toyota warranty", "Toyota's new-vehicle warranty varies by market. In the US it is 3 years/36,000 miles basic and 5 years/60,000 miles powertrain, with hybrid components covered for 8 years/100,000 miles. In Nigeria, Toyota Nigeria Ltd offers its own warranty terms on new cars sold by its dealers; always read the exact warranty booklet for your car, since used and tokunbo cars generally have no remaining factory warranty."),
+    ("toyota price in nigeria", "I don't know current Toyota prices in Nigeria to the naira, and they change with the exchange rate, import duties and dealer offers, so I won't quote a number I can't verify. The reliable way is Toyota Nigeria's website or a dealer for new cars, and reputable car marketplaces for second-hand and tokunbo prices. Always confirm the total price including duties and registration before paying."),
+    ("toyota corolla price nigeria", "I don't know current Corolla prices in Nigeria, and they move with the naira, import duties and dealer offers, so I won't guess a figure. New Corollas (including the Corolla Altis and Corolla Cross) are sold by Toyota Nigeria Ltd; second-hand and tokunbo prices vary sharply by year, mileage and accident history. For a live quote, check Toyota Nigeria or a reputable Nigerian car marketplace, and always cross-check the VIN before buying."),
+    ("toyota hilux price nigeria", "I don't know current Hilux prices in Nigeria, and they swing with the exchange rate and import duties, so I won't quote a number I can't verify. New Hilux models (single cab, double cab, SR5, Invincible, Rocco trims) are sold by Toyota Nigeria Ltd; tokunbo prices depend heavily on year, engine (2KD, 2GD or 1GD), mileage and condition. Get a live quote from Toyota Nigeria or a reputable dealer, and verify the VIN before paying."),
+    ("best toyota car to buy in nigeria", "The best Toyota to buy in Nigeria depends on your budget and use, but the usual shortlist is: Corolla (best all-rounder, low running costs, holds value), Camry (more comfort, strong resale), Hilux (for work, tough terrain and carrying loads), Prado or Land Cruiser (for family and status, rugged off-road), RAV4 (compact family SUV) and Yaris (cheap city car). For most people the Corolla or Camry is the safest buy. Always check the VIN, do a pre-purchase inspection, and keep service records."),
+    ("toyota engine 2zz", "The 2ZZ-GE is a 1.8L naturally aspirated four-cylinder (1796 cc) with Toyota's VVTL-i variable valve timing and lift, producing about 140 hp in standard tune and up to 190 hp in the Celica GT-S, Lotus Elise and Corolla RunX/RSi. It was famous for its high 8,400 rpm redline. It is fitted to the 7th-generation Celica, Corolla RunX/RSi and Lotus Elise. It is a reliable engine when maintained, but like any high-revving engine it needs clean oil and proper warm-up."),
+]
+
+def _toyota_lookup(low):
+    # Longest matching title wins, so "toyota hilux price nigeria" hits the
+    # price entry, not the general Hilux entry.
+    best = None
+    for title, body in TOYOTA_TOPICS:
+        if title in low and (best is None or len(title) > len(best[0])):
+            best = (title, body)
+    if best:
+        return best[1]
+    # Alias fallback: "tell me about corolla", "what about the camry", etc.
+    _aliases = [
+        ("corolla", "what is toyota corolla"),
+        ("camry", "toyota camry"),
+        ("hilux", "toyota hilux"),
+        ("land cruiser", "toyota land cruiser"),
+        ("prado", "toyota land cruiser prado"),
+        ("rav4", "toyota rav4"),
+        ("yaris", "toyota yaris"),
+        ("supra", "toyota supra"),
+        ("prius", "toyota prius"),
+        ("lexus", "toyota lexus"),
+        ("fortuner", "toyota fortuner"),
+        ("tnga", "toyota tnga"),
+        ("toyota", "what is toyota"),
+    ]
+    for key, title in _aliases:
+        if key in low:
+            for t, body in TOYOTA_TOPICS:
+                if t == title:
+                    return body
+    return None
+
+# --- Live collectors (keyless, no paid APIs) ------------------------------------
 
 # --- Live collectors (keyless, no paid APIs) ------------------------------------
 # Weather: Open-Meteo (free, no key, no signup). Coordinates for Nigerian and
@@ -556,8 +658,8 @@ def _followup_for(low, title):
     return "Want me to go deeper on any part, or give you a practical example with commands?"
 
 _STOP = {"how","do","does","what","is","are","the","to","of","in","on","for","my","me","it","this","that","and","or","can","you","tell","about","explain","teach","please"}
-_ALIAS_EXTRA = {"website":"web security http","site":"web security http","secure":"security","securing":"security","protect":"security","domain":"dns web","wifi":"wireless","virus":"malware"}
-_TYPO_FIXES = {"phising": "phishing", "phishng": "phishing", "malwere": "malware", "maleware": "malware", "ransomwere": "ransomware", "ransomeware": "ransomware", "cyber security": "cybersecurity", "cyber sec": "cybersecurity", "namp": "nmap", "vurnerability": "vulnerability", "wether": "weather", "wheather": "weather", "newz": "news", "puctures": "pictures", "costt": "cost"}
+_ALIAS_EXTRA = {"website":"web","site":"web","secure":"security","securing":"security","protect":"security","domain":"dns web","wifi":"wireless","virus":"malware"}
+_TYPO_FIXES = {"phising": "phishing", "phishng": "phishing", "malwere": "malware", "maleware": "malware", "ransomwere": "ransomware", "ransomeware": "ransomware", "cyber security": "cybersecurity", "cyber sec": "cybersecurity", "namp": "nmap", "vurnerability": "vulnerability", "wether": "weather", "wheather": "weather", "newz": "news", "puctures": "pictures", "costt": "cost", "yuo": "you", "corrola": "corolla", "corrola ": "corolla ", "toytoa": "toyota"}
 def _tokens(s):
     s = (s or "").lower()
     s = re.sub(r"\bti\b", "time", s)
@@ -647,8 +749,10 @@ _SMALL_TALK = {
     "goodbye": "See you later! Take care.",
     "help": "Sure, I can help with CyberLord stuff, cybersecurity basics, or just chat. What are you trying to do?",
     "what can you do": "I can talk through CyberLord and its plans and tools, point you to the Academy tutor for cybersecurity lessons, and explain a lot of everyday topics right here. What do you need?",
-    "who made you": "I am CyberLord's built-in assistant, run by Nozomio Labs. What can I help you with today?",
-    "who created you": "I am CyberLord's built-in assistant, run by Nozomio Labs. What can I help you with today?",
+    "who made you": "I am Oga, the main CyberLord AI, built by Nozomio Labs. I am the voice of the CyberLord dashboard, here to chat, guide, and keep the swagger up. What can I help you with today?",
+    "who created you": "I am Oga, the main CyberLord AI, built by Nozomio Labs. I am the voice of the CyberLord dashboard, here to chat, guide, and keep the swagger up. What can I help you with today?",
+    "who are you": "I am Oga, the main CyberLord AI, built by the Nozomio Labs team for cyberlord.name.ng. I chat on anything, walk you round the CyberLord site, and point your cyber questions to the Academy tutor. What is on your mind today?",
+    "what is your name": "I am Oga, the main CyberLord AI. Call me Oga, that is the name. What can I do for you?",
     "how old are you": "I don't really have an age, I am an AI assistant. What can I help you with?",
     "tell me a joke": "Why did the scarecrow win an award? He was outstanding in his field. Want another one, or shall we get back to something useful?",
     "what is the capital of france": "Paris is the capital of France. Want to know more about it, or something else?",
@@ -670,6 +774,7 @@ _CYBERLORD_SITE_INFO = (
 )
 
 _CYBERLORD_SITE_KEYS = (
+    "what is this site", "what is the site", "what is this website", "what is the website",
     "cyberlord website", "cyberlord site", "what is cyberlord", "what does cyberlord do",
     "about cyberlord", "tell me about cyberlord", "cyberlord features", "cyberlord plans",
     "cyberlord pricing", "cyberlord price", "how much is cyberlord", "cyberlord free",
@@ -725,7 +830,8 @@ _CYBER_MAIN_KEYS = (
     "social engineering", "2fa", "mfa", "two factor", "firewall", "cryptography", "encryption", "tls", "https", "dns",
     "tcp", "udp", "subnet", "port scan", "kali", "linux", "ssh", "password manager", "strong password",
     "bug bounty", "bugbounty", "incident response", "forensics", "threat intelligence", "mitre", "zero trust",
-    "api security", "cloud security", "container", "kubernetes", "wifi security", "wireless", "android", "mobile security",
+    "api security", "cloud security", "container", "kubernetes",    "wifi security", "wireless", "android", "mobile security",
+    "secure my", "secure my network", "security of my", "how to secure", "how do i secure", "securing my",
     "git", "github secrets", "code injection", "how do i hack", "hack into", "break into", "course",
     "csrf", "ssrf", "sqli", "jwt", "oauth", "siem", "edr", "threat hunting", "buffer overflow", "ddof", "denial of service",
     "active directory", "kerberos", "ntlm", "osint", "reconnaissance", "subdomain",
@@ -781,7 +887,7 @@ def answer(query, history=None, persona="main", lesson=None):
     if not q:
         if persona == "tutor":
             return "Ask me anything about cybersecurity or your CyberLord tools and I'll walk you through it."
-        return "Hey! Chat with me about anything, or ask me about the CyberLord website and I'll walk you through it."
+        return "Hey, I am Oga! Chat with me about anything, or ask me about the CyberLord website and I'll walk you through it."
     _TUTOR_GREETINGS = {"hi", "hello", "hey", "good morning", "good evening", "how are you", "what's up",
                         "thanks", "thank you", "bye", "goodbye", "ok", "okay", "yes", "no", "test", "help"}
     if low in _SMALL_TALK and (persona == "main" or low in _TUTOR_GREETINGS):
@@ -800,6 +906,9 @@ def answer(query, history=None, persona="main", lesson=None):
     if persona == "main" and _wants_news(low):
         return _live_news(q)
     if persona == "main":
+        _t = _toyota_lookup(low)
+        if _t:
+            return _t
         _g = _general_lookup(low, q)
         if _g:
             return _g
@@ -888,6 +997,9 @@ def answer(query, history=None, persona="main", lesson=None):
             return _tutor_redirect(q, lesson_title=title)
         # If the question tokens land mostly in the winning topic's title,
         # return that topic (academy topics second priority).
+    # Main persona: topic-matched security questions belong to the tutor.
+    if persona == "main" and any(k in low for k in _CYBER_MAIN_KEYS):
+        return _MAIN_TUTOR_REDIRECT
     matches = _topic_matches(q)
     if matches:
         score, title, body = matches[0]
