@@ -108,3 +108,5 @@
 .voice-bars i:nth-child(3){height:12px;animation-delay:.2s}.voice-bars i:nth-child(4){height:18px;animation-delay:.3s}
 .voice-bars i:nth-child(5){height:10px;animation-delay:.4s}
 @keyframes clWave{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
+
+.cl-ai-images{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 10px}.cl-ai-images a{display:block;width:104px;height:80px;border-radius:9px;overflow:hidden;border:1px solid #2a4055}.cl-ai-images img{width:100%;height:100%;object-fit:cover;display:block}.cl-ai-message a,.tutor-msg a{color:#8affc1;text-decoration:underline}

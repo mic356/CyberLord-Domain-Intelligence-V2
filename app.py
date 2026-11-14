@@ -1819,26 +1819,37 @@ _LIVE_SITE_KEYS = (
     "deep scan", "interaction board", "security centre", "advanced intelligence", "academy", "tutor",
 )
 _LIVE_TRIGGER_KEYS = (
-    "latest", "today", "tonight", "news", "headline", "weather", "forecast", "temperature", "rain", "sunny",
+    "latest", "today", "tonight", "news", "headline", "headlines", "top stories", "weather", "forecast",
+    "temperature", "rain", "sunny", "cloudy", "humidity", "climate",
     "score", "scores", "result", "results", "football", "soccer", "basketball", "tennis", "cricket", "match",
     "price", "prices", "cost", "usd", "naira", "ngn", "bitcoin", "btc", "ethereum", "eth", "stock", "shares",
     "exchange rate", "dollar", "election", "politic", "who won", "current", "now", "live", "update", "updates",
-    "trending", "trend", "happening", "recent", "break", "score line",
+    "trending", "trend", "happening", "recent", "break", "score line", "lagos", "abuja", "nigeria",
 )
 
+_LIVE_IMAGE_KEYS = ("picture", "pictures", "image", "images", "photo", "photos", "pic", "pics", "puctures", "wallpaper", "show me a", "show me an")
+_LIVE_WEATHER_KEYS = ("weather", "forecast", "wether", "wheather", "temperature", "rain", "sunny", "cloudy", "humidity", "climate")
+_LIVE_NEWS_KEYS = ("news", "headline", "headlines", "top stories", "latest news", "what is happening", "newz")
+
 def _main_live_guard(q):
-    """Return ('cyber'|'site'|'live'|None) for main persona."""
+    """Return ('cyber'|'site'|'images'|'weather'|'news'|'live'|None) for main persona."""
     low = (q or "").lower()
     if any(k in low for k in _LIVE_CYBER_KEYS):
         return "cyber"
     if any(k in low for k in _LIVE_SITE_KEYS):
         return "site"
-    if any(k in low for k in _LIVE_TRIGGER_KEYS):
+    if any(k in low for k in _LIVE_IMAGE_KEYS):
+        return "images"
+    if any(k in low for k in _LIVE_WEATHER_KEYS):
+        return "weather"
+    if any(k in low for k in _LIVE_NEWS_KEYS):
+        return "news"
+    if any(k in low for k in _LIVE_TRIGGER_KEYS) or _TIME_QUESTION_RE.search(low):
         return "live"
     return None
 
 
-_TIME_QUESTION_RE = re.compile(r"(what[\'\s]+(?:time|day|date)|whats[\'\s]+(?:the[\'\s]+)?(?:time|day|date)|current[\'\s]+(?:time|date|day)|time[\'\s]+is[\'\s]+it|date[\'\s]+is[\'\s]+it|day[\'\s]+is[\'\s]+it|what[\'\s]+is[\'\s]+(?:the[\'\s]+)?current)", re.I)
+_TIME_QUESTION_RE = re.compile(r"(what[\'\s]+(?:time|day|date)|whats[\'\s]+(?:the[\'\s]+)?(?:time|day|date)|current[\'\s]+(?:time|date|day)|time[\'\s]+is[\'\s]+it|date[\'\s]+is[\'\s]+it|day[\'\s]+is[\'\s]+it|what[\'\s]+is[\'\s]+(?:the[\'\s]+)?current|whats[\'\s]+the[\'\s]+time|what[\'\s]+is[\'\s]+the[\'\s]+time|what[\'\s]+time[\'\s]+is[\'\s]+it|tell[\'\s]+me[\'\s]+the[\'\s]+time|exact[\'\s]+time|todays[\'\s]+date|today[\'\s]+s[\'\s]+date)", re.I)
 
 def _current_datetime_line():
     now = datetime.now(_LAGOS_TZ)
@@ -1874,7 +1885,19 @@ def ai_assistant():
     if persona == "main":
         _low_q = (fallback_latest or "").lower()
         if _TIME_QUESTION_RE.search(_low_q):
-            return jsonify(reply=_current_datetime_line() + ". It is the current time in Lagos, Nigeria.", mode="datetime-direct", persona=persona, live_sources=["Server clock (Africa/Lagos)"])
+            _now = datetime.now(_LAGOS_TZ)
+            _exact = _now.strftime("Today is %A, %B %d, %Y, and the exact time is %-I:%M %p").lstrip("0")
+            return jsonify(reply=_exact + " (Lagos time). It is the current time in Lagos, Nigeria.", mode="datetime-direct", persona=persona, live_sources=["Server clock (Africa/Lagos)"])
+        if _live_guard == "images":
+            from cyberlord_ai import fetch_images as _fi
+            _imgs = _fi(fallback_latest, limit=4)
+            _txt = "Here are some pictures I found for you." if _imgs else "I searched Wikimedia Commons and could not find a free picture for that just now. Try a different subject."
+            return jsonify(reply=_txt, mode="images", persona=persona, images=_imgs, live_sources=["Wikimedia Commons"] if _imgs else [])
+        if _live_guard in ("weather", "news"):
+            from cyberlord_ai import fetch_live_fact as _flf
+            _kind, _fact = _flf(fallback_latest)
+            if _kind and _fact:
+                return jsonify(reply=_fact, mode=_kind + "-direct", persona=persona, live_sources=["Open-Meteo" if _kind == "weather" else "Google News RSS"])
     # Tutor Pro gating: free tutor is limited, Tutor Pro is unlimited.
     # The main (dashboard) assistant is never limited by this.
     if persona == "tutor":
@@ -2003,6 +2026,7 @@ def ai_assistant():
                     "guessing or inventing. The security guardrails below apply only to security-related requests; "
                     "for general chat, just answer normally. "
                     "For current real-world info (news, weather, prices, sports scores) you may use Google Search grounding when enabled. " + _current_datetime_line() + ". "
+                    "If the user asks for pictures/images/photos, tell them pictures are shown automatically in the chat below your reply; you cannot embed image URLs yourself. "
                 )
             _sys_parts = [{"text": (
                     system_line +
@@ -2028,6 +2052,8 @@ def ai_assistant():
             # include google_search and fall back gracefully if the API rejects it.
             if _live_guard == "live":
                 payload["tools"] = [{"google_search": {}}]
+            elif _live_guard in ("weather", "news"):
+                payload["tools"] = [{"googleSearch": {}}]
             # Gemini can take longer than a short web-request timeout and may
             # return temporary 429/5xx capacity errors. Retry only transient
             # failures a limited number of times with exponential backoff.
@@ -2065,8 +2091,17 @@ def ai_assistant():
             reply = "\n".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
             if not reply:
                 raise ValueError("Gemini returned an empty response.")
-            return jsonify(reply=reply, mode="gemini", model=model, persona=persona,
-                           live_sources=(["Google Search grounding"] if _live_guard == "live" else "Gemini response; verify important security findings against primary sources"))
+            _images = []
+            try:
+                _meta = candidates[0].get("groundingMetadata") or {}
+                for _ch in ((_meta.get("groundingChunks") or []) + (_meta.get("webImages") or [])):
+                    _u = (_ch.get("web") or {}).get("uri") or _ch.get("uri") or ""
+                    if _u.startswith("http"):
+                        _images.append({"url": _u, "thumb": _u, "title": (_ch.get("web") or {}).get("title", "")})
+            except Exception:
+                pass
+            _ls = ["Google Search grounding"] if _live_guard in ("live", "weather", "news") else "Gemini response; verify important security findings against primary sources"
+            return jsonify(reply=reply, mode="gemini", model=model, persona=persona, live_sources=_ls, images=_images[:4])
         except Exception as exc:
             app.logger.warning("Gemini API unavailable; trying next provider: %s", str(exc)[:240])
 
@@ -2095,6 +2130,7 @@ def ai_assistant():
                 "like a helpful friend. If you do not actually know, say so plainly in one line instead of "
                 "guessing or inventing. The security guardrails below apply only to security-related requests; "
                 "for general chat, just answer normally. " + _current_datetime_line() + ". "
+                "If the user asks for pictures, say pictures will appear below your reply in the chat. "
             )
             if lesson_questions_block and persona == "tutor":
                 groq_system += chr(10) + "Current lesson exercise and quiz questions (with correct answers and short explanations):" + chr(10) + lesson_questions_block
@@ -2140,10 +2176,24 @@ def ai_assistant():
             fallback_history.append({"role": "assistant" if item["role"] == "model" else "user",
                                      "content": item["parts"][0]["text"]})
         reply = answer(fallback_latest, fallback_history, persona=persona, lesson=lesson)
+        _fb_images = []
+        _fb_sources = "NIST NVD and CISA KEV when reachable"
+        if persona == "main":
+            try:
+                from cyberlord_ai import fetch_images as _fi2, fetch_live_fact as _flf2
+                if _live_guard == "images":
+                    _fb_images = _fi2(fallback_latest, limit=4)
+                    _fb_sources = ["Wikimedia Commons"] if _fb_images else []
+                elif _live_guard in ("weather", "news"):
+                    _k, _f = _flf2(fallback_latest)
+                    if _k:
+                        _fb_sources = ["Open-Meteo" if _k == "weather" else "Google News RSS"]
+            except Exception:
+                pass
         return jsonify(reply=reply, mode="built-in-fallback", persona=persona,
                        tutor_pro=tutor_pro_active(current_user) if persona == "tutor" else None,
                        tutor_remaining=tutor_remaining(current_user) if persona == "tutor" else None,
-                       live_sources="NIST NVD and CISA KEV when reachable")
+                       live_sources=_fb_sources, images=_fb_images)
     except Exception:
         app.logger.exception("CyberLord assistant error")
         return jsonify(error="CyberLord AI is temporarily unavailable. Please try again shortly."), 500

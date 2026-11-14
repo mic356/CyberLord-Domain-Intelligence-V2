@@ -1,6 +1,11 @@
 """Free CyberLord knowledge assistant with curated cybersecurity guidance and public vulnerability lookups.
 No paid LLM or API key is required. External lookups use public NVD/CISA feeds when reachable.
+ai-training-2 adds: live weather (Open-Meteo, keyless), headline news (Google News RSS,
+keyless), image search (Wikimedia/Wikipedia, keyless), a much bigger general-knowledge
+built-in brain, typo tolerance, and live-aware routing so the main dashboard persona
+answers what it can and only falls back when nothing can answer.
 """
+import json as _json
 import re
 import requests
 from datetime import datetime, timezone, timedelta
@@ -107,6 +112,407 @@ TOPICS = [
 ("what is a digital certificate", "A DIGITAL CERTIFICATE is a signed statement that binds a name or key to an owner, used for HTTPS server identity, code signing, and email signing. It has an expiry date and a chain of trust. An expired or mismatched certificate is a warning to investigate, not something to bypass on systems you care about."),
 ]
 
+# --- General knowledge brain (main persona) -------------------------------------
+# Stable facts, everyday how-tos and small talk. Main persona only; the tutor
+# never uses this (it keeps its clever cyber redirect). Keep answers TRUE and
+# in-house: anything time-sensitive belongs to the live collectors below or to
+# Gemini grounding in app.py, never to a frozen number here.
+GENERAL_TOPICS = [
+    # capitals (exact-match-first style titles; matcher needs title overlap)
+    ("capital of france", "Paris is the capital of France. France is in western Europe, and Paris sits on the River Seine in the north of the country. The Eiffel Tower and the Louvre are its landmarks."),
+    ("capital of the usa", "Washington, D.C. is the capital of the United States. It is a federal district, not part of any state, and is home to the White House and the Capitol."),
+    ("capital of japan", "Tokyo is the capital of Japan. It is one of the largest metropolitan areas in the world and is known for places like Shibuya, Asakusa's Senso-ji temple and the Skytree."),
+    ("capital of nigeria", "Abuja is the capital of Nigeria. It is a planned federal capital territory in the centre of the country, while Lagos remains the largest city and economic hub."),
+    ("capital of brazil", "Brasilia is the capital of Brazil. Rio de Janeiro is the better-known former capital, but the seat of government moved to Brasilia in 1960."),
+    ("capital of canada", "Ottawa is the capital of Canada. Toronto is the country's largest city, but Ottawa holds the federal government."),
+    ("capital of china", "Beijing is the capital of China. It is home to the Forbidden City, Tiananmen Square and the Great Wall (which begins just outside the city)."),
+    ("capital of india", "New Delhi is the capital of India. It sits within the National Capital Territory of Delhi, in the north of the country."),
+    ("capital of egypt", "Cairo is the capital of Egypt. The pyramids of Giza sit on its outskirts, and the River Nile runs through the city."),
+    ("capital of kenya", "Nairobi is the capital of Kenya. It is the only capital in the world with a national park inside its city limits."),
+    ("capital of ghana", "Accra is the capital of Ghana. It is the country's largest city and its main port on the Gulf of Guinea."),
+    ("capital of south africa", "South Africa has three capitals: Pretoria is the administrative capital, Cape Town the legislative, and Bloemfontein the judicial. The seat of government most people mean is Pretoria (Tshwane)."),
+    ("capital of the united kingdom", "London is the capital of the United Kingdom. It sits on the River Thames in the south-east of England."),
+    ("capital of spain", "Madrid is the capital of Spain. It sits in the middle of the Iberian Peninsula and hosts the Prado Museum."),
+    # science
+    ("who wrote hamlet", "William Shakespeare wrote Hamlet. It is one of his tragedies, written around 1599-1600, about Prince Hamlet of Denmark."),
+    ("who painted the mona lisa", "Leonardo da Vinci painted the Mona Lisa. It is held by the Louvre in Paris and is probably the most famous painting in the world."),
+    ("what is photosynthesis", "Photosynthesis is how green plants make food: they use sunlight, water and carbon dioxide to produce sugars for energy, releasing oxygen as a by-product. It is why nearly all life on Earth has oxygen to breathe."),
+    ("how many continents are there", "There are seven continents: Africa, Antarctica, Asia, Europe, North America, Australia (Oceania) and South America. Some lists combine Europe and Asia as Eurasia, which is why you will also see counts of six."),
+    ("what is the largest planet", "Jupiter is the largest planet in our solar system. It is a gas giant more than eleven times Earth's diameter and has more than 90 known moons."),
+    ("what is the boiling point of water", "Water boils at 100 degrees Celsius (212 degrees Fahrenheit) at standard sea-level pressure. At higher altitude, where pressure is lower, it boils at a lower temperature."),
+    ("how many days are in a leap year", "A leap year has 366 days. The extra day is added to February, making it 29 days, and it happens in years divisible by 4, with the century rules (divisible by 400 stays a leap year)."),
+    ("what is the speed of light", "The speed of light in a vacuum is 299,792,458 metres per second, about 300,000 kilometres per second. Nothing with mass can reach it."),
+    ("what does dna stand for", "DNA stands for deoxyribonucleic acid. It is the molecule that carries genetic instructions in living things, structured as a double helix of two strands."),
+    ("what is the powerhouse of the cell", "The mitochondria are called the powerhouse of the cell because they produce most of the cell's ATP, its usable energy currency, through cellular respiration."),
+    ("who invented the telephone", "Alexander Graham Bell received the key patent for the telephone in 1876, though several inventors worked on speaking devices before him. The rivalry over the invention is one of the famous priority disputes in technology."),
+    ("what gas do plants absorb", "Plants absorb carbon dioxide (CO2) from the air for photosynthesis. They release oxygen, which is why forests are sometimes called the lungs of the planet."),
+    ("what is the longest river in the world", "The Nile is generally considered the longest river in the world at about 6,650 kilometres. The Amazon carries more water, which is why some measurements argue for it."),
+    ("who discovered penicillin", "Alexander Fleming discovered penicillin in 1928 when he noticed mould killing Staphylococcus bacteria on a plate. Howard Florey, Ernst Chain and their team turned it into a usable medicine a decade later."),
+    ("what is the largest ocean on earth", "The Pacific Ocean is the largest ocean on Earth. It covers more area than all land on the planet put together."),
+    ("how many legs does a spider have", "Spiders have eight legs. That is one of the features that makes them arachnids, not insects (insects have six)."),
+    ("what is the freezing point of water in celsius", "Water freezes at 0 degrees Celsius at standard pressure, which is 32 degrees Fahrenheit. Salts and impurities lower the freezing point."),
+    ("what is the chemical symbol for gold", "The chemical symbol for gold is Au, from the Latin word 'aurum'. Its atomic number is 79."),
+    ("how many states are in nigeria", "Nigeria has 36 states plus the Federal Capital Territory of Abuja, making 37 administrative units in total."),
+    ("what is the tallest mountain in africa", "Mount Kilimanjaro is the tallest mountain in Africa at 5,895 metres. It is a dormant volcano in Tanzania, famous for its snow-capped peak near the equator."),
+    ("what is the square root of 144", "The square root of 144 is 12, because 12 times 12 equals 144."),
+    ("how many minutes are in 3 hours", "There are 180 minutes in 3 hours: 60 minutes per hour multiplied by 3."),
+    ("what is 15 percent of 200", "15 percent of 200 is 30. Work it out as 0.15 times 200."),
+    ("how many sides does a hexagon have", "A hexagon has six sides. A regular hexagon has all six sides equal and all angles 120 degrees."),
+    ("what year did man land on the moon", "Astronauts first landed on the Moon in 1969, on NASA's Apollo 11 mission. Neil Armstrong and Buzz Aldrin walked on the surface while Michael Collins stayed in orbit."),
+    ("who wrote the nigerian national anthem", "The current Nigerian national anthem, 'Nigeria, We Hail Thee', has words by Lillian Jean Williams and music by Frances Bertha Emery, both of whom were British. Nigeria also adopted 'Arise, O Compatriots' as its anthem from 1978 to 2024, before returning to 'Nigeria, We Hail Thee'."),
+    ("what language is spoken in brazil", "Portuguese is the official language of Brazil. Brazil is the world's largest Portuguese-speaking country, a legacy of Portuguese colonisation."),
+    ("what is the main ingredient in guacamole", "Avocado is the main ingredient in guacamole, mashed with lime juice, onion, coriander (cilantro), chilli and salt."),
+    ("what is the most spoken language in the world", "English is the most widely spoken language overall when you count second-language speakers, with over a billion speakers. Mandarin Chinese has the most native speakers. Spanish has the most speakers after English when counting native speakers only."),
+    ("what is the currency of japan", "The currency of Japan is the yen (JPY). Coins and notes are denominated in yen, with one yen not divided into smaller circulating units."),
+    ("who was the first president of nigeria", "Nnamdi Azikiwe became Nigeria's first president on 1 October 1963, when Nigeria became a republic. Before that, under the 1960 independence constitution, the head of state was the British monarch represented by a governor-general."),
+    ("how tall is the eiffel tower", "The Eiffel Tower in Paris stands 330 metres tall including its antenna, about 300 metres without it. It was built in 1889 for the World's Fair."),
+    ("who is the richest man in the world", "The identity of the world's richest person changes with markets, and it is usually someone like Elon Musk, Jeff Bezos or Larry Ellison depending on the week. Check the latest headlines for today's name rather than trusting any frozen list."),
+    ("who is the president of nigeria", "Bola Ahmed Tinubu has been President of Nigeria since 29 May 2023. For anything more current than that, ask me for the latest news and I will pull it live."),
+]
+
+# Everyday how-to / advice.
+GENERAL_HOWTO = [
+    ("how do i bake a cake", "HOW TO BAKE A CAKE: you need flour, sugar, butter, eggs, baking powder, milk and vanilla. 1) Heat the oven to 180C (350F) and grease or line a tin. 2) Whisk 225g butter with 225g sugar until pale. 3) Add 4 eggs one at a time. 4) Fold in 225g flour mixed with 2 tsp baking powder, alternating with a splash of milk (about 4 tbsp). 5) Add 1 tsp vanilla. 6) Bake 25-30 minutes; test with a skewer, which should come out clean. Cool 10 minutes in the tin before turning out."),
+    ("how do i boil yam", "HOW TO BOIL YAM: peel the yam and cut it into chunks (1-2 inches). Rinse them, then cover with water in a pot and add a pinch of salt. Bring to the boil, then turn down and simmer 15-20 minutes until a fork slides through easily. Drain and serve. Yam is done when it is soft but not falling apart, and it pairs well with egg sauce, stew or palm oil."),
+    ("how to tie a tie", "HOW TO TIE A TIE (simple Windsor): 1) Drape the tie around your neck, wide end on the right about 30cm lower than the thin end. 2) Cross the wide end over the thin end. 3) Bring the wide end up through the neck loop. 4) Bring it down through the knot you just made. 5) Pull the wide end up through the loop you just created. 6) Slide it down into the knot and tighten. 7) Slide the knot up and pull the wide end down until the tip sits at your belt line."),
+    ("how can i improve my memory", "IMPROVING MEMORY: 1) Sleep 7-9 hours, memory consolidates during deep sleep. 2) Space your revision: short sessions spread over days beat one long cram. 3) Test yourself instead of re-reading. 4) Teach what you learned to someone else. 5) Move your body, exercise grows the brain. 6) Chunk information into groups of about 4 items. 7) Reduce multitasking; attention is the doorway to memory."),
+    ("how do i learn python", "LEARNING PYTHON (beginner path): 1) Install Python from python.org and get comfortable with variables, types and printing. 2) Learn lists, dicts and loops. 3) Write small functions and handle errors with try/except. 4) Play with the standard library: os, json, datetime, requests. 5) Build tiny projects: a number game, a file renamer, a weather checker. 6) Read one chapter of 'Automate the Boring Stuff with Python' (free online) and harden your habit with daily 20-minute practice."),
+    ("how to make money online", "MAKING MONEY ONLINE (honest starter routes): 1) Freelance skills people already pay for: writing, design, video editing, spreadsheets, virtual assistance. 2) Tutoring or teaching a subject you know. 3) Selling digital products: templates, study guides, printables. 4) Content that solves a real problem, built slowly over months. 5) Your own service routed through CyberLord-style tools if you are into security work. Rule of thumb: charge for a skill, not for watching videos. Anything promising guaranteed passive income with no work is a scam."),
+    ("how do i stay productive", "STAYING PRODUCTIVE: 1) Pick ONE most important task for the day and do it first. 2) Work in 25-minute sprints with 5-minute breaks (Pomodoro). 3) Put your phone in another room during sprints. 4) Write tomorrow's top task on paper tonight. 5) Shrink tasks until they feel stupidly small, then start. 6) Review weekly what actually moved the needle and drop the rest. Productivity is mostly saying no to the second-most-important thing."),
+    ("how to write a good cv", "WRITING A GOOD CV: 1) One page if you are early-career. 2) Contact details, a two-line summary, experience, education, skills. 3) Start every bullet with an action verb and add numbers ('saved the team 5 hours a week'). 4) Match the keywords in the job post. 5) Tailor the top half to the job, not the whole CV. 6) Get someone to read it once for typos before sending."),
+    ("how do i make jollof rice", "HOW TO MAKE JOLLOF RICE (Nigerian style): blend tomatoes, red pepper, onions and garlic; fry with palm oil and tomato paste until the paste sweetens and darkens. Add stock, thyme, curry powder, bay leaves and seasoning cubes. Add washed long-grain rice (about 1 cup per 1.5 cups liquid) and stir, cover and cook on low 35-45 minutes, stirring occasionally, until the rice is tender and the base carries that smoky 'party' flavour. Rest 10 minutes off the heat before serving."),
+    ("how to save money each month", "SAVING MONEY EACH MONTH: 1) Find out what you actually spend for one month. 2) Pay yourself first: move a fixed amount to savings the day money lands. 3) List needs vs wants honestly. 4) Kill one recurring subscription this week. 5) Cook 3 extra meals a week instead of ordering. 6) Keep a 3-month emergency fund as the first goal. Small automatic transfers beat big intentions."),
+    ("how do i start a business in nigeria", "STARTING A BUSINESS IN NIGERIA: 1) Pick a problem people already pay to solve. 2) Talk to 10 potential customers before spending anything. 3) Start with the smallest version you can sell (a service, not a shop). 4) Register with CAC when you have paying customers. 5) Keep business money in a separate account from day one. 6) Sort your NI and tax basics early. 7) Grow from profit, not from borrowed money, for as long as you can."),
+    ("how to learn the piano", "LEARNING PIANO: 1) Get an 88-key digital piano or borrow one; play every day, even 10 minutes. 2) Learn the note names and C major scale first. 3) Practise 5-finger exercises slowly. 4) Use a good method book or app that makes you read notes, not just follow finger numbers. 5) Learn one simple song per week. 6) Play with both hands as soon as you can, and keep a practice log."),
+    ("how do i improve my english", "IMPROVING ENGLISH: 1) Read 10 minutes daily, even phone news counts. 2) Speak out loud daily, narrate what you are doing. 3) Write one short paragraph a day. 4) Learn 5 new words a week and use them the same day. 5) Watch shows with English subtitles, then without. 6) Find one conversation partner and talk weekly. Consistency of 20 honest minutes beats weekend marathons."),
+    ("how to cook fried rice", "HOW TO COOK FRIED RICE: use day-old cooked rice (fresh rice goes mushy). Heat oil in a very hot wok or pan, scramble 2 eggs and set aside. Add diced carrots, peas, onions and garlic, stir-fry 2-3 minutes. Add the rice, break clumps, and fry 4-5 minutes until grains are dry and golden at the edges. Season with soy sauce (2-3 tbsp) and a pinch of sugar. Fold the eggs back in. Serve immediately while hot."),
+    ("how do i get a good night sleep", "SLEEPING BETTER: 1) Same wake time every day, including weekends. 2) No screens 30 minutes before bed, or at least dim them. 3) Cool, dark, quiet room. 4) No caffeine after mid-afternoon. 5) Get daylight in the morning. 6) If you cannot sleep in 20 minutes, get up and read something boring until drowsy. 7) Aim for 7-9 hours; an alarm decides your wake time, habits decide how fast you fall asleep."),
+    ("how to take better photos with my phone", "BETTER PHONE PHOTOS: 1) Get closer; fill the frame with your subject. 2) Light is everything: face the light, avoid harsh midday sun. 3) Tap the screen to focus and tap-hold to lock exposure. 4) Clean the lens, fingerprints ruin everything. 5) Use the grid and put horizons on the lines. 6) Shoot in bursts for action. 7) Edit lightly: a little contrast and warmth goes far."),
+    ("how do i start exercising", "STARTING TO EXERCISE: 1) Pick something you will actually do 3 times a week: walking, cycling, bodyweight circuits, swimming. 2) Start at 15-20 minutes; consistency beats intensity. 3) Add time before you add difficulty. 4) Schedule it like an appointment. 5) Track your sessions; streaks motivate. 6) Eat and sleep like it matters, because it does. Rest days are part of the plan, not a failure."),
+    ("how to plan a birthday party", "PLANNING A BIRTHDAY PARTY: 1) Set the budget and guest list first; everything else follows. 2) Pick a date and venue, then send invitations at least 3 weeks ahead. 3) Plan the food and drink around the guest count (overshoot by about 25 percent). 4) Order the cake early. 5) Make one playlist and one plan for games or activities. 6) Assign two helpers for setup and cleanup. 7) Keep a small 'day of' checklist so you are a host, not staff."),
+    ("how do i fix a flat tire", "CHANGING A FLAT TIRE: 1) Park on flat ground, handbrake on, hazards on. 2) Loosen the lug nuts half a turn while the wheel is on the ground. 3) Jack the car up at the marked jack point until the wheel hangs free. 4) Remove the nuts fully (keep them in a bowl, not the dirt). 5) Pull the wheel off. 6) Fit the spare, finger-tighten the nuts in a star pattern, lower the car, then tighten fully in the same star pattern. Check pressure soon after."),
+    ("how to change a car tire", "CHANGING A CAR TIRE: same steps as a flat tire. Safety first: flat ground, handbrake on, chocks if you have them, and never put any part of your body under a jacked-up car. Loosen the nuts on the ground, jack at the marked point, remove the wheel, fit the spare or new tire, tighten in a star pattern, and recheck the torque after a few kilometres."),
+    ("how do i learn to swim", "LEARNING TO SWIM: 1) Learn to float and breathe in shallow water first. 2) Practise blowing bubbles and holding your breath. 3) Learn the kick on your back, then the front. 4) Add the arm stroke (freestyle) once the kick is steady. 5) Keep sessions short and frequent, 20 minutes beats one long weekly one. 6) Swim where a lifeguard is present until you are confident."),
+    ("how to make homemade pizza", "HOMEMADE PIZZA (simple no-yeast-flatbread version): 1) Mix 250g flour, 1 tsp baking powder, 1 tsp salt and 150ml warm water into a dough; knead 3 minutes. 2) Rest while the oven heats to its hottest (240C+). 3) Roll thin on a floured surface. 4) Spread tomato sauce, add mozzarella and toppings. 5) Bake on the hottest rack 8-10 minutes until the crust is golden and the cheese bubbles. For real yeast dough, give it an hour to rise and use a preheated baking stone or cast-iron pan."),
+    ("how do i budget my salary", "BUDGETING A SALARY (50/30/20 starter): 1) Write down your take-home pay. 2) Give 50 percent to needs (rent, food, transport, bills). 3) 30 percent to wants (eating out, data, streaming). 4) 20 percent to savings and debt payoff. 5) Move savings on payday, before spending. 6) Review weekly for 2 minutes. If needs exceed 50 percent, cut wants to zero and attack the biggest need line first. Adjust the split to your city; the habit matters more than the exact numbers."),
+    ("how to grow a small business", "GROWING A SMALL BUSINESS: 1) Keep existing customers happy before hunting new ones; referrals are the cheapest marketing. 2) Ask every customer one question: why did you buy from me? 3) Raise prices on your best seller, even slightly, and watch what happens. 4) Document what works so it can be repeated. 5) Track numbers weekly: sales, margin, repeat buyers. 6) Cut the product or service line nobody asks about. Growth is usually one thing done repeatedly, not ten new things."),
+    ("how do i boil plantain", "HOW TO BOIL PLANTAIN: choose firm green plantain for boiling (ripe yellow ones go sweet and soft). Peel with a knife (green plantain is stubborn; score the skin lengthways and pry). Cut into chunks, rinse, and cover with salted water. Boil 15-20 minutes until tender but not mushy; a knife should slide in with slight resistance. Drain and serve with stew, egg sauce or peppersoup."),
+    ("how do i start a youtube channel", "STARTING A YOUTUBE CHANNEL: 1) Pick one topic you can make 50 videos about. 2) Film with your phone; sound matters more than camera quality: film near the phone mic, kill the echo. 3) Make a clear promise in the first 15 seconds. 4) Post on a schedule you can keep for months. 5) Put the searchable words in the title, not clever jokes. 6) Read your analytics after 10 videos: what got clicked, what got watched. 7) The first 30 videos are practice, not failure."),
+    ("how do i lose weight", "LOSING WEIGHT SUSTAINABLY: 1) Eat in a small calorie deficit, about 300-500 kcal below maintenance; crash diets bounce back. 2) Protein at every meal keeps muscle and hunger down. 3) Walk 8,000 steps a day; it burns more over a week than any workout. 4) Lift weights or do resistance training twice a week. 5) Sleep 7-9 hours; poor sleep spikes hunger hormones. 6) Track for 2 weeks before judging progress; the scale lies daily but not monthly."),
+    ("how to learn a new language", "LEARNING A NEW LANGUAGE: 1) Learn the 100 most common words first. 2) Do 15 honest minutes daily instead of weekend crams. 3) Speak from week one, even badly; grammar comes later. 4) Listen to slow native content with transcripts. 5) Keep a notebook of phrases you actually use. 6) Change your phone language. 7) Find a conversation partner as soon as you can say ten sentences."),
+]
+
+# Small talk and identity bits beyond _SMALL_TALK.
+GENERAL_CHAT = [
+    ("hello there", "Hello there! Good to see you. What is on your mind today?"),
+    ("thank you so much", "You are very welcome. Anything else I can help with?"),
+    ("are you a robot", "Sort of, I am an AI assistant built into CyberLord, made by Nozomio Labs. I can chat, explain things, check the weather and headlines, and even find pictures. What do you need?"),
+    ("what is your name", "I am CyberLord AI, the assistant inside CyberLord, built by Nozomio Labs. What can I do for you?"),
+    ("tell me about yourself", "I am CyberLord AI, the assistant inside CyberLord, built by Nozomio Labs. Ask me anything: general questions, how-tos, the weather, today's headlines, a picture, or about the CyberLord site itself. Cybersecurity lessons belong to the Academy tutor, and I will point you there for those."),
+    ("good night", "Good night, sleep well. I will be here whenever you need me."),
+    ("see you", "See you later. Take care."),
+    ("what's your favourite colour", "I do not have a favourite, colours are not really my thing. But I can tell you that blue is the most popular colour in the world. Anything you want to know?"),
+    ("do you have a boyfriend", "Ha, no. I am an AI assistant, no boyfriend required. What can I help you with?"),
+    ("are you human", "Nope, I am an AI assistant built into CyberLord by Nozomio Labs. Ask me anything."),
+    ("what can i call you", "Call me CyberLord AI, that is what I am. What would you like to know?"),
+    ("how many languages do you speak", "I can handle English and some of the everyday bits of other languages, but English is my home ground. Try me on something."),
+]
+
+
+# --- Live collectors (keyless, no paid APIs) ------------------------------------
+# Weather: Open-Meteo (free, no key, no signup). Coordinates for Nigerian and
+# common world cities; anything else goes through the Open-Meteo geocoding API.
+# News: Google News RSS search feed (keyless) parsed with xml.etree.
+# Images: Wikimedia/Wikipedia REST+API (keyless) with real thumbnail URLs.
+# Every collector degrades to an honest "couldn't reach it" line, never a guess.
+
+_LIVE_UA = {"User-Agent": "CyberLord-Assistant/1.0 (https://cyberlord.name.ng)"}
+
+_CITY_COORDS = {
+    "lagos": ("Lagos, Nigeria", 6.5244, 3.3792, "Africa/Lagos"),
+    "abuja": ("Abuja, Nigeria", 9.0579, 7.4898, "Africa/Lagos"),
+    "port harcourt": ("Port Harcourt, Nigeria", 4.8156, 7.0498, "Africa/Lagos"),
+    "kano": ("Kano, Nigeria", 12.0022, 8.5919, "Africa/Lagos"),
+    "ibadan": ("Ibadan, Nigeria", 7.3775, 3.9470, "Africa/Lagos"),
+    "calabar": ("Calabar, Nigeria", 4.9573, 8.3220, "Africa/Lagos"),
+    "jos": ("Jos, Nigeria", 9.9257, 8.8921, "Africa/Lagos"),
+    "maiduguri": ("Maiduguri, Nigeria", 11.8304, 13.1506, "Africa/Lagos"),
+    "enugu": ("Enugu, Nigeria", 6.5244, 7.5107, "Africa/Lagos"),
+    "benin city": ("Benin City, Nigeria", 6.3350, 5.6089, "Africa/Lagos"),
+    "nigeria": ("Lagos, Nigeria", 6.5244, 3.3792, "Africa/Lagos"),
+    "london": ("London, UK", 51.5072, -0.1276, "Europe/London"),
+    "new york": ("New York City, USA", 40.7128, -74.0060, "America/New_York"),
+    "nyc": ("New York City, USA", 40.7128, -74.0060, "America/New_York"),
+    "los angeles": ("Los Angeles, USA", 34.0522, -118.2437, "America/Los_Angeles"),
+    "accra": ("Accra, Ghana", 5.6037, -0.1870, "Africa/Accra"),
+    "nairobi": ("Nairobi, Kenya", -1.2921, 36.8219, "Africa/Nairobi"),
+    "johannesburg": ("Johannesburg, South Africa", -26.2041, 28.0473, "Africa/Johannesburg"),
+    "cairo": ("Cairo, Egypt", 30.0444, 31.2357, "Africa/Cairo"),
+    "dubai": ("Dubai, UAE", 25.2048, 55.2708, "Asia/Dubai"),
+    "paris": ("Paris, France", 48.8566, 2.3522, "Europe/Paris"),
+    "toronto": ("Toronto, Canada", 43.6532, -79.3832, "America/Toronto"),
+}
+
+_WX_TEXT = {
+    0: "clear skies", 1: "mostly clear", 2: "partly cloudy", 3: "overcast",
+    45: "foggy", 48: "foggy", 51: "light drizzle", 53: "drizzle", 55: "heavy drizzle",
+    56: "freezing drizzle", 57: "freezing drizzle", 61: "light rain", 63: "rain",
+    65: "heavy rain", 66: "freezing rain", 67: "freezing rain", 71: "light snow",
+    73: "snow", 75: "heavy snow", 77: "snow grains", 80: "light rain showers",
+    81: "rain showers", 82: "violent rain showers", 85: "snow showers", 86: "snow showers",
+    95: "thunderstorms", 96: "thunderstorms with hail", 99: "thunderstorms with hail",
+}
+
+def _wx_text(code):
+    return _WX_TEXT.get(code, "changeable weather")
+
+_CITY_PATTERNS = [
+    re.compile(r"\bin\s+([a-z' -]{2,30}?)(?:\s+today|\s+now|\s+tomorrow|\s+please|\s*\?|\s*$)", re.I),
+    re.compile(r"\bweather\s+(?:in|for)\s+([a-z' -]{2,30}?)(?:\s+today|\s+now|\s+tomorrow|\s+please|\s*\?|\s*$)", re.I),
+    re.compile(r"\bhow\s+(?:hot|cold)\s+is\s+it\s+in\s+([a-z' -]{2,30}?)(?:\s+today|\s+now|\s*\?|\s*$)", re.I),
+    re.compile(r"\b(?:rain(?:ing)?|sunny|temperature)\s+(?:in|for)\s+([a-z' -]{2,30}?)(?:\s+today|\s+now|\s*\?|\s*$)", re.I),
+]
+
+def _extract_city(low):
+    for pat in _CITY_PATTERNS:
+        m = pat.search(low)
+        if m:
+            city = m.group(1).strip(" .,?!")
+            if city:
+                return city
+    return None
+
+def _geocode(city):
+    """Return (label, lat, lon, timezone) for a city name, or None."""
+    # Direct hit on the curated table first (fast, no network).
+    for key, val in _CITY_COORDS.items():
+        if key in city:
+            return val
+    try:
+        r = requests.get("https://geocoding-api.open-meteo.com/v1/search",
+                         params={"name": city, "count": 1, "language": "en", "format": "json"},
+                         timeout=8, headers=_LIVE_UA)
+        r.raise_for_status()
+        res = (r.json().get("results") or [None])[0]
+        if not res:
+            return None
+        zone = res.get("timezone") or "UTC"
+        label = ", ".join(x for x in (res.get("name", city), res.get("admin1"), res.get("country")) if x)
+        return (label, float(res["latitude"]), float(res["longitude"]), zone)
+    except Exception:
+        return None
+
+def _live_weather(query):
+    low = (query or "").lower()
+    city = _extract_city(low) or "lagos"
+    found = _geocode(city)
+    if not found:
+        return ("I could not find a place called '" + city + "' in my weather lookup just now. "
+                "Try a city name like Lagos, Abuja, London or New York.")
+    label, lat, lon, zone = found
+    tomorrow = "tomorrow" in low
+    try:
+        r = requests.get("https://api.open-meteo.com/v1/forecast",
+                         params={"latitude": lat, "longitude": lon,
+                                 "current_weather": "true",
+                                 "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode",
+                                 "timezone": zone, "forecast_days": 3},
+                         timeout=10, headers=_LIVE_UA)
+        r.raise_for_status()
+        j = r.json()
+        cur = j.get("current_weather") or {}
+        daily = j.get("daily") or {}
+        times = daily.get("time") or []
+        maxs = daily.get("temperature_2m_max") or []
+        mins = daily.get("temperature_2m_min") or []
+        probs = daily.get("precipitation_probability_max") or []
+        codes = daily.get("weathercode") or []
+        idx = 0
+        if tomorrow and len(times) > 1:
+            idx = 1
+        tlabel = times[idx] if len(times) > idx else "today"
+        when = "tomorrow" if idx else "today"
+        bits = []
+        if idx == 0 and cur.get("temperature") is not None:
+            bits.append("Right now it is about %s degrees C with %s and wind around %s km/h."
+                        % (round(cur["temperature"], 1), _wx_text(cur.get("weathercode", 0)),
+                           round(cur.get("windspeed", 0))))
+        if len(maxs) > idx:
+            bits.append("%s the high is about %s C and the low about %s C."
+                        % ("Tomorrow" if idx else "Today", round(maxs[idx], 1),
+                           round(mins[idx], 1) if len(mins) > idx else "?"))
+            if len(probs) > idx and probs[idx] is not None:
+                bits.append("Chance of rain: about %s percent." % probs[idx])
+            if len(codes) > idx:
+                bits.append("Expected conditions: %s." % _wx_text(codes[idx]))
+        if not bits:
+            return "I could not read a fresh forecast for %s just now. Try again in a minute." % label
+        return "Weather in %s (%s, %s): %s" % (label, tlabel, zone, " ".join(bits))
+    except Exception:
+        return ("I could not reach the weather service just now, so I will not guess "
+                "what the weather in %s is doing. Try again in a minute, or check a weather app." % label)
+
+_NEWS_TRIGGERS = ("news", "headline", "headlines", "trending", "breaking",
+                  "happening", "latest in", "in the news", "punch", "punch news")
+_NICHE_STOP = {"nigeria", "lagos", "today", "latest", "the", "news", "in", "world",
+               "english", "top", "any", "whats", "what", "is", "whats", "on"}
+
+def _news_topic(low):
+    """Pull a search topic out of a news question; default to Nigeria."""
+    t = low
+    t = re.sub(r"(whats|what is|what's|what|give me|tell me|show me|latest|top|any|the|today|tonight|right now|please|breaking|trending|happening|in|on|did|does|do)\b", " ", t)
+    t = re.sub(r"[^a-z0-9 ]", " ", t)
+    words = [w for w in t.split() if w and w not in _NICHE_STOP and len(w) > 2]
+    if not words:
+        return "Nigeria"
+    joined = " ".join(words)
+    if "football" in words or "soccer" in words:
+        return "Nigeria football"
+    if "sport" in words or "sports" in words:
+        return "sports Nigeria"
+    return joined.title() if len(joined) <= 40 else "Nigeria"
+
+def _live_news(query, limit=7):
+    low = (query or "").lower()
+    topic = _news_topic(low) if any(w in low for w in ("football", "sport", "tech", "nigeria", "lagos", "world")) else "Nigeria"
+    try:
+        import xml.etree.ElementTree as ET
+        url = "https://news.google.com/rss/search?q=" + requests.utils.quote(topic) + "&hl=en-NG&gl=NG&ceid=NG:en"
+        r = requests.get(url, timeout=10, headers=_LIVE_UA)
+        r.raise_for_status()
+        root = ET.fromstring(r.content)
+        items = root.findall(".//item")
+        if not items:
+            return ("I checked the news feed just now and it came back empty for '%s'. "
+                    "Ask me again in a bit, or try 'latest news in Nigeria'." % topic)
+        lines = ["Latest headlines on %s:" % topic]
+        for it in items[:limit]:
+            title = (it.findtext("title") or "").strip()
+            # Google News appends " - Publisher" to the title; keep it, it is useful source info.
+            link = (it.findtext("link") or "").strip()
+            date = (it.findtext("pubDate") or "").strip()
+            if title:
+                lines.append("- %s%s" % (title, (" (via " + link + ")") if link else ""))
+            if date:
+                lines[-1] += " [%s]" % date[:16]
+        return "\n".join(lines)
+    except Exception:
+        return ("I could not reach the news feed just now, so I cannot give you fresh headlines "
+                "without guessing. Try again in a minute.")
+
+_IMAGE_TRIGGERS = ("show me a picture", "show me pictures", "show me an image", "show me images",
+                   "show me a photo", "show me photos", "pictures of", "picture of", "images of",
+                   "image of", "photos of", "photo of", "find me pictures", "find pictures",
+                   "find me images", "find images", "i want pictures", "i want a picture",
+                   "i want images", "pictures please", "images please", "photo please")
+
+def _image_subject(low):
+    t = low
+    for trig in _IMAGE_TRIGGERS:
+        if trig in t:
+            t = t.replace(trig, " ")
+    t = re.sub(r"(please|show me|find me|give me|i want|a picture of|pictures of|images of|an image of|photo of|photos of|of the)\b", " ", t)
+    t = re.sub(r"[^a-z0-9 ]", " ", t)
+    words = [w for w in t.split() if w and w not in ("show", "me", "pictures", "picture", "puctures", "images", "image", "photos", "photo", "please", "find", "want", "i", "of", "the", "a") and len(w) > 1]
+    return " ".join(words) if words else ""
+
+def _live_images(query, limit=4):
+    low = (query or "").lower()
+    subject = _image_subject(low)
+    if not subject:
+        return ("Tell me what you want pictures of, like 'show me pictures of the Eiffel Tower' "
+                "or 'pictures of Lagos please'.")
+    try:
+        r = requests.get("https://en.wikipedia.org/w/api.php",
+                         params={"action": "query", "format": "json", "generator": "search",
+                                 "gsrsearch": subject, "gsrlimit": 6,
+                                 "prop": "pageimages|info", "piprop": "thumbnail",
+                                 "pithumbsize": 320, "inprop": "url"},
+                         timeout=10, headers=_LIVE_UA)
+        r.raise_for_status()
+        pages = (r.json().get("query") or {}).get("pages") or {}
+        picks = []
+        for p in sorted(pages.values(), key=lambda x: x.get("index", 99)):
+            thumb = (p.get("thumbnail") or {}).get("source")
+            if thumb and "thumb.wikimedia.org" in thumb:
+                # Strip Wikipedia attribution query junk, keep the image URL.
+                thumb = thumb.split("?")[0]
+                picks.append((p.get("title", subject), thumb, p.get("fullurl", "")))
+            if len(picks) >= limit:
+                break
+        if not picks:
+            return ("I searched Wikimedia Commons and could not find a free picture for '%s' just now. "
+                    "Try a different subject." % subject)
+        lines = ["Here are some pictures of %s:" % subject]
+        for title, img, page in picks:
+            lines.append("- %s: %s%s" % (title, img, (" (more: " + page + ")") if page else ""))
+        return "\n".join(lines)
+    except Exception:
+        return ("I could not reach the free image search just now, so I will not invent picture links. "
+                "Try again in a minute.")
+
+def fetch_images(query, limit=4):
+    """Structured images: [{url, thumb, title}]. Main persona only."""
+    try:
+        from urllib.parse import quote_plus
+        import re as _re
+        t = _re.sub(r"\s+", " ", (query or "").lower().strip())
+        words = [w for w in t.split() if w and w not in ("show","me","pictures","picture","puctures","images","image","photos","photo","please","find","want","i","of","the","a") and len(w) > 1]
+        subject = " ".join(words) or "beautiful photo"
+        r = None
+        for _attempt in range(3):
+            r = requests.get("https://en.wikipedia.org/w/api.php", params={"action":"query","format":"json","generator":"search","gsrsearch":subject,"gsrlimit":6,"prop":"pageimages|info","piprop":"thumbnail","pithumbsize":320,"inprop":"url"}, timeout=8, headers={"User-Agent":"CyberLord-Assistant/1.0 (cyberlord.name.ng)"})
+            if r.status_code == 200:
+                break
+            if r.status_code in (429, 500, 502, 503, 504) and _attempt < 2:
+                import time as _time; _time.sleep(1.5 * (_attempt + 1)); continue
+            break
+        r.raise_for_status()
+        pages = (r.json().get("query") or {}).get("pages") or {}
+        out = []
+        for pg in sorted(pages.values(), key=lambda x: x.get("index", 99)):
+            thumb = (pg.get("thumbnail") or {}).get("source") or ""
+            if not thumb or "thumb.wikimedia.org" not in thumb:
+                continue
+            thumb = thumb.split("?")[0]
+            out.append({"url": pg.get("fullurl", thumb), "thumb": thumb, "title": pg.get("title", subject)})
+            if len(out) >= limit:
+                break
+        return out[:limit]
+    except Exception:
+        return []
+
+def fetch_live_fact(query):
+    """Structured weather/news for prompts: (kind, text) or (None, None)."""
+    low = (query or "").lower()
+    if _wants_weather(low):
+        return ("weather", _live_weather(query))
+    if _wants_news(low):
+        return ("news", _live_news(query))
+    return (None, None)
+
+def _wants_images(low):
+    return any(t in low for t in _IMAGE_TRIGGERS)
+
+def _wants_weather(low):
+    return any(w in low for w in ("weather", "wether", "wheather", "forecast",
+                                  "will it rain", "is it raining", "rained today",
+                                  "temperature in", "how hot is it", "how cold is it",
+                                  "is it sunny", "is it cloudy", "chance of rain",
+                                  "is it going to rain", "raining in", "sunny in",
+                                  "rain in", "hot in", "cold in"))
+
+def _wants_news(low):
+    if any(x in low for x in ("news", "newz", "headline", "headlines", "trending",
+                              "breaking news", "in the news", "what happened today",
+                              "what is happening", "happening in", "latest in nigeria",
+                              "top stories", "latest stories")):
+        return True
+    if "what's happening" in low and ("today" in low or "latest" in low):
+        return True
+    return False
+
+
 SOURCES = [
 ("NIST National Vulnerability Database", "https://nvd.nist.gov/"),
 ("CISA Known Exploited Vulnerabilities Catalog", "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"),
@@ -151,9 +557,10 @@ def _followup_for(low, title):
 
 _STOP = {"how","do","does","what","is","are","the","to","of","in","on","for","my","me","it","this","that","and","or","can","you","tell","about","explain","teach","please"}
 _ALIAS_EXTRA = {"website":"web security http","site":"web security http","secure":"security","securing":"security","protect":"security","domain":"dns web","wifi":"wireless","virus":"malware"}
-_TYPO_FIXES = {"phising": "phishing", "phishng": "phishing", "malwere": "malware", "maleware": "malware", "ransomwere": "ransomware", "cyber security": "cybersecurity", "cyber sec": "cybersecurity"}
+_TYPO_FIXES = {"phising": "phishing", "phishng": "phishing", "malwere": "malware", "maleware": "malware", "ransomwere": "ransomware", "ransomeware": "ransomware", "cyber security": "cybersecurity", "cyber sec": "cybersecurity", "namp": "nmap", "vurnerability": "vulnerability", "wether": "weather", "wheather": "weather", "newz": "news", "puctures": "pictures", "costt": "cost"}
 def _tokens(s):
     s = (s or "").lower()
+    s = re.sub(r"\bti\b", "time", s)
     for wrong, right in _TYPO_FIXES.items():
         s = s.replace(wrong, right)
     toks = set(re.findall(r"[a-z0-9+#.-]{2,}", s)) - _STOP
@@ -292,7 +699,14 @@ def answer_current_time(q=None):
     return current_datetime_line()
 
 def _looks_like_time_question(q):
-    return bool(_TIME_DATE_RE.search(q or ""))
+    q = (q or "").lower()
+    if _TIME_DATE_RE.search(q):
+        return True
+    if "time" in q and any(w in q for w in ("what", "tell", "current", "now", "exact", "clock")):
+        return True
+    if any(w in q for w in ("what day is it", "what date is today", "date today", "day is it today", "today's date", "todays date")):
+        return True
+    return False
 
 def _time_answer():
     now = lagos_now()
@@ -313,7 +727,7 @@ _CYBER_MAIN_KEYS = (
     "bug bounty", "bugbounty", "incident response", "forensics", "threat intelligence", "mitre", "zero trust",
     "api security", "cloud security", "container", "kubernetes", "wifi security", "wireless", "android", "mobile security",
     "git", "github secrets", "code injection", "how do i hack", "hack into", "break into", "course",
-    "csrf", "ssrf", "sqli", "jwt", "oauth", "siem", "edr", "threat hunting", "buffer overflow",
+    "csrf", "ssrf", "sqli", "jwt", "oauth", "siem", "edr", "threat hunting", "buffer overflow", "ddof", "denial of service",
     "active directory", "kerberos", "ntlm", "osint", "reconnaissance", "subdomain",
     "nvd", "cve lookup", "vulnerability scan", "nessus", "shodan", "waf", "siem", "soc",
 )
@@ -334,6 +748,26 @@ def _focus_phrase(q):
     return " ".join(words[:5])[:60] if words else ""
 
 
+
+def _general_lookup(low, q):
+    """Main-persona general brain: exact-ish phrase match against GENERAL_* titles."""
+    for title, body in GENERAL_TOPICS:
+        if title in low:
+            return body
+    for title, body in GENERAL_HOWTO:
+        if title in low:
+            return body
+    for title, body in GENERAL_CHAT:
+        if title == low or title in low:
+            return body
+    return None
+
+def _normalize_typos(low):
+    s = re.sub(r"\bti\b", "time", low)
+    for wrong, right in _TYPO_FIXES.items():
+        s = s.replace(wrong, right)
+    return s
+
 def answer(query, history=None, persona="main", lesson=None):
     """Built-in KB answer, shaped by persona.
     persona="tutor": academy-only, off-topic -> clever redirect (never a flat
@@ -348,10 +782,27 @@ def answer(query, history=None, persona="main", lesson=None):
         if persona == "tutor":
             return "Ask me anything about cybersecurity or your CyberLord tools and I'll walk you through it."
         return "Hey! Chat with me about anything, or ask me about the CyberLord website and I'll walk you through it."
-    if low in _SMALL_TALK:
+    _TUTOR_GREETINGS = {"hi", "hello", "hey", "good morning", "good evening", "how are you", "what's up",
+                        "thanks", "thank you", "bye", "goodbye", "ok", "okay", "yes", "no", "test", "help"}
+    if low in _SMALL_TALK and (persona == "main" or low in _TUTOR_GREETINGS):
+        return _SMALL_TALK[low]
+    low = _normalize_typos(low)
+    _TUTOR_GREETINGS = {"hi", "hello", "hey", "good morning", "good evening", "how are you", "what's up",
+                        "thanks", "thank you", "bye", "goodbye", "ok", "okay", "yes", "no", "test", "help"}
+    if low in _SMALL_TALK and (persona == "main" or low in _TUTOR_GREETINGS):
         return _SMALL_TALK[low]
     if persona == "main" and _looks_like_time_question(low):
         return _time_answer()
+    if persona == "main" and _wants_images(low):
+        return _live_images(q)
+    if persona == "main" and _wants_weather(low):
+        return _live_weather(q)
+    if persona == "main" and _wants_news(low):
+        return _live_news(q)
+    if persona == "main":
+        _g = _general_lookup(low, q)
+        if _g:
+            return _g
     if persona == "main" and any(k in low for k in _CYBERLORD_SITE_KEYS):
         return _CYBERLORD_SITE_INFO
     if persona == "main" and any(k in low for k in _PLAN_KEYS):
