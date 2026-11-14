@@ -287,3 +287,10 @@ footer{font-size:11px}
 .voice-bars i:nth-child(3){height:12px;animation-delay:.2s}.voice-bars i:nth-child(4){height:18px;animation-delay:.3s}
 .voice-bars i:nth-child(5){height:10px;animation-delay:.4s}
 @keyframes clWave{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
+
+.lab-home{margin:4px 0 26px}.lab-home-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.lab-home-card{border:1px solid var(--line,rgba(255,255,255,.12));border-radius:16px;background:rgba(255,255,255,.035);padding:20px}.lab-home-card h2{margin:8px 0}.lab-home-card .btn{margin-top:10px}
+.quick-links{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.tutor-status-card{display:flex;justify-content:space-between;gap:16px;align-items:center;border:1px solid var(--line,rgba(255,255,255,.12));border-radius:14px;background:rgba(255,255,255,.035);padding:16px 18px;margin:14px 0;flex-wrap:wrap}
+.tutor-pill{display:inline-block;border:1px solid rgba(76,224,208,.4);border-radius:999px;padding:6px 12px;font-size:.85rem;color:var(--cyan,#4ce0d0)}
+.tutor-lock{border:1px solid rgba(255,193,124,.5);background:rgba(255,170,80,.08);border-radius:12px;padding:16px;margin:14px 0}
+@media(max-width:760px){.lab-home-grid{grid-template-columns:1fr}}

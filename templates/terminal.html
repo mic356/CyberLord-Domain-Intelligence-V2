@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Training Terminal | CyberLord Academy{% endblock %}
+{% block content %}
+<section class="academy-page">
+  <div class="page-head">
+    <div>
+      <span class="eyebrow">Academy section</span>
+      <h1>Training Terminal</h1>
+      <p>Practice lab, safe commands only. This is a simulated Kali-style terminal for learning. It never touches the real internet, never scans real targets, and cannot run shell commands or install anything. The only host you can use is <strong>lab.local</strong>.</p>
+    </div>
+    <div class="head-actions">
+      <a class="button secondary" href="{{ url_for('academy') }}">Back to Academy</a>
+      <a class="button" href="{{ url_for('code_lab') }}">Open Code Lab</a>
+    </div>
+  </div>
+
+  <div class="terminal-card">
+    <div class="terminal-topbar">
+      <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
+      <span class="terminal-title">cyberlord@lab: ~/practice - practice lab, safe commands only</span>
+      <span class="terminal-badge">SIMULATED</span>
+    </div>
+    <div id="terminalOut" class="terminal-out" aria-live="polite"></div>
+    <form id="terminalForm" class="terminal-form" autocomplete="off">
+      <label id="terminalPrompt" for="terminalInput">&gt;</label>
+      <input id="terminalInput" type="text" placeholder="type help and press Enter" maxlength="300" spellcheck="false" />
+      <button class="button" type="submit">Run</button>
+    </form>
+    <p class="terminal-note">Commands allowed: help, nmap lab.local, dig, whois, ping, ls, cd, cat, pwd, echo, clear, theharvester -d domain -b google. Everything outside that list is rejected. Outputs are simulated for learning.</p>
+  </div>
+
+  <div class="lab-grid">
+    <div class="info-card">
+      <h2>Practice tasks</h2>
+      <ol>
+        <li>Run <code>nmap lab.local</code> and note the open ports.</li>
+        <li>Run <code>dig lab.local</code> and compare the A record.</li>
+        <li>Run <code>theharvester -d example.com -b google</code> and explain why this is simulated people-data style output.</li>
+        <li>Use <code>ls</code>, <code>cd practice</code>, and <code>cat scan-notes.txt</code>.</li>
+      </ol>
+    </div>
+    <div class="info-card">
+      <h2>What this is not</h2>
+      <p>Not a real Kali install, not a real scanner, not an attack tool. Real scanning and OSINT belong on dedicated labs with legal permission. Here, every result is fictional and fixed in advance.</p>
+    </div>
+  </div>
+</section>
+
+<style>
+.academy-page{max-width:1120px;margin:0 auto;padding:28px 18px 60px}
+.page-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-bottom:20px}
+.eyebrow{text-transform:uppercase;letter-spacing:.12em;color:#8a97ad;font-size:12px}
+.page-head h1{font-size:34px;margin:8px 0}
+.page-head p{color:#b8c2d4;max-width:720px;line-height:1.6}
+.head-actions{display:flex;gap:10px;flex-wrap:wrap}
+.terminal-card{background:#070b12;border:1px solid #263244;border-radius:14px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.terminal-topbar{display:flex;align-items:center;gap:8px;padding:11px 14px;background:#0d1420;border-bottom:1px solid #263244}
+.dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+.dot-red{background:#ff5f57}.dot-yellow{background:#febc2e}.dot-green{background:#28c840}
+.terminal-title{color:#d6deeb;font-size:13px;margin-left:8px;flex:1}
+.terminal-badge{font-size:11px;letter-spacing:.08em;color:#8ee6a1;border:1px solid #245c38;padding:3px 8px;border-radius:999px}
+.terminal-out{height:360px;overflow:auto;padding:16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#c8f5d2;white-space:pre-wrap;line-height:1.55;font-size:14px}
+.terminal-out .cmd{color:#fff}.terminal-out .err{color:#ff9a9a}.terminal-out .prompt{color:#7dd3fc}
+.terminal-form{display:flex;gap:10px;padding:12px;background:#0a0f18;border-top:1px solid #263244;align-items:center}
+.terminal-form label{font-family:ui-monospace,Menlo,Consolas,monospace;color:#7dd3fc}
+.terminal-form input{flex:1;background:#0f1724;color:#e5eefc;border:1px solid #2b3a52;border-radius:8px;padding:11px 12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.terminal-note{color:#8a97ad;padding:0 16px 14px;background:#0a0f18;margin:0;font-size:13px}
+.lab-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}
+.info-card{background:#0d1420;border:1px solid #263244;border-radius:12px;padding:18px}
+.info-card h2{margin-top:0}
+.info-card p,.info-card li{color:#b8c2d4;line-height:1.6}
+code{color:#bfe3ff}
+@media(max-width:760px){.lab-grid{grid-template-columns:1fr}.terminal-form{flex-wrap:wrap}}
+</style>
+
+<script>
+const out = document.getElementById('terminalOut');
+const form = document.getElementById('terminalForm');
+const input = document.getElementById('terminalInput');
+const promptEl = document.getElementById('terminalPrompt');
+let cwd = '/home/user';
+
+function printText(text, cls) {
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = text;
+  out.appendChild(d);
+  out.scrollTop = out.scrollHeight;
+}
+function printCmd(text) {
+  const d = document.createElement('div');
+  d.className = 'cmd';
+  const s = document.createElement('span'); s.className='prompt'; s.textContent = 'user@lab:' + cwd + '$ ';
+  d.appendChild(s); d.appendChild(document.createTextNode(text));
+  out.appendChild(d);
+  out.scrollTop = out.scrollHeight;
+}
+printText('CyberLord Academy Training Terminal - practice lab, safe commands only', 'cmd');
+printText('Type help for the safe command list. Only lab.local can be used. Nothing here is real.', '');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const cmd = input.value.trim();
+  if (!cmd) return;
+  printCmd(cmd);
+  input.value = '';
+  if (cmd.toLowerCase() === 'clear') { out.innerHTML = ''; return; }
+  try {
+    const r = await fetch('/api/terminal/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({command: cmd})});
+    const data = await r.json();
+    if (data.cwd) { cwd = data.cwd; }
+    if (data.output) printText(data.output, data.ok ? '' : 'err');
+    if (data.error) printText(data.error, 'err');
+  } catch (err) {
+    printText('Terminal request failed. Please try again.', 'err');
+  }
+});
+input.focus();
+</script>
+{% endblock %}
