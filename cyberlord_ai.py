@@ -3,7 +3,7 @@ No paid LLM or API key is required. External lookups use public NVD/CISA feeds w
 """
 import re
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # Curated built-in knowledge assistant for CyberLord AI.
 # This is NOT a live LLM on the free path. It is a hand-written answer base, plus
@@ -300,6 +300,35 @@ _CYBERLORD_SITE_KEYS = (
     "cyberlord academy", "cyberlord tutor",
 )
 
+try:
+    from zoneinfo import ZoneInfo
+    _LAGOS_TZ = ZoneInfo("Africa/Lagos")
+except Exception:
+    _LAGOS_TZ = timezone(timedelta(hours=1), "Africa/Lagos")
+
+def lagos_now():
+    return datetime.now(_LAGOS_TZ)
+
+def current_datetime_line(now=None):
+    now = now or lagos_now()
+    return "Today is " + now.strftime("%A, %B %d, %Y") + ", " + now.strftime("%-I:%M %p").lstrip("0") + " (Lagos time)"
+
+_TIME_DATE_RE = re.compile(r"(what['\s]+(?:time|day|date)|whats['\s]+(?:the['\s]+)?(?:time|day|date)|current['\s]+(?:time|date|day)|time['\s]+is['\s]+it|date['\s]+is['\s]+it|day['\s]+is['\s]+it|what['\s]+is['\s]+(?:the['\s]+)?current)", re.I)
+
+def answer_current_time(q=None):
+    return current_datetime_line()
+
+def _looks_like_time_question(q):
+    return bool(_TIME_DATE_RE.search(q or ""))
+
+def _time_answer():
+    now = lagos_now()
+    stamp = current_datetime_line(now)
+    if "time" in now.strftime("%A").lower():
+        pass
+    # full sentence, carries the required format verbatim
+    return stamp + ". It is " + now.strftime("%-I:%M %p").lstrip("0") + " in Lagos, Nigeria on " + now.strftime("%A, %B %d, %Y") + "."
+
 _GENERAL_OPENER = "Happy to chat about that."
 _MAIN_TUTOR_REDIRECT = "That is one for the tutor, head to the Academy tutor and they will walk you through it. The Academy covers Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, and Career Path & Certifications, so pick the course that matches your question and the tutor will help step by step."
 _CYBER_MAIN_KEYS = (
@@ -344,6 +373,8 @@ def answer(query, history=None, persona="main", lesson=None):
         return "Hey! Chat with me about anything, or ask me about the CyberLord website and I'll walk you through it."
     if low in _SMALL_TALK:
         return _SMALL_TALK[low]
+    if persona == "main" and _looks_like_time_question(low):
+        return _time_answer()
     if persona == "main" and any(k in low for k in _CYBERLORD_SITE_KEYS):
         return _CYBERLORD_SITE_INFO
     if persona == "main" and any(k in low for k in ("pro plus", "how much is pro", "how much is pro plus", "cyberlord plan", "subscription", "payment", "paystack", "bank transfer", "usdt")):
