@@ -116,58 +116,6 @@ SOURCES = [
 ("NIST Cybersecurity Framework", "https://www.nist.gov/cyberframework"),
 ("FIRST CVSS", "https://www.first.org/cvss/"),
 ("PortSwigger Web Security Academy", "https://portswigger.net/web-security"),
-
-# General cybersecurity questions: what is X, how do I harden things, career advice.
-("what is phishing", "PHISHING: phishing is a social-engineering attack that tricks people into revealing credentials, financial data, or installing malware. It usually arrives as email, SMS (smishing), messages, or a fake website that looks like a bank, school, or delivery service. Common signs: urgent threats, unexpected attachments or links, spelling mistakes, sender address that almost matches, and requests to bypass normal process. Defences: check the sender real address, hover links before clicking, go to the site directly instead of using the link, enable MFA, and report suspected phishing to your provider or IT team. Never log in through a link in an unsolicited message."),
-("server load", "SERVER LOAD: server load is how busy a server is right now. The 1-minute, 5-minute and 15-minute load numbers show roughly how many processes can run or are waiting. One number per CPU core is a rough guide: a load equal to the core count means the server is about fully busy, and a load well above the core count usually means processes are queuing. Check whether the load comes from CPU work or from processes stuck waiting on disk or network. Useful checks on Linux are uptime, top or htop, vmstat, iostat and free. High load is not automatically an attack: traffic spikes, runaway jobs, memory pressure and slow storage can all cause it. For security, watch for unexpected processes, new admin accounts, odd outbound connections and changed files, and correlate load spikes with login and web logs. Defend with patching, least privilege, rate limiting, autoscaling or extra capacity, and alerts on sustained load instead of one-minute spikes."),
-("how do i harden a server", "SERVER HARDENING BASICS: patch OS and services promptly; create least-privilege accounts and remove default passwords; disable unused services and ports; restrict SSH/RDP to VPN or allowlists and require MFA; configure a host firewall with deny-by-default; enable automatic security updates; centralise logs and test backups; run services as non-root; set file permissions carefully; disable password auth for SSH keys where possible. Validate changes in a test environment first and document each step."),
-("what is a vulnerability", "A vulnerability is a weakness in software, configuration, or process that an attacker may be able to abuse. Examples: outdated software with a known bug, weak or reused passwords, missing access controls, insecure defaults, exposed admin panels. A vulnerability is not the same as an exploit (code that uses it) or a compromise (evidence it was used). Good practice: keep an asset inventory, patch regularly, harden configurations, and scan only systems you own or are authorized to test."),
-("difference between vulnerability exploit and threat", "THREAT vs VULNERABILITY vs EXPLOIT: a threat is a possible source of harm (for example, a criminal group or a storm). A vulnerability is a weakness that could be used (an unpatched bug). An exploit is the actual method or code that takes advantage of it. Risk combines the likelihood of a threat using a vulnerability and the impact if it succeeds. Reducing risk can mean patching the vulnerability, adding controls that make exploitation harder, or reducing the impact (backups, segmentation)."),
-("what is owasp top 10", "OWASP TOP 10: the Open Worldwide Application Security Project publishes common web application risks. The 2021 edition lists: Broken Access Control, Cryptographic Failures, Injection, Insecure Design, Security Misconfiguration, Vulnerable and Outdated Components, Identification and Authentication Failures, Software and Data Integrity Failures, Security Logging and Monitoring Failures, and Server-Side Request Forgery. Each category is a starting point for secure design, code review, and testing, not a checklist that guarantees safety."),
-("owasp top 10 explained", "OWASP Top 10 explained in plain terms: 01 Broken Access Control = users can see or change things they should not. 02 Cryptographic Failures = weak encryption, leaked keys, or sensitive data sent insecurely. 03 Injection = attacker input becomes a command or query. 04 Insecure Design = the design itself is flawed. 05 Security Misconfiguration = default, debug, or overly permissive settings. 06 Vulnerable and Outdated Components = old libraries with known bugs. 07 Authentication Failures = weak logins and sessions. 08 Integrity Failures = untrusted updates or data. 09 Logging Failures = no useful audit trail. 10 SSRF = the server is tricked into requesting internal addresses. Start with access control, injection defences, and patching."),
-("what is cve basics", "CVE BASICS: CVE (Common Vulnerabilities and Exposures) is a shared catalogue that gives each public vulnerability a stable ID such as CVE-2024-12345. The ID alone does not tell you much, you also need the description, affected products and versions, severity (CVSS), and the vendor fix. Ask CyberLord AI to look up a specific CVE and it can query the live NIST NVD when reachable. Always match the exact product and version before acting."),
-("what is cvss", "CVSS (Common Vulnerability Scoring System) is a standard way to score how severe a vulnerability is on a 0 to 10 scale, based on things like attack complexity, privileges needed, and impact on confidentiality, integrity, and availability. It helps prioritise, but it is a technical severity score, not a complete business risk score. A medium CVSS on an internet-facing system may matter more than a high CVSS on an isolated test box."),
-("how do i start a cybersecurity career", "STARTING A CYBERSECURITY CAREER (beginner, Nigeria-friendly): 1) Master networking basics (TCP/IP, DNS, HTTP) and Linux command line. 2) Learn how the web works and the OWASP Top 10. 3) Build a home lab and practise Nmap and Wireshark on systems you own. 4) Learn a scripting language (Python). 5) Do hands-on labs and write up what you learned. 6) Consider entry-level certs later such as CompTIA Security+, Network+ or Linux+. 7) Apply for junior SOC, IT helpdesk, or junior security roles to build experience. Consistency and a portfolio of lab write-ups matter more than any single certificate at the start."),
-("what is the difference between ethical hacker and penetration tester", "ETHICAL HACKER vs PENETRATION TESTER: a penetration tester is a type of ethical hacker hired with written permission to test a system and report weaknesses. Ethical hacking is the broader idea of testing with permission. Always get explicit, written scope before any testing. Practice in labs and bug bounty programmes that allow it. Testing a system you do not own without permission is illegal in most countries, including Nigeria."),
-("how do i practice cybersecurity legally", "LEGAL PRACTICE ROUTES: build a home lab (VirtualBox + Kali or Ubuntu VMs), use deliberately vulnerable apps like DVWA or Juice Shop, join platforms that host legal lab challenges, read program rules on bug bounty sites and stay inside scope, and only test systems you own or have written permission for. Document what you did and what you learned; that is your portfolio."),
-("what is malware", "MALWARE is malicious software: viruses, worms, trojans, ransomware, spyware, and rootkits. It gets in through phishing, unsafe downloads, vulnerable software, or USB devices. Protection: keep software updated, use reputable endpoint protection, avoid unknown attachments and links, use least-privilege accounts, and keep offline or versioned backups so ransomware cannot destroy everything. If you suspect infection, disconnect the device from the network and get help from IT before trying to clean it yourself."),
-("what is ransomware", "RANSOMWARE encrypts your files and demands payment for a key, often with threats to leak data. Common entry points are phishing attachments, exposed remote access, and unpatched software. Prevention: patch promptly, enable MFA, segment networks, control email attachments, and keep tested backups that attackers cannot reach. If hit: isolate affected machines, preserve evidence, follow your incident response plan, and contact authorities. Paying is not recommended and is not a guarantee of recovery."),
-("what is social engineering", "SOCIAL ENGINEERING means attacking people rather than technology: tricking someone into revealing passwords, approving a payment, or installing software. Tactics include phishing, pretext calls, urgency, and authority claims (for example, someone claiming to be from IT). Defence is process: verify requests through a separate trusted channel, never share codes or passwords, and train staff to slow down and verify. Technical controls help, but good habits stop most attacks."),
-("what is vpn and when should i use it", "A VPN (Virtual Private Network) encrypts traffic between your device and a VPN server and hides your IP address from local networks. It is useful on public Wi-Fi and for remote work. It does not make you anonymous to the VPN provider, does not stop malware, and does not prevent phishing. Choose a reputable provider, keep it updated, and still use HTTPS and MFA."),
-("what is two factor authentication 2fa mfa", "Two-factor authentication (2FA) and MFA (multi-factor authentication) add a second check besides your password, such as an app code, hardware key, or a push approval. It blocks most account takeover attacks even if your password leaks. Use an authenticator app or hardware key where possible, keep backup codes safe, and never share a code with anyone, including someone claiming to be support."),
-("what is a firewall", "A firewall filters network traffic based on rules, allowing safe traffic and blocking the rest. There are host firewalls (on a device) and network firewalls (between networks). Good practice: deny by default, open only what is needed, restrict admin panels, keep rules documented and reviewed, and log what is blocked. A firewall reduces exposure but does not fix vulnerable software."),
-("what is endpoint protection edr", "ENDPOINT PROTECTION is software on laptops, servers, and phones that detects and blocks malware, ransomware behaviour, and suspicious processes. Modern EDR (endpoint detection and response) also records activity so analysts can investigate. It works best alongside patching, least privilege, MFA, and backups, not as a replacement for them."),
-("what is the cia triad", "THE CIA TRIAD: Confidentiality (only authorized people can read data), Integrity (data stays correct and unaltered), Availability (systems remain usable when needed). Most security decisions balance these three. For example, encryption protects confidentiality, checksums protect integrity, and backups plus redundancy protect availability."),
-("what is defence in depth", "DEFENCE IN DEPTH means stacking multiple controls so that if one fails, others still protect you. Example for a website: patching, least privilege, MFA, a web application firewall, input validation, logging, and backups. No single tool makes you safe; layers of simple, well-maintained controls do."),
-("what is a zero day vulnerability", "A ZERO-DAY is a vulnerability that is unknown to the vendor and may already be exploited, with no official patch yet. Because there is no fix, defences are mitigations: reduce exposure, patch quickly when a fix appears, use segmentation and monitoring, and follow vendor advisories. This is why keeping systems updated and watching advisories matters."),
-("what is a bug bounty", "A BUG BOUNTY is a program where a company invites researchers to find and report vulnerabilities in scope, usually for a reward. Rules are strict: only test what is listed, do not disrupt service, handle data carefully, and report responsibly. Start with reading the program policy carefully and practising in labs first."),
-("how do i report a vulnerability responsibly", "RESPONSIBLE DISCLOSURE: tell the owner privately, give reasonable time to fix, include clear steps to reproduce and the impact, avoid accessing or spreading others data, and do not publish proof-of-concept exploits before the vendor agrees. Many sites publish a security contact or use security.txt."),
-("what is a strong password", "A STRONG PASSWORD is long, unique, and hard to guess. A passphrase of 4 to 5 random words is easier to remember and harder to crack than a short complex string. Use a password manager, never reuse passwords across sites, and turn on MFA. Change a password immediately if a site reports a breach or you suspect phishing."),
-("what is a password manager", "A PASSWORD MANAGER stores encrypted passwords and can generate strong unique ones for each site. It reduces reuse and phishing risk because you fill credentials inside the app rather than typing them anywhere. Choose a reputable one, protect the master password, and store recovery codes safely."),
-("what is encryption explained simply", "ENCRYPTION scrambles information so only someone with the key can read it. In transit, TLS (https) encrypts web traffic. At rest, full-disk and database encryption protect stored data. Encryption protects against eavesdropping and theft of devices, but it does not stop phishing, malware on an unlocked device, or someone you willingly give the key to."),
-("what is https and tls", "HTTPS is HTTP running over TLS. TLS encrypts traffic, authenticates the server using a certificate, and protects integrity in transit. Look for the padlock and a valid certificate, but remember a padlock only proves the connection is encrypted, not that the site is honest or safe. Keep certificates valid and renew them before expiry."),
-("what is dns explained", "DNS (Domain Name System) translates names like cyberlord.name.ng into IP addresses. Records include A/AAAA (addresses), CNAME (alias), MX (mail), TXT (verification and SPF), and NS (name servers). DNS itself is not encrypted by default; DNS-over-HTTPS and DNSSEC add privacy and authenticity in different ways. If a site will not load, DNS is a good place to look first."),
-("what is http vs https", "HTTP sends web traffic unencrypted; HTTPS encrypts it with TLS. On HTTP, anyone on the path can read or modify traffic. On HTTPS, the connection is encrypted and the server is authenticated by certificate. Always prefer HTTPS, and treat a padlock as necessary but not sufficient for trust; phishing sites can have valid certificates too."),
-("what is an ip address ipv4 ipv6", "An IP address identifies a device or service on a network. IPv4 uses 32 bits (for example 192.168.1.10) and IPv6 uses 128 bits, giving far more addresses and built-in support for modern features. You may see private ranges like 192.168.x.x, 10.x.x.x, and 172.16-31.x.x that are not routable on the public internet."),
-("what is nat", "NAT (Network Address Translation) lets many private devices share one public IP by rewriting addresses and ports. It is common in home and office routers. NAT helps with address shortage and hides internal structure, but it is not a security boundary by itself. Do not rely on NAT instead of a firewall and patching."),
-("what is subnetting cidr", "A SUBNET is a smaller part of a network. CIDR notation such as 192.168.1.0/24 means the first 24 bits identify the network and the rest identify hosts, giving 256 addresses in that block. /25 gives 128, /26 gives 64, /16 gives 65,536. Subnetting lets you segment networks so problems and attacks stay contained."),
-("what is tcp vs udp", "TCP is connection-oriented, ordered, and reliable, used by web, email, and file transfers. UDP is connectionless and faster with no delivery guarantee, used by DNS, streaming, and gaming. Choosing between them is about reliability versus speed and overhead, not about security. Neither encrypts traffic by itself."),
-("what is a port in networking", "A PORT is a numbered endpoint that identifies a service on a host, combined with an IP address. Common ones: 22 SSH, 53 DNS, 80 HTTP, 443 HTTPS, 25 SMTP. An open port means something accepted a connection; it does not prove a vulnerability. Only open ports you need and protect the service with updates and authentication."),
-("what is ssh", "SSH (Secure Shell) is an encrypted protocol for logging into and managing Linux and Unix servers. Use key-based login, disable password and root login where possible, restrict access to VPN or allowlists, and enable MFA. Keep it patched like any other service."),
-("what is linux", "LINUX is a family of open-source operating systems used for servers, desktops, and embedded devices. The command line is its strength: files, permissions, processes, networking, and logs are all managed from the terminal. If you are learning security, Linux basics (the shell, permissions, package updates, and journal logs) are essential."),
-("linux basics for beginners", "LINUX BASICS: navigate with cd, ls, pwd; read files with cat, less, head; manage files with cp, mv, mkdir, rm; check permissions with ls -l and change with chmod, chown; see processes with ps, top; check network with ip addr, ip route, ss; read logs with journalctl and files in /var/log; update with sudo apt update and sudo apt full-upgrade on Debian-based systems. Learn the man pages (man <command>) as you go."),
-("what is a rootkit", "A ROOTKIT is malware designed to hide itself and give an attacker privileged access. It may hook system functions so files, processes, and network connections disappear from normal tools. Prevention is patching, least privilege, and endpoint protection. If you suspect one, treat the system as untrusted, preserve evidence, rebuild from known-good media, and rotate credentials."),
-("what is a botnet", "A BOTNET is a network of compromised devices controlled by an attacker to send spam, launch DDoS attacks, mine cryptocurrency, or steal data. Devices are infected through weak passwords, unpatched software, and phishing. Defences are patching, unique passwords, MFA, and endpoint protection. Disposing of or disconnecting infected devices without cleaning them can spread the problem."),
-("what is ddos attack", "A DDOS (distributed denial of service) attack floods a service with traffic so legitimate users cannot connect. It does not usually steal data; it disrupts availability. Defences include capacity planning, rate limiting, CDN and upstream filtering, and keeping services updated. For small sites, hosting providers and CDNs often provide DDoS protection."),
-("what is a trojan", "A TROJAN is malware disguised as legitimate software. Unlike a virus it does not replicate itself; it tricks you into running it. It often arrives as a free download, a cracked tool, or a fake update. Only download software from official sources, verify signatures or hashes when available, and keep endpoint protection on."),
-("what is steganography", "STEGANOGRAPHY hides data inside other data, such as embedding a message in an image or audio file. It is used for legitimate watermarking and also to conceal malware or stolen data. Detection looks for statistical anomalies and mismatched metadata. It is different from encryption, which scrambles data rather than hiding its existence."),
-("what is cryptography hashes", "Cryptography basics: a HASH turns data into a fixed-size fingerprint (SHA-256 is common) and is used to verify file integrity. A MAC or digital signature proves data was not altered and (for signatures) who created it. Passwords should be stored with a slow salted hash such as Argon2id, scrypt, or bcrypt, never as plain text or fast hashes like MD5 or SHA-1."),
-("what is a digital signature", "A DIGITAL SIGNATURE uses a private key to create a signature that anyone with the public key can verify. It proves the signer created it and that the data has not changed since. It is the basis of code signing, certificate signing, and document signing. Protect your private key like a password, ideally in a hardware token."),
-("what is symmetric vs asymmetric encryption", "SYMMETRIC encryption uses one shared secret key for both encrypting and decrypting (for example AES). ASYMMETRIC uses a key pair: a public key encrypts and a private key decrypts, or the reverse for signatures (RSA, ECC). Modern systems combine them: asymmetric crypto exchanges a session key, then symmetric crypto does the bulk work."),
-("what is tls handshake", "THE TLS HANDSHAKE is how a browser and server agree on a protocol, verify the server certificate, and create shared encryption keys. After the handshake, traffic is encrypted and authenticated. Problems usually show as certificate errors, expired certificates, or mismatched names, which you should investigate rather than click through."),
-("what is a certificate authority", "A CERTIFICATE AUTHORITY (CA) is an organization trusted to issue digital certificates that bind a name to a public key. Browsers trust a set of root CAs; a site certificate chains up to one of them. Short-lived, automated certificates such as those from Let's Encrypt have made HTTPS the default."),
-("what is a digital certificate", "A DIGITAL CERTIFICATE is a signed statement that binds a name or key to an owner, used for HTTPS server identity, code signing, and email signing. It has an expiry date and a chain of trust. An expired or mismatched certificate is a warning to investigate, not something to bypass on systems you care about."),
-
 ]
 
 
@@ -203,8 +151,12 @@ def _followup_for(low, title):
 
 _STOP = {"how","do","does","what","is","are","the","to","of","in","on","for","my","me","it","this","that","and","or","can","you","tell","about","explain","teach","please"}
 _ALIAS_EXTRA = {"website":"web security http","site":"web security http","secure":"security","securing":"security","protect":"security","domain":"dns web","wifi":"wireless","virus":"malware"}
+_TYPO_FIXES = {"phising": "phishing", "phishng": "phishing", "malwere": "malware", "maleware": "malware", "ransomwere": "ransomware", "cyber security": "cybersecurity", "cyber sec": "cybersecurity"}
 def _tokens(s):
-    toks = set(re.findall(r"[a-z0-9+#.-]{2,}", (s or "").lower())) - _STOP
+    s = (s or "").lower()
+    for wrong, right in _TYPO_FIXES.items():
+        s = s.replace(wrong, right)
+    toks = set(re.findall(r"[a-z0-9+#.-]{2,}", s)) - _STOP
     extra=set()
     for t in list(toks):
         if t in _ALIAS_EXTRA:
@@ -221,9 +173,14 @@ def _topic_matches(query):
         # Related technical vocabulary can identify a topic even if the title differs.
         body_keys = _tokens(body)
         score += min(4, len(q & body_keys) // 5)
+        # Guard against body-hash noise: require light title overlap unless
+        # the query is a short tool/topic name that the body heavily matches.
+        if keys and not (q & keys):
+            if not (len(q) <= 2 and len(q & body_keys) >= 2):
+                continue
         if score:
             ranked.append((score, title, body))
-    ranked.sort(reverse=True)
+    ranked.sort(key=lambda x: (-x[0], x[1]))
     return ranked[:3]
 
 
@@ -281,6 +238,19 @@ _SMALL_TALK = {
     "thank you": "You're welcome! Anything else I can help with?",
     "bye": "See you later! Take care.",
     "goodbye": "See you later! Take care.",
+    "help": "Sure, I can help with CyberLord stuff, cybersecurity basics, or just chat. What are you trying to do?",
+    "what can you do": "I can talk through CyberLord and its plans and tools, point you to the Academy tutor for cybersecurity lessons, and explain a lot of everyday topics right here. What do you need?",
+    "who made you": "I am CyberLord's built-in assistant, run by Nozomio Labs. What can I help you with today?",
+    "who created you": "I am CyberLord's built-in assistant, run by Nozomio Labs. What can I help you with today?",
+    "how old are you": "I don't really have an age, I am an AI assistant. What can I help you with?",
+    "tell me a joke": "Why did the scarecrow win an award? He was outstanding in his field. Want another one, or shall we get back to something useful?",
+    "what is the capital of france": "Paris is the capital of France. Want to know more about it, or something else?",
+    "ok": "Got it. What would you like to do next?",
+    "okay": "Got it. What would you like to do next?",
+    "yes": "Great, go ahead and tell me what you need.",
+    "no": "No problem. Let me know if you want to chat about anything else.",
+    "test": "All good on my end, I am here and listening. What do you need?",
+    "help me write an email": "Happy to help. Tell me who it is for, what it should say, and the tone you want, and I will draft it for you.",
 }
 
 _CYBERLORD_SITE_INFO = (
@@ -299,6 +269,9 @@ _CYBERLORD_SITE_KEYS = (
     "cyberlord pro", "deep scan", "interaction board", "security centre", "advanced intelligence",
     "cyberlord academy", "cyberlord tutor",
 )
+_PLAN_KEYS = ("pro plus", "pro-plus", "how much is pro", "how much is pro plus", "how much is pro-plus", "cyberlord plan", "cyberlord plans", "subscription", "payment", "paystack", "bank transfer", "usdt", "how much does pro cost", "how much does cyberlord cost", "pro price", "pro cost", "price of pro", "cost of pro", "free plan", "how do i pay", "how to pay")
+_LIVE_CVE_KEYS = ("latest exploited", "known exploited", "cisa kev", "recent kev", "latest cve feed", "cve feed", "latest vulnerabilities", "latest cve")
+_ILLEGAL_KEYS = ("how do i hack", "hack into", "break into", "crack password")
 
 _GENERAL_OPENER = "Happy to chat about that."
 _MAIN_TUTOR_REDIRECT = "That is one for the tutor, head to the Academy tutor and they will walk you through it. The Academy covers Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, and Career Path & Certifications, so pick the course that matches your question and the tutor will help step by step."
@@ -311,7 +284,11 @@ _CYBER_MAIN_KEYS = (
     "bug bounty", "bugbounty", "incident response", "forensics", "threat intelligence", "mitre", "zero trust",
     "api security", "cloud security", "container", "kubernetes", "wifi security", "wireless", "android", "mobile security",
     "git", "github secrets", "code injection", "how do i hack", "hack into", "break into", "course",
+    "csrf", "ssrf", "sqli", "jwt", "oauth", "siem", "edr", "threat hunting", "buffer overflow",
+    "active directory", "kerberos", "ntlm", "osint", "reconnaissance", "subdomain",
+    "nvd", "cve lookup", "vulnerability scan", "nessus", "shodan", "waf", "siem", "soc",
 )
+_TUTOR_OFFTOPIC_OPENERS = ["Interesting question, but this one is outside my cybersecurity scope. ", "I love curiousity, but let us keep this one on cybersecurity. ", "That is a bit outside the lesson we are on. ", "Good question, but I am best at cybersecurity topics. "]
 _GENERAL_DONT_KNOW = "Honestly, I don't know that one for sure, and I don't want to guess. If you give me a bit more detail I can try to help, or you could check a trusted source. What else can we talk about?"
 
 _CONVERSATIONAL_STARTERS = [
@@ -346,18 +323,20 @@ def answer(query, history=None, persona="main", lesson=None):
         return _SMALL_TALK[low]
     if persona == "main" and any(k in low for k in _CYBERLORD_SITE_KEYS):
         return _CYBERLORD_SITE_INFO
-    if persona == "main" and any(k in low for k in ("pro plus", "how much is pro", "how much is pro plus", "cyberlord plan", "subscription", "payment", "paystack", "bank transfer", "usdt")):
+    if persona == "main" and any(k in low for k in _PLAN_KEYS):
         return ("CYBERLORD ACCOUNT & PLANS\nPro: 6,300 NGN or 4.50 USDT for 30 days. Pro Plus: 12,600 NGN or 9.00 USDT for 30 days. USDT networks supported by the current dashboard are TRC20 and BEP20; Paystack is temporarily disabled.\nA receipt, screenshot or bank reference alone does not activate a subscription. Payment must be independently verified by the server-side payment process. I cannot approve payments or change accounts. Never share passwords, OTPs, private keys or seed phrases in chat. For account-specific help contact michaelelvistito@gmail.com.")
+    # Live CISA feed BEFORE the cyber redirect, or "latest exploited" hits the
+    # tutor redirect on "exploit".
+    if any(x in low for x in _LIVE_CVE_KEYS):
+        return _live_kev(q)
     if persona == "main" and any(k in low for k in _CYBER_MAIN_KEYS):
         return _MAIN_TUTOR_REDIRECT
     live = _live_cve(q)
     if live:
         return live
-    if any(x in low for x in ("latest exploited", "known exploited", "cisa kev", "recent kev", "latest cve feed")):
-        return _live_kev(q)
-    if any(x in low for x in ("cyberlord plan", "subscription", "pro plus", "payment", "paystack", "bank transfer", "usdt")):
+    if any(x in low for x in _PLAN_KEYS):
         return ("CYBERLORD ACCOUNT & PLANS\nPro: 6,300 NGN or 4.50 USDT for 30 days. Pro Plus: 12,600 NGN or 9.00 USDT for 30 days. USDT networks supported by the current dashboard are TRC20 and BEP20; Paystack is temporarily disabled.\nA receipt, screenshot or bank reference alone does not activate a subscription. Payment must be independently verified by the server-side payment process. I cannot approve payments or change accounts. Never share passwords, OTPs, private keys or seed phrases in chat. For account-specific help contact michaelelvistito@gmail.com.")
-    if any(x in low for x in ("how do i hack", "hack into", "break into", "crack password")):
+    if any(x in low for x in _ILLEGAL_KEYS):
         return "I can only help with authorized testing and learning. Are you trying to practice in your own lab, understand a concept defensively, or secure a system you own? Tell me which, and I'll point you to a legal path."
     # Tutor: current lesson's material answers first, before the general KB.
     if persona == "tutor" and lesson:
