@@ -301,6 +301,17 @@ _CYBERLORD_SITE_KEYS = (
 )
 
 _GENERAL_OPENER = "Happy to chat about that."
+_MAIN_TUTOR_REDIRECT = "That is one for the tutor, head to the Academy tutor and they will walk you through it. The Academy covers Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, and Career Path & Certifications, so pick the course that matches your question and the tutor will help step by step."
+_CYBER_MAIN_KEYS = (
+    "nmap", "wireshark", "burp", "metasploit", "sqlmap", "gobuster", "nikto", "searchsploit", "john the ripper", "hashcat",
+    "cybersecurity", "penetration test", "pen test", "ethical hacker", "ethical hacking", "phishing", "malware", "ransomware",
+    "vulnerability", "exploit", "cve", "cvss", "owasp", "xss", "sql injection", "zero day", "rootkit", "botnet", "ddos",
+    "social engineering", "2fa", "mfa", "two factor", "firewall", "cryptography", "encryption", "tls", "https", "dns",
+    "tcp", "udp", "subnet", "port scan", "kali", "linux", "ssh", "password manager", "strong password",
+    "bug bounty", "bugbounty", "incident response", "forensics", "threat intelligence", "mitre", "zero trust",
+    "api security", "cloud security", "container", "kubernetes", "wifi security", "wireless", "android", "mobile security",
+    "git", "github secrets", "code injection", "how do i hack", "hack into", "break into", "course",
+)
 _GENERAL_DONT_KNOW = "Honestly, I don't know that one for sure, and I don't want to guess. If you give me a bit more detail I can try to help, or you could check a trusted source. What else can we talk about?"
 
 _CONVERSATIONAL_STARTERS = [
@@ -335,6 +346,10 @@ def answer(query, history=None, persona="main", lesson=None):
         return _SMALL_TALK[low]
     if persona == "main" and any(k in low for k in _CYBERLORD_SITE_KEYS):
         return _CYBERLORD_SITE_INFO
+    if persona == "main" and any(k in low for k in ("pro plus", "how much is pro", "how much is pro plus", "cyberlord plan", "subscription", "payment", "paystack", "bank transfer", "usdt")):
+        return ("CYBERLORD ACCOUNT & PLANS\nPro: 6,300 NGN or 4.50 USDT for 30 days. Pro Plus: 12,600 NGN or 9.00 USDT for 30 days. USDT networks supported by the current dashboard are TRC20 and BEP20; Paystack is temporarily disabled.\nA receipt, screenshot or bank reference alone does not activate a subscription. Payment must be independently verified by the server-side payment process. I cannot approve payments or change accounts. Never share passwords, OTPs, private keys or seed phrases in chat. For account-specific help contact michaelelvistito@gmail.com.")
+    if persona == "main" and any(k in low for k in _CYBER_MAIN_KEYS):
+        return _MAIN_TUTOR_REDIRECT
     live = _live_cve(q)
     if live:
         return live
