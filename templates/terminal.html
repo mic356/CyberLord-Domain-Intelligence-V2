@@ -223,6 +223,14 @@ code{color:#bfe3ff}
     return tokens;
   }
 
+  // self-learning: best-effort log of terminal commands/errors. Never breaks the terminal.
+  function logTerminal(kind, command, output){
+    try{
+      fetch("/api/terminal-log", {method:"POST", headers:{"Content-Type":"application/json"}, keepalive:true,
+        body: JSON.stringify({kind: kind, command: command || "", output: output || ""})}).catch(function(){});
+    }catch(e){}
+  }
+
   function exec(raw){
     const line = raw.trim();
     if(!line){ term.write(prompt()); return; }
@@ -234,8 +242,9 @@ code{color:#bfe3ff}
     const parts = tokenize(line);
     const cmd = parts[0], args = parts.slice(1);
     const out = runCommand(cmd, args, line);
-    if(typeof out === "function"){ busy = true; out.then((txt)=>{ busy=false; if(txt) term.writeln(txt); term.write(prompt()); }); return; }
+    if(typeof out === "function"){ busy = true; out.then((txt)=>{ busy=false; if(txt) term.writeln(txt); logTerminal("command", line, txt || ""); term.write(prompt()); }).catch(function(err){ busy=false; logTerminal("error", line, String(err && err.message || err)); term.write(prompt()); }); return; }
     if(out !== null && out !== undefined && out !== "") term.writeln(out);
+    logTerminal(/command not found|No such file|not found|cannot access|error|Error/.test(String(out||"")) && out ? "error" : "command", line, String(out || ""));
     term.write(prompt());
   }
 

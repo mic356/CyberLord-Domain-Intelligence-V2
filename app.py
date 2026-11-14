@@ -5,6 +5,28 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import urlparse
 import requests
+try:
+    import learning_log as _learning_log
+except Exception:
+    _learning_log = None
+
+def _log_q(persona_val, question_val, path_val, reply_val=""):
+    """Best-effort self-learning log. Never breaks the request."""
+    if _learning_log is None:
+        return
+    try:
+        _learning_log.log_question(persona_val, question_val, path_val, reply_val)
+    except Exception:
+        pass
+
+def _log_t(kind, command_val="", output_val=""):
+    """Best-effort terminal-event log. Never breaks the request."""
+    if _learning_log is None:
+        return
+    try:
+        _learning_log.log_terminal(kind, command_val, output_val)
+    except Exception:
+        pass
 import dns.resolver
 import phonenumbers
 import phonenumbers.carrier
@@ -1891,22 +1913,26 @@ def ai_assistant():
     # live -> Gemini google_search grounding.
     _live_guard = _main_live_guard(fallback_latest) if persona == "main" else None
     if persona == "main" and _live_guard == "cyber":
+        _log_q(persona, fallback_latest, "tutor-redirect")
         return jsonify(reply="That is one for the tutor, head to the Academy tutor and they will walk you through it. The Academy covers Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, and Career Path & Certifications, so pick the course that matches your question and the tutor will help step by step.", mode="tutor-redirect", persona=persona, live_sources=[])
     if persona == "main":
         _low_q = (fallback_latest or "").lower()
         if _TIME_QUESTION_RE.search(_low_q):
             _now = datetime.now(_LAGOS_TZ)
             _exact = _now.strftime("Today is %A, %B %d, %Y, and the exact time is %-I:%M %p").lstrip("0")
+            _log_q(persona, fallback_latest, "datetime-direct", _exact)
             return jsonify(reply=_exact + " (Lagos time). It is the current time in Lagos, Nigeria.", mode="datetime-direct", persona=persona, live_sources=["Server clock (Africa/Lagos)"])
         if _live_guard == "images":
             from cyberlord_ai import fetch_images as _fi
             _imgs = _fi(fallback_latest, limit=4)
             _txt = "Here are some pictures I found for you." if _imgs else "I searched Wikimedia Commons and could not find a free picture for that just now. Try a different subject."
+            _log_q(persona, fallback_latest, "images", _txt)
             return jsonify(reply=_txt, mode="images", persona=persona, images=_imgs, live_sources=["Wikimedia Commons"] if _imgs else [])
         if _live_guard in ("weather", "news"):
             from cyberlord_ai import fetch_live_fact as _flf
             _kind, _fact = _flf(fallback_latest)
             if _kind and _fact:
+                _log_q(persona, fallback_latest, _kind + "-direct", _fact)
                 return jsonify(reply=_fact, mode=_kind + "-direct", persona=persona, live_sources=["Open-Meteo" if _kind == "weather" else "Google News RSS"])
     # Tutor Pro gating: free tutor is limited, Tutor Pro is unlimited.
     # The main (dashboard) assistant is never limited by this.
@@ -2108,6 +2134,7 @@ def ai_assistant():
             except Exception:
                 pass
             _ls = ["Google Search grounding"] if _live_guard in ("live", "weather", "news") else "Gemini response; verify important security findings against primary sources"
+            _log_q(persona, fallback_latest, "gemini", reply)
             return jsonify(reply=reply, mode="gemini", model=model, persona=persona, live_sources=_ls, images=_images[:4])
         except Exception as exc:
             # If grounding was attached and the API rejected it, retry once plain (no tools) so only the search fails, not the whole chat.
@@ -2122,6 +2149,7 @@ def ai_assistant():
                     _reply = "\n".join(_p.get("text","") for _p in _parts if isinstance(_p, dict)).strip()
                     if _reply:
                         app.logger.warning("Gemini grounding rejected, plain retry succeeded: %s", str(_grounded_exc)[:180])
+                        _log_q(persona, fallback_latest, "gemini", _reply)
                         return jsonify(reply=_reply, mode="gemini", model=model, persona=persona, live_sources=["Gemini response; search grounding unavailable"], images=[])
                 except Exception:
                     pass
@@ -2184,6 +2212,7 @@ def ai_assistant():
             reply = ((choices[0].get("message") or {}).get("content") or "").strip() if choices else ""
             if not reply:
                 raise ValueError("Groq returned an empty response.")
+            _log_q(persona, fallback_latest, "groq", reply)
             return jsonify(reply=reply, mode="groq", model=groq_model, persona=persona,
                            live_sources="Groq response; verify important security findings against primary sources")
         except Exception as exc:
@@ -2216,11 +2245,29 @@ def ai_assistant():
                        tutor_pro=tutor_pro_active(current_user) if persona == "tutor" else None,
                        tutor_remaining=tutor_remaining(current_user) if persona == "tutor" else None,
                        live_sources=_fb_sources, images=_fb_images)
+        _log_q(persona, fallback_latest, "built-in-fallback", reply)
     except Exception:
         app.logger.exception("CyberLord assistant error")
         return jsonify(error="CyberLord AI is temporarily unavailable. Please try again shortly."), 500
 
 
+
+@app.route("/api/terminal-log", methods=["POST"])
+@login_required
+def terminal_log():
+    """Best-effort self-learning hook: records academy terminal commands and
+    errors. Accepts {command?|kind?, output?, error?}. Returns ok:true always
+    (payload failures are ignored, never surfaced to the visitor)."""
+    try:
+        body = request.get_json(silent=True) or {}
+        kind = str(body.get("kind") or "").strip().lower()
+        output = body.get("output") or body.get("error") or ""
+        if kind not in ("command", "error"):
+            kind = "error" if str(body.get("error") or "") else "command"
+        _log_t(kind, str(body.get("command") or ""), str(output))
+    except Exception:
+        pass
+    return jsonify(ok=True)
 
 def monitoring_limits(user):
     refresh_subscription(user)

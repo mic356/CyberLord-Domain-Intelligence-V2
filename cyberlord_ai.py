@@ -855,6 +855,11 @@ def _focus_phrase(q):
 
 
 
+try:
+    from learned_topics import LEARNED_TOPICS as _LEARNED_TOPICS
+except Exception:
+    _LEARNED_TOPICS = []
+
 def _general_lookup(low, q):
     """Main-persona general brain: exact-ish phrase match against GENERAL_* titles."""
     for title, body in GENERAL_TOPICS:
@@ -863,6 +868,16 @@ def _general_lookup(low, q):
     for title, body in GENERAL_HOWTO:
         if title in low:
             return body
+    # Learned topics fill gaps only after the built-in brain, so they never
+    # override existing knowledge. Guarded to flat (key, body) text pairs.
+    for _entry in _LEARNED_TOPICS:
+        try:
+            if isinstance(_entry, (list, tuple)) and len(_entry) == 2:
+                _k, _v = _entry
+                if isinstance(_k, str) and isinstance(_v, str) and _k.strip() and _k.lower() in low:
+                    return _v
+        except Exception:
+            continue
     for title, body in GENERAL_CHAT:
         if title == low or title in low:
             return body

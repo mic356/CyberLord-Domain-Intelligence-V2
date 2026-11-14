@@ -6,3 +6,8 @@ __pycache__/
 *.pyc
 cyberlord-*.dump
 .DS_Store
+# self-learning loop: local artifacts never committed
+*.db
+.env
+cyberlord_learning.db
+LEARNING_TODO.md
