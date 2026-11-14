@@ -131,6 +131,21 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   if(!panel||!open||!form)return;
   const history=[];
   const scroll=()=>{messagesEl.scrollTop=messagesEl.scrollHeight};
+
+  const linkify=(el)=>{
+    // Escape-first: bubble() uses textContent, so re-scan and wrap URLs as links safely.
+    const txt = el.textContent;
+    if(!/https?:\/\//.test(txt)) return;
+    el.textContent = "";
+    txt.split(/(https?:\/\/[^\s)]+)/g).forEach(part=>{
+      if(/^https?:\/\//.test(part)){
+        const a=document.createElement("a");a.href=part;a.target="_blank";a.rel="noopener noreferrer";a.textContent=part;
+        el.appendChild(a);
+      } else {
+        el.appendChild(document.createTextNode(part));
+      }
+    });
+  };
   const bubble=(text,role)=>{
     // Reuse the live voice bubble so a spoken question already shown
     // as text before sending is not added twice.
@@ -144,7 +159,7 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     const el=document.createElement("div");
     el.className="cl-ai-message "+role;
     el.textContent=text;
-    messagesEl.appendChild(el);scroll();return el;
+    messagesEl.appendChild(el);if(role==="bot")linkify(el);scroll();return el;
   };
   const toggle=(show)=>{
     panel.hidden=!show;open.setAttribute("aria-expanded",String(show));
@@ -171,6 +186,15 @@ document.querySelectorAll(".tool-card").forEach(card=>{
       pending.remove();
       if(!res.ok)throw new Error(data.error||"The assistant is temporarily unavailable.");
       bubble(data.reply,"bot");history.push({role:"assistant",content:data.reply});
+      if(Array.isArray(data.images)&&data.images.length){
+        const grid=document.createElement("div");grid.className="cl-ai-images";
+        data.images.forEach(img=>{
+          const a=document.createElement("a");a.href=img.url||"#";a.target="_blank";a.rel="noopener noreferrer";
+          const im=document.createElement("img");im.src=img.thumb||img.url;im.alt=img.title||"image";im.loading="lazy";
+          a.appendChild(im);grid.appendChild(a);
+        });
+        messagesEl.appendChild(grid);scroll();
+      }
     }catch(err){pending.textContent=err.message||"Something went wrong. Please try again.";}
     finally{submit.disabled=false;scroll();}
   }

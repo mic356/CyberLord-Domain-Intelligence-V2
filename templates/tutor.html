@@ -108,7 +108,18 @@
         }
         throw new Error(data.error || "The tutor is temporarily unavailable.");
       }
-      add(data.reply, "bot");
+      var _el = add(data.reply, "bot");
+      // linkify URLs in reply text
+      try{ var _t = _el.textContent; if(/https?:\/\//.test(_t)){ _el.textContent=""; _t.split(/(https?:\/\/[^\s)]+)/g).forEach(function(part){ if(/^https?:\/\//.test(part)){ var a=document.createElement("a"); a.href=part; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent=part; _el.appendChild(a);} else { _el.appendChild(document.createTextNode(part)); } }); } }catch(e){}
+      if(Array.isArray(data.images) && data.images.length){
+        var grid = document.createElement("div"); grid.className = "cl-ai-images";
+        data.images.forEach(function(img){
+          var a = document.createElement("a"); a.href = img.url || "#"; a.target="_blank"; a.rel="noopener noreferrer";
+          var im = document.createElement("img"); im.src = img.thumb || img.url; im.alt = img.title || "image"; im.loading="lazy";
+          a.appendChild(im); grid.appendChild(a);
+        });
+        thread.appendChild(grid);
+      }
       history.push({role:"assistant", content:data.reply});
       save();
     }catch(err){
