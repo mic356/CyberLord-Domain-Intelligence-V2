@@ -296,3 +296,22 @@ footer{font-size:11px}
 @media(max-width:760px){.lab-home-grid{grid-template-columns:1fr}}
 
 .cl-ai-images{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 10px}.cl-ai-images a{display:block;width:104px;height:80px;border-radius:9px;overflow:hidden;border:1px solid #2a4055}.cl-ai-images img{width:100%;height:100%;object-fit:cover;display:block}.cl-ai-message a,.tutor-msg a{color:#8affc1;text-decoration:underline}
+
+
+/* Visitor-clarity: how-it-works strip + plain-English tool one-liners */
+.how-it-works{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0 4px}
+.how-it-works span{flex:1 1 170px;padding:11px 13px;border:1px solid #e4e9f4;border-radius:13px;background:#fff;font-size:12px;color:#66718c;box-shadow:0 8px 22px #29365b08}
+.how-it-works b{display:block;font-size:13px;color:#20294a;margin-bottom:2px}
+.tool-card .tool-plain{font-size:12px;line-height:1.5;color:#34405c;background:#f0edff;border:1px solid #e1dcff;border-radius:9px;padding:8px 10px;margin:6px 0 8px}
+
+/* Dashboard tidy (additive only): calmer spacing, same dark+teal language */
+.panel{margin:16px 0;padding:20px}
+.panel h2{margin:2px 0 12px}
+.tool-grid{gap:11px}
+.tool-card{padding:13px}
+.tool-card h3{margin:10px 0 2px}
+.tool-card p{margin:4px 0 8px}
+.tool-card .tool-plain{background:transparent;border:0;border-left:3px solid var(--cyan,#4ce0d0);border-radius:0;padding:2px 0 2px 9px;margin:6px 0 8px;color:#b6c5da;font-size:12px;line-height:1.5}
+.tutor-status-card,.monitoring-status-card{margin:12px 0}
+.app-shortcuts{gap:8px;margin:10px 0}
+.plan-feature-list{line-height:1.7}

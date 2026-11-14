@@ -875,8 +875,20 @@ def kali_worker_phone_intel(phone_number):
 def index():
     return render_template("index.html")
 
+
+@app.route("/about")
+def about():
+    return render_template("about.html")
+
+
+@app.route("/pricing")
+def pricing():
+    return render_template("pricing.html")
+
 SEO_PUBLIC_PAGES = [
     ("index", "https://cyberlord.name.ng/", "1.0", "daily"),
+    ("about", "https://cyberlord.name.ng/about", "0.8", "monthly"),
+    ("pricing", "https://cyberlord.name.ng/pricing", "0.8", "monthly"),
     ("faq", "https://cyberlord.name.ng/faq", "0.9", "weekly"),
     ("guide_email_compromised", "https://cyberlord.name.ng/guides/check-if-email-is-compromised", "0.9", "weekly"),
     ("guide_website_security", "https://cyberlord.name.ng/guides/website-security-check", "0.9", "weekly"),
