@@ -323,6 +323,23 @@ class BoardReply(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
+class UserMemory(db.Model):
+    """Per-user AI memory: what Cyber should remember about a logged-in user
+    between sessions (topics asked, lessons completed, preferences they state,
+    last visit). Mirrors the user_memory.py store; used when that store is
+    wired to the site database. Rows per user are capped in user_memory.py."""
+    __tablename__ = "user_memory"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(64), nullable=False, index=True)
+    email = db.Column(db.String(255), default="", nullable=False)
+    kind = db.Column(db.String(20), default="fact", nullable=False)
+    summary = db.Column(db.Text, nullable=False)
+    topic = db.Column(db.String(200), default="")
+    persona = db.Column(db.String(20), default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
@@ -1099,7 +1116,19 @@ def login():
         if not ok and not user:
             check_password_hash("pbkdf2:sha256:600000", password)
         if ok:
-            login_user(user); return redirect(url_for("dashboard"))
+            login_user(user)
+            # Per-user memory: stamp this visit so Cyber can greet a
+            # returning user and knows when they last came back.
+            try:
+                from user_memory import get_store as _mem_store
+                _mem_store().touch_visit(str(user.id), user.email)
+                _store = _mem_store()
+                row_count = len(_store.load(str(user.id)))
+                session["cyber_memory_count"] = row_count
+                session["cyber_welcome_back"] = bool(row_count > 1)
+            except Exception:
+                pass
+            return redirect(url_for("dashboard"))
         time.sleep(LOGIN_FAIL_DELAY)
         flash("Email or password is incorrect.", "error")
     return render_template("auth.html", mode="login")
@@ -1159,7 +1188,10 @@ def reset_password(token):
 def dashboard():
     refresh_subscription(current_user)
     history = ScanHistory.query.filter_by(user_id=current_user.id).order_by(ScanHistory.created_at.desc()).limit(50).all()
-    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS, tutor_pro=tutor_pro_active(current_user), tutor_remaining=tutor_remaining(current_user), tutor_limit=TUTOR_FREE_DAILY_LIMIT, tutor_pro_expires_at=getattr(current_user, "tutor_pro_expires_at", None), tutor_pro_status=tutor_pro_active(current_user))
+    # Per-user memory: one greeting flag the templates can use. Greeting copy
+    # stays short; the AI itself gets the full memory context on each request.
+    _returning = bool(session.get("cyber_welcome_back"))
+    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS, tutor_pro=tutor_pro_active(current_user), tutor_remaining=tutor_remaining(current_user), tutor_limit=TUTOR_FREE_DAILY_LIMIT, tutor_pro_expires_at=getattr(current_user, "tutor_pro_expires_at", None), tutor_pro_status=tutor_pro_active(current_user), cyber_returning=_returning)
 
 # Academy lessons and their exercise questions now live in academy_questions.py
 # (add practitioner-level questions there; see the how-to at the top of that file).
@@ -1232,6 +1264,15 @@ def academy_lesson(slug):
         if pct == 100:
             progress.completed_at = datetime.utcnow()
         db.session.commit()
+        # Per-user memory: remember completed lessons so Cyber can continue
+        # with the user next time without making them redo finished work.
+        if pct == 100:
+            try:
+                from user_memory import get_store as _mem_store2, lesson_completed_summary as _lcs
+                _mem_store2().save(str(current_user.id), current_user.email, "progress",
+                                   _lcs(lesson.get("title")), persona="tutor")
+            except Exception:
+                pass
         result = {"answers": answers, "correct_count": correct_count, "total": len(questions), "pct": pct,
                   "explain": [next((item for item in questions if item is q), {}).get("explain", "") for q in questions]}
     return render_template("academy_lesson.html", lesson=lesson, questions=questions, progress=progress, result=result, total=len(questions), course=course)
@@ -1988,6 +2029,40 @@ _LIVE_IMAGE_KEYS = ("picture", "pictures", "image", "images", "photo", "photos",
 _LIVE_WEATHER_KEYS = ("weather", "forecast", "wether", "wheather", "temperature", "rain", "sunny", "cloudy", "humidity", "climate")
 _LIVE_NEWS_KEYS = ("news", "headline", "headlines", "top stories", "latest news", "what is happening", "newz")
 
+# Per-user memory: try to persist an explicit "remember this" fact before
+# anything else runs in the AI path. Returns a short confirmation reply, or
+# None when the user did not ask to remember anything. Anonymous handled by
+# the @login_required wrapper on the caller; still guarded here.
+def _memory_store():
+    from user_memory import get_store
+    return get_store()
+
+def _user_memory_context(priority_note=None):
+    """Short system-context block for the logged-in user, or '' for anon."""
+    if not current_user or not current_user.is_authenticated:
+        return ""
+    try:
+        summary = _memory_store().context_summary(str(current_user.id), current_user.email)
+    except Exception:
+        return ""
+    if not summary:
+        return ""
+    from user_memory import compose_system_context
+    return compose_system_context(current_user.email, summary)
+
+def _maybe_persist_remember(text):
+    if not current_user or not current_user.is_authenticated:
+        return None
+    try:
+        from user_memory import extract_remember
+        fact = extract_remember(text)
+        if not fact:
+            return None
+        _memory_store().save(str(current_user.id), current_user.email, "preference", fact)
+        return "Got it, I will remember: %s. Welcome back anytime and I will carry on from here." % fact
+    except Exception:
+        return None
+
 def _gemini_model():
     # Valid stable Gemini names per Google docs 14 Nov 2026.
     # gemini-3.5-flash is deprecated (auto-routed to gemini-3.6-flash),
@@ -2037,6 +2112,15 @@ def ai_assistant():
     body = request.get_json(silent=True) or {}
     messages = list(body.get("messages", []) or [])
     fallback_latest = next((m.get("content", "") for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str)), "")
+    # Per-user memory: an explicit "remember this/remember me as X" is saved
+    # and confirmed immediately, before any provider spends a call on it.
+    _remember_reply = _maybe_persist_remember(fallback_latest)
+    if _remember_reply:
+        _persona_for_remember = str(body.get("persona") or body.get("mode") or "").strip().lower()
+        if _persona_for_remember not in ("tutor", "main"):
+            _persona_for_remember = "tutor" if (body.get("lesson_slug") or body.get("lesson")) else "main"
+        return jsonify(reply=_remember_reply, mode="user-memory", persona=_persona_for_remember, live_sources=[])
+    _user_mem_ctx = _user_memory_context()
     lesson_slug = body.get("lesson_slug") or body.get("lesson") or ""
     # Persona flag: "tutor" = academy tutor surfaces (lesson panels + /tutor
     # page, always carry a lesson_slug); "main" = dashboard assistant, broad.
@@ -2093,7 +2177,8 @@ def ai_assistant():
                     "discuss and explain it, but reveal the correct answer only if they ask to check "
                     "their answer or have already attempted it; otherwise keep answers hidden so they learn. "
                     "Teach in plain, beginner-friendly steps; never give account/payment/scan results. "
-                    "Safety: defensive and authorised-lab guidance only."
+                    "Safety: defensive and authorised-lab guidance only. "
+                    + (" " + _user_mem_ctx if _user_mem_ctx else "")
                 )
             else:
                 context = (
@@ -2112,7 +2197,8 @@ def ai_assistant():
                     "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. "
                     " " + _current_datetime_line() + ". "
                     "The user is also studying lesson '" + str(lesson.get("title", "")) + "'; only refer to it if it fits the conversation. "
-                    "Never invent CyberLord account, payment, scan or subscription status."
+                    "Never invent CyberLord account, payment, scan or subscription status. "
+                    + (" " + _user_mem_ctx if _user_mem_ctx else "")
                 )
             messages = [{"role": "user", "content": context}] + messages
     else:
@@ -2133,6 +2219,7 @@ def ai_assistant():
                 "If you do not actually know, say so plainly in one line instead of guessing or inventing a wrong answer. "
                 "Never invent CyberLord account, payment, scan or subscription status. "
                 + _current_datetime_line() + "."
+                + (" " + _user_mem_ctx if _user_mem_ctx else "")
             )}] + messages
         else:
             messages = [{"role": "user", "content": (
@@ -2140,6 +2227,7 @@ def ai_assistant():
                 "If asked something off-academy, do NOT refuse flatly: redirect cleverly, tying the question back to a "
                 "cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                 "Keep it natural, human and short."
+                + (" " + _user_mem_ctx if _user_mem_ctx else "")
             )}] + messages
     if not isinstance(messages, list):
         return jsonify(error="Invalid conversation format."), 400
@@ -2214,6 +2302,8 @@ def ai_assistant():
                 )}]
             if lesson_questions_block and persona == "tutor":
                 _sys_parts.append({"text": "Current lesson exercise and quiz questions (with correct answers and short explanations) for this tutor session:" + chr(10) + lesson_questions_block})
+            if _user_mem_ctx:
+                _sys_parts.append({"text": _user_mem_ctx})
             payload = {
                 "systemInstruction": {"parts": _sys_parts},
                 "contents": contents,
@@ -2319,6 +2409,8 @@ def ai_assistant():
             )
             if lesson_questions_block and persona == "tutor":
                 groq_system += chr(10) + "Current lesson exercise and quiz questions (with correct answers and short explanations):" + chr(10) + lesson_questions_block
+            if _user_mem_ctx:
+                groq_system += chr(10) + _user_mem_ctx
             # Groq path: no live fetch. Gemini grounding is the only live path (owner scope).
             convo = [{"role": "system", "content": (
                 groq_system +
