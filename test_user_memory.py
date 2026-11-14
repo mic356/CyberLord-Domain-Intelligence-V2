@@ -1,8 +1,14 @@
 """Tests for per-user AI memory (user_memory.py).
 
 Covers: save/load round-trip, per-user isolation, secret redaction,
-row cap per user, explicit remember extraction, the composed system
-context, and the sqlite fallback when LEARNING_DATABASE_URL is unset.
+row cap per user, explicit remember extraction (saved silently, with
+no acknowledgement text), automatic fact extraction, the composed
+system context, and the sqlite fallback when LEARNING_DATABASE_URL
+is unset.
+
+Silent memory contract: saving never produces reply text. No
+"Got it", no "I will remember", no "welcome back" from the memory
+path; the conversation just flows on.
 """
 import os
 
@@ -85,7 +91,9 @@ def test_context_summary_and_compose(tmpdir):
     composed = um.compose_system_context("alice@example.com", summary)
     assert "alice@example.com" in composed
     assert "returning" in composed.lower()
-    assert "welcome back" in composed.lower()
+    assert "welcome back" not in composed.lower()
+    assert "great them like a regular" in composed.lower()  # greet naturally, e.g. by name
+    assert "never announce" in composed.lower()
     # Unknown user: empty summary, no context block.
     assert store.context_summary("nobody", "") == ""
     assert um.compose_system_context("", "") == ""
@@ -101,7 +109,10 @@ def test_touch_visit(tmpdir):
     rows = store.load("user-1")
     assert len(rows) == 2, "each visit stamps a row (capped per user)"
     assert len([r for r in rows if r["kind"] == "visit"]) == 2
-    assert "welcome back" in um.compose_system_context("alice@example.com", store.context_summary("user-1", "alice@example.com")).lower()
+    composed = um.compose_system_context("alice@example.com", store.context_summary("user-1", "alice@example.com"))
+    assert "welcome back" not in composed.lower()
+    assert "got it" not in composed.lower()
+    assert "i will remember" not in composed.lower()
 
 
 def test_fallback_when_no_env(tmpdir, monkeypatch):
@@ -133,3 +144,79 @@ def test_lesson_completed_summary():
     s = um.lesson_completed_summary("Intro to Cybersecurity")
     assert "Intro to Cybersecurity" in s
     assert "completed lesson" in s
+
+
+def test_extract_facts_auto():
+    # Name, skill level, study context, work and goals are picked up
+    # without any "remember this" command.
+    assert ("fact", "user's name is Chidi") in um.extract_facts("my name is Chidi")
+    assert ("fact", "user's name is Tobi") in um.extract_facts("call me Tobi")
+    assert ("preference", "user is a beginner") in um.extract_facts("I'm a beginner")
+    assert ("preference", "user is a beginner") in um.extract_facts("I am a beginner")
+    assert ("preference", "user has 2 years of experience") in um.extract_facts("I have 2 years of experience")
+    assert ("preference", "user studies at night") in um.extract_facts("I study at night")
+    assert ("fact", "user lives in Lagos") in um.extract_facts("I live in Lagos")
+    assert ("preference", "user prefers short answers") in um.extract_facts("I like short answers")
+    assert ("fact", "user works as a teacher") in um.extract_facts("I work as a teacher")
+    assert ("fact", "user studies at Yaba College") in um.extract_facts("I study at Yaba College")
+    assert any("pentester" in f for _k, f in um.extract_facts("my goal is to become a pentester"))
+    assert any("hacker" in f for _k, f in um.extract_facts("I want to be a hacker"))
+
+
+def test_extract_facts_ignores_questions_and_third_parties():
+    assert um.extract_facts("please explain nmap") == []
+    assert um.extract_facts("how do I secure my site?") == []
+    assert um.extract_facts("what is phishing?") == []
+    assert um.extract_facts("what is my name?") == []
+    assert um.extract_facts("she is a beginner") == []
+    assert um.extract_facts("Cyber is my name") == []
+    assert um.extract_facts("") == []
+    assert um.extract_facts("tell me a joke") == []
+
+
+def test_auto_remember_stores_durable_facts_silently(tmpdir):
+    store = _fresh(tmpdir)
+    n = um.remember_facts(store, "user-1", "chidi@example.com",
+                          [{"role": "user", "content": "my name is Chidi and I am a beginner"}],
+                          persona="tutor")
+    assert n >= 2
+    rows = store.load("user-1")
+    blob = " ".join(r["summary"] for r in rows)
+    assert "Chidi" in blob
+    assert "beginner" in blob
+    assert all(r["persona"] == "tutor" for r in rows)
+    # Questions store nothing, and anonymous users store nothing.
+    assert um.remember_facts(store, "user-1", "chidi@example.com",
+                             [{"role": "user", "content": "please explain nmap"}]) == 0
+    assert um.remember_facts(store, "", "", [{"role": "user", "content": "my name is Ghost"}]) == 0
+    assert store.load("") == []
+
+
+def test_facts_are_secret_safe(tmpdir):
+    store = _fresh(tmpdir)
+    um.remember_facts(store, "user-1", "a@b.com",
+                      [{"role": "user", "content": "my name is Adaeze, my password is hunter2"}])
+    blob = " ".join(r["summary"] for r in store.load("user-1"))
+    assert "hunter2" not in blob
+    assert "Adaeze" in blob  # the real fact still survives
+
+
+def test_explicit_remember_still_saves():
+    # "remember this" keeps working, but nothing in the reply may
+    # announce it; the app path never returns acknowledgement text.
+    facts = dict((f, k) for k, f in um.extract_facts("remember this: I study at night"))
+    assert any("I study at night" in f for f in facts)
+    # The app persistence function must stay silent by contract.
+    import app as _app
+    import inspect
+    src = inspect.getsource(_app._maybe_persist_remember)
+    assert "got it" not in src.lower()
+    assert "welcome back" not in src.lower()
+    # No acknowledgement line is ever built in this function.
+    assert "I will remember" not in src
+
+
+def test_display_name_from_email():
+    assert um.display_name_from_email("chidi.okafor@gmail.com") == "Chidi"
+    assert um.display_name_from_email("") == ""
+    assert um.display_name_from_email(None) == ""

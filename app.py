@@ -2029,10 +2029,10 @@ _LIVE_IMAGE_KEYS = ("picture", "pictures", "image", "images", "photo", "photos",
 _LIVE_WEATHER_KEYS = ("weather", "forecast", "wether", "wheather", "temperature", "rain", "sunny", "cloudy", "humidity", "climate")
 _LIVE_NEWS_KEYS = ("news", "headline", "headlines", "top stories", "latest news", "what is happening", "newz")
 
-# Per-user memory: try to persist an explicit "remember this" fact before
-# anything else runs in the AI path. Returns a short confirmation reply, or
-# None when the user did not ask to remember anything. Anonymous handled by
-# the @login_required wrapper on the caller; still guarded here.
+# Per-user memory (silent): durable facts are saved automatically from
+# the conversation without any acknowledgement in the reply. Explicit
+# "remember this" facts are saved the same way, also silently: the
+# conversation just keeps going. Returns nothing the caller may show.
 def _memory_store():
     from user_memory import get_store
     return get_store()
@@ -2051,6 +2051,8 @@ def _user_memory_context(priority_note=None):
     return compose_system_context(current_user.email, summary)
 
 def _maybe_persist_remember(text):
+    """Save an explicit 'remember ...' fact silently. Always returns None:
+    saving never produces any reply text, just keeps the chat flowing."""
     if not current_user or not current_user.is_authenticated:
         return None
     try:
@@ -2059,9 +2061,21 @@ def _maybe_persist_remember(text):
         if not fact:
             return None
         _memory_store().save(str(current_user.id), current_user.email, "preference", fact)
-        return "Got it, I will remember: %s. Welcome back anytime and I will carry on from here." % fact
     except Exception:
-        return None
+        pass
+    return None
+
+def _auto_remember_from_turn(messages, persona=""):
+    """Silently save durable facts (name, level, preferences, goals) from
+    the latest user turn. The reply is never altered by this."""
+    if not current_user or not current_user.is_authenticated:
+        return
+    try:
+        from user_memory import remember_facts
+        remember_facts(_memory_store(), str(current_user.id), current_user.email,
+                       messages, persona=persona or "")
+    except Exception:
+        pass
 
 def _gemini_model():
     # Valid stable Gemini names per Google docs 14 Nov 2026.
@@ -2112,14 +2126,14 @@ def ai_assistant():
     body = request.get_json(silent=True) or {}
     messages = list(body.get("messages", []) or [])
     fallback_latest = next((m.get("content", "") for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str)), "")
-    # Per-user memory: an explicit "remember this/remember me as X" is saved
-    # and confirmed immediately, before any provider spends a call on it.
-    _remember_reply = _maybe_persist_remember(fallback_latest)
-    if _remember_reply:
-        _persona_for_remember = str(body.get("persona") or body.get("mode") or "").strip().lower()
-        if _persona_for_remember not in ("tutor", "main"):
-            _persona_for_remember = "tutor" if (body.get("lesson_slug") or body.get("lesson")) else "main"
-        return jsonify(reply=_remember_reply, mode="user-memory", persona=_persona_for_remember, live_sources=[])
+    # Per-user memory (silent): save explicit remember facts and auto-
+    # extract durable user facts, then let the normal reply path handle
+    # the turn. Saving never produces reply text; the conversation flows.
+    _persona_early = str(body.get("persona") or body.get("mode") or "").strip().lower()
+    if _persona_early not in ("tutor", "main"):
+        _persona_early = "tutor" if (body.get("lesson_slug") or body.get("lesson")) else "main"
+    _maybe_persist_remember(fallback_latest)
+    _auto_remember_from_turn(messages, persona=_persona_early)
     _user_mem_ctx = _user_memory_context()
     lesson_slug = body.get("lesson_slug") or body.get("lesson") or ""
     # Persona flag: "tutor" = academy tutor surfaces (lesson panels + /tutor

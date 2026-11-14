@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Dashboard · CyberLord
 {% endblock %}{% block content %}
-{% if cyber_returning %}<div class="cyber-welcome-back">Welcome back, {{ current_user.email }}. Cyber recognised you and will continue from where you left off.</div>{% endif %}
+{% if cyber_returning %}<div class="cyber-welcome-back">Hey {{ current_user.email }}, good to see you.</div>{% endif %}
 <div class="dash-head"><div><div class="eyebrow">OPERATIONS CENTER</div><h1>Security dashboard</h1><p class="muted">{{ current_user.email }} · Current plan: <strong>{{ plans[current_user.plan].name }}</strong>{% if current_user.plan_expires_at %} · Expires: {{ current_user.plan_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}</p></div><span class="status">● SYSTEM READY</span></div>
 
 {% if tutor_pro %}

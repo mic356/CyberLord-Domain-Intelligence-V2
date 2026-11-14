@@ -628,8 +628,8 @@ SOURCES = [
 
 
 
-_GREETINGS = ["Hey there!", "Hello!", "Hi!", "Hey, welcome back!", "Hello, good to see you!"]
-_VARIANT_OPENERS = ["Sure thing, here's a clear rundown:", "Got it, let's break this down:", "Happy to help. Here's the practical version:", "Good question. Here's how it works:", "No problem, let's go through this step by step:", "Absolutely, here's the gist:"]
+_GREETINGS = ["Hey there!", "Hello!", "Hi!", "Hey, good to see you!", "Hello, good to see you!"]
+_VARIANT_OPENERS = ["Sure thing, here's a clear rundown:", "Right, let's break this down:", "Happy to help. Here's the practical version:", "Good question. Here's how it works:", "No problem, let's go through this step by step:", "Absolutely, here's the gist:"]
 _FOLLOWUPS = {
  "phishing": "Want a quick checklist for spotting a phishing email, or help with what to do if you already clicked?",
  "nmap": "Want the beginner Nmap commands for your own lab, or help reading a scan result you already have?",
@@ -756,8 +756,8 @@ _SMALL_TALK = {
     "how old are you": "I don't really have an age, I am an AI assistant. What can I help you with?",
     "tell me a joke": "Why did the scarecrow win an award? He was outstanding in his field. Want another one, or shall we get back to something useful?",
     "what is the capital of france": "Paris is the capital of France. Want to know more about it, or something else?",
-    "ok": "Got it. What would you like to do next?",
-    "okay": "Got it. What would you like to do next?",
+    "ok": "Sure. What would you like to do next?",
+    "okay": "Sure. What would you like to do next?",
     "yes": "Great, go ahead and tell me what you need.",
     "no": "No problem. Let me know if you want to chat about anything else.",
     "test": "All good on my end, I am here and listening. What do you need?",
