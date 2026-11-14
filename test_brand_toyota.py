@@ -1,4 +1,4 @@
-"""100+ question battery for Oga (main persona) after the brand + Toyota work.
+"""100+ question battery for Cyber (main persona) after the brand + Toyota work.
 Run: python3 test_brand_toyota.py [--tag x]
 Covers brand questions, 40+ Toyota questions, and regression areas
 (pricing, weather, news, time, cyber redirect, typos, general knowledge).
@@ -9,13 +9,13 @@ import cyberlord_ai as ai
 # Each case: (question, must_contain list [ALL must appear], must_not list [ANY forbidden])
 CASES = [
     # ---- brand (9) ----
-    ("who are you", ["Oga"], []),
-    ("what is your name", ["Oga"], []),
-    ("tell me about yourself", ["Oga"], []),
-    ("who made you", ["Nozomio", "Oga"], ["I am CyberLord's built-in assistant"]),
-    ("what can i call you", ["Oga"], []),
-    ("are you a robot", ["Oga"], []),
-    ("are you human", ["Oga"], []),
+    ("who are you", ["Cyber"], []),
+    ("what is your name", ["Cyber"], []),
+    ("tell me about yourself", ["Cyber"], []),
+    ("who made you", ["Nozomio", "Cyber"], ["I am CyberLord's built-in assistant"]),
+    ("what can i call you", ["Cyber"], []),
+    ("are you a robot", ["Cyber"], []),
+    ("are you human", ["Cyber"], []),
     ("hello", [], []),
     ("what is this site", ["CyberLord"], []),
     ("what is cyberlord", ["CyberLord"], []),
@@ -103,7 +103,7 @@ CASES = [
     ("what is photosynthesis", ["plants"], []),
     ("how does the internet work", [], []),
     # ---- typos ----
-    ("who are yuo", ["Oga"], []),
+    ("who are yuo", ["Cyber"], []),
     ("what is toytoa", [], []),
     ("tell me about corrola", ["Corolla"], []),
     ("how much is pro", ["6,300"], []),
