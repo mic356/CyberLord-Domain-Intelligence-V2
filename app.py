@@ -563,6 +563,88 @@ def email_posture(domain):
         "dkim_selectors_checked":{sel:dns_records(sel+"._domainkey."+domain,"TXT") for sel in ["default","google","selector1","selector2","s1","s2"]},
         "note":"DNS-based email posture only. It cannot prove mailbox existence, sender identity or actual delivery."}
 
+# ---------------------------------------------------------------------------
+# Email exposure check (public, free tier) — Hudson Rock infostealer intel
+#
+# Source decision (verified 2026-11-14): Hudson Rock's free "Cavalier" email
+# endpoint at
+#   https://www.hudsonrock.com/api/json/v2/stats/website-results/email?email=...
+# is keyless, needs no account and no API key. It backs the public checker on
+# hudsonrock.com and returns JSON. It reports whether the email appears in
+# infostealer (malware) credential dumps, i.e. a computer infected by an
+# infostealer had this email's saved credentials. It does NOT list named
+# breaches (unlike HIBP, which requires a paid API key and is therefore not
+# used). Free alternatives checked and rejected: XposedOrNot's API
+# (api.xposedornot.com) aggressively rate-limits automated callers — 429
+# "Request dropped / scanning_protection" even on the public breaches list —
+# so it cannot serve a production lookup; breach.directory / cib.db.rip
+# were also unreachable from our network.
+#
+# The lookup is pluggable via check_email_exposure(): only this one function
+# talks to the sources, so a future keyed provider (e.g. HIBP) can be swapped
+# in without touching routes or templates. The function NEVER raises: any
+# failure is reported as status "source_unavailable" and the UI says so
+# plainly instead of showing fake or empty results.
+# ---------------------------------------------------------------------------
+
+HUDSON_ROCK_EMAIL_URL = "https://www.hudsonrock.com/api/json/v2/stats/website-results/email"
+# Second keyless endpoint on Cavalier's own host, tried as fallback if the
+# main hudsonrock.com host fails (both return the same JSON shape).
+HUDSON_ROCK_FALLBACK_URL = "https://cavalier.hudsonrock.com/api/json/v2/stats/website-results/email"
+
+
+def _hudson_rock_email_check(email):
+    """Keyless infostealer-exposure lookup. Returns a normalised dict."""
+    out = {"source": "Hudson Rock infostealer intelligence (free, no key required)",
+           "status": "source_unavailable", "found": False,
+           "date_compromised": None, "computer_name": None,
+           "total_user_services": 0, "total_corporate_services": 0,
+           "provider_url": "https://www.hudsonrock.com/free-tools"}
+    last_exc = None
+    for url in (HUDSON_ROCK_EMAIL_URL, HUDSON_ROCK_FALLBACK_URL):
+        try:
+            r = requests.get(url, params={"email": email},
+                             headers={"User-Agent": "CyberLord-Email-Check/1.0", "Accept": "application/json"},
+                             timeout=15)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as exc:
+            last_exc = exc
+            continue
+        if not isinstance(data, dict):
+            out["reason"] = "The exposure source returned an unexpected response."
+            return out
+        out["status"] = "ok"
+        out["computer_name"] = data.get("computer_name")
+        out["date_compromised"] = data.get("date_compromised")
+        out["total_user_services"] = int(data.get("total_user_services") or 0)
+        out["total_corporate_services"] = int(data.get("total_corporate_services") or 0)
+        out["found"] = bool(out["date_compromised"] or out["total_user_services"] or out["total_corporate_services"])
+        if data.get("message"):
+            out["provider_message"] = data.get("message")
+        return out
+    out["reason"] = "The exposure source could not be reached just now (" + str(last_exc)[:140] + ")."
+    return out
+
+
+def check_email_exposure(email):
+    """Pluggable breach-source entry point. No fake data: if the source fails,
+    status is 'source_unavailable' and callers must say so."""
+    email = (email or "").strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        return {"email": email, "status": "invalid", "found": False,
+                "reason": "Enter a valid email address."}
+    result = _hudson_rock_email_check(email)
+    result["email"] = email
+    result["checked_at"] = datetime.now(timezone.utc).isoformat()
+    result["scope_note"] = ("This checks public infostealer-compromise intelligence only. "
+                            "It is not a full breach database: an email not listed here may "
+                            "still appear in a breach this source does not cover. A listing "
+                            "means credentials tied to this email were recovered from an "
+                            "infected computer; change those passwords from a clean device.")
+    return result
+
+
 def technology_fingerprint(domain):
     response, body, addresses=fetch_site(domain)
     headers={k.lower():v for k,v in response.headers.items()}
@@ -1366,6 +1448,25 @@ def security_centre():
     domains = len({x.target.lower() for x in items if "." in x.target and "@" not in x.target})
     return render_template("security_centre.html", items=items, total=total, domains=domains)
 
+@app.route("/email-exposure-check", methods=["GET", "POST"])
+def email_exposure_check():
+    """Public 'Has my email been leaked?' checker (free tier).
+
+    No login required. Free viewers see the verdict plus a small teaser;
+    signed-in PRO members get the full exposure record. Results are saved to
+    scan history only for signed-in users (so their own checks are trackable),
+    never for anonymous visitors.
+    """
+    result = None
+    email_val = ""
+    if request.method == "POST":
+        email_val = (request.form.get("email") or "").strip()
+        result = check_email_exposure(email_val)
+        if result.get("status") == "ok" and current_user.is_authenticated:
+            save_scan("email_exposure_check", email_val.lower(), result)
+    is_pro = bool(current_user.is_authenticated and PLANS.get(current_user.plan, PLANS["free"])["rank"] >= 1)
+    return render_template("email_exposure.html", result=result, email_val=email_val, is_pro=is_pro)
+
 @app.route("/history/<int:scan_id>/delete", methods=["POST"])
 @login_required
 def delete_scan(scan_id):
@@ -1485,6 +1586,17 @@ def run_tool(tool):
                 if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",target): raise ValueError("Enter a valid email address.")
                 domain=normalize_domain(target.split("@",1)[1]); posture=email_posture(domain)
                 result={"email":target,"domain":domain,"syntax_valid":True,"domain_email_posture":posture,"mailbox_exists":None,"note":"No mailbox login or delivery test is performed; this does not verify that the individual mailbox exists."}
+            elif tool == "breach":
+                if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",target): raise ValueError("Enter a valid email address for Breach Exposure.")
+                result = check_email_exposure(target)
+                result["target"] = target
+                result["provider_status"] = "connected" if result.get("status") == "ok" else "not_connected"
+                if result.get("status") == "ok":
+                    result["message"] = "Infostealer exposure verdict from Hudson Rock (free, keyless)."
+                elif result.get("status") == "invalid":
+                    raise ValueError(result["reason"])
+                else:
+                    result["message"] = "The exposure source is unavailable right now. This is not a clean result; no breach conclusion can be made until the source answers."
             else:
                 domain=normalize_domain(target)
                 if tool in {"domain","dns"}: result=scan_domain(domain)
@@ -1498,8 +1610,6 @@ def run_tool(tool):
                 elif tool=="cve":
                     tech=technology_fingerprint(domain)
                     result={"target":domain,"technology_evidence":tech,"cve_matches":[],"message":"No verified product/version pair was identified. CVE matches are intentionally withheld rather than guessed.","next_step":"Confirm exact product and version from authoritative asset inventory before mapping advisories."}
-                elif tool=="breach":
-                    result={"target":domain,"provider_status":"not_connected","message":"No licensed breach-intelligence provider is connected. This is not a clean-breach result; no breach conclusion can be made."}
         save_scan(tool,target,result)
         return jsonify(result=result)
     except ValueError as e: return jsonify(error=str(e)),400

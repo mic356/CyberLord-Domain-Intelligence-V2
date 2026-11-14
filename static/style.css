@@ -315,3 +315,27 @@ footer{font-size:11px}
 .tutor-status-card,.monitoring-status-card{margin:12px 0}
 .app-shortcuts{gap:8px;margin:10px 0}
 .plan-feature-list{line-height:1.7}
+
+/* Email exposure checker (public free tier, PRO full record) */
+.exposure-hero{display:grid;grid-template-columns:1.2fr 1fr;gap:22px;align-items:center;border:1px solid rgba(255,255,255,.12);border-radius:16px;background:rgba(255,255,255,.035);padding:24px;margin:18px 0}
+.exposure-hero h2{margin:8px 0 10px}
+.exposure-hero h2 span{color:var(--cyan,#4ce0d0)}
+.exposure-copy p{color:#b6c5da;max-width:52ch}
+.exposure-form{display:flex;gap:10px;flex-wrap:wrap}
+.exposure-form input{flex:1 1 220px;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.2);color:inherit;font:inherit}
+.exposure-form input:focus{border-color:var(--cyan,#4ce0d0);outline:none}
+.exposure-note{width:100%;color:#8fa3bd;font-size:13px;margin:4px 0 0}
+.exposure-wrap{max-width:860px;margin:0 auto}
+.exposure-head h1{margin:10px 0}
+.exposure-result{margin-top:20px}
+.notice{border-radius:12px;padding:16px 18px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);font-size:14px;line-height:1.6}
+.notice-ok{border-color:rgba(61,220,151,.45);background:rgba(61,220,151,.07)}
+.notice-danger{border-color:rgba(255,102,132,.45);background:rgba(255,102,132,.08)}
+.notice-warning{border-color:rgba(255,209,122,.45);background:rgba(255,209,122,.07)}
+.data-table{width:100%;border-collapse:collapse;font-size:14px}
+.data-table th,.data-table td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.1);text-align:left;vertical-align:top}
+.data-table th{color:#8fa3bd;font-weight:600;width:34%}
+.blur-card{border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px 18px;background:rgba(255,255,255,.03)}
+.blur-line{margin:6px 0;color:#8fa3bd}
+.blur-text{color:inherit;letter-spacing:2px;user-select:none}
+@media(max-width:860px){.exposure-hero{grid-template-columns:1fr}}
