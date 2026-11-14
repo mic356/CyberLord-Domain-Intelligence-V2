@@ -1798,6 +1798,12 @@ def _lesson_questions_context(lesson, max_chars=8000):
 # --- Live info for main persona (ai-live-info), Gemini-gated ---
 # Guardrail: never ground cybersecurity. Reuses the fallback's cyber key
 # list so main + "what is nmap" still redirects to the tutor with no search.
+try:
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    _LAGOS_TZ = _ZoneInfo("Africa/Lagos")
+except Exception:
+    _LAGOS_TZ = timezone(timedelta(hours=1), "Africa/Lagos")
+
 _LIVE_CYBER_KEYS = (
     "nmap", "wireshark", "burp", "metasploit", "sqlmap", "gobuster", "nikto", "searchsploit", "john the ripper", "hashcat",
     "cybersecurity", "cyber security", "penetration test", "pen test", "ethical hacker", "ethical hacking", "phishing", "malware", "ransomware",
@@ -1832,6 +1838,12 @@ def _main_live_guard(q):
     return None
 
 
+_TIME_QUESTION_RE = re.compile(r"(what[\'\s]+(?:time|day|date)|whats[\'\s]+(?:the[\'\s]+)?(?:time|day|date)|current[\'\s]+(?:time|date|day)|time[\'\s]+is[\'\s]+it|date[\'\s]+is[\'\s]+it|day[\'\s]+is[\'\s]+it|what[\'\s]+is[\'\s]+(?:the[\'\s]+)?current)", re.I)
+
+def _current_datetime_line():
+    now = datetime.now(_LAGOS_TZ)
+    return "Today is " + now.strftime("%A, %B %d, %Y") + ", " + now.strftime("%-I:%M %p").lstrip("0") + " (Lagos time)"
+
 @app.route("/api/ai-assistant", methods=["POST"])
 @login_required
 def ai_assistant():
@@ -1859,6 +1871,10 @@ def ai_assistant():
     _live_guard = _main_live_guard(fallback_latest) if persona == "main" else None
     if persona == "main" and _live_guard == "cyber":
         return jsonify(reply="That is one for the tutor, head to the Academy tutor and they will walk you through it. The Academy covers Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, and Career Path & Certifications, so pick the course that matches your question and the tutor will help step by step.", mode="tutor-redirect", persona=persona, live_sources=[])
+    if persona == "main":
+        _low_q = (fallback_latest or "").lower()
+        if _TIME_QUESTION_RE.search(_low_q):
+            return jsonify(reply=_current_datetime_line() + ". It is the current time in Lagos, Nigeria.", mode="datetime-direct", persona=persona, live_sources=["Server clock (Africa/Lagos)"])
     # Tutor Pro gating: free tutor is limited, Tutor Pro is unlimited.
     # The main (dashboard) assistant is never limited by this.
     if persona == "tutor":
@@ -1902,6 +1918,7 @@ def ai_assistant():
                     "Be truthful and concise with a warm, human tone, like a helpful friend. "
                     "If you do not actually know, say so plainly in one line instead of guessing or inventing. "
                     "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. "
+                    " " + _current_datetime_line() + ". "
                     "The user is also studying lesson '" + str(lesson.get("title", "")) + "'; only refer to it if it fits the conversation. "
                     "Never invent CyberLord account, payment, scan or subscription status."
                 )
@@ -1920,7 +1937,8 @@ def ai_assistant():
                 "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. "
                 "Answer truthfully and concisely with a warm, human tone, like a helpful friend. "
                 "If you do not actually know, say so plainly in one line instead of guessing or inventing a wrong answer. "
-                "Never invent CyberLord account, payment, scan or subscription status."
+                "Never invent CyberLord account, payment, scan or subscription status. "
+                + _current_datetime_line() + "."
             )}] + messages
         else:
             messages = [{"role": "user", "content": (
@@ -1984,7 +2002,7 @@ def ai_assistant():
                     "like a helpful friend. If you do not actually know, say so plainly in one line instead of "
                     "guessing or inventing. The security guardrails below apply only to security-related requests; "
                     "for general chat, just answer normally. "
-                    "For current real-world info (news, weather, prices, sports scores) you may use Google Search grounding when enabled. "
+                    "For current real-world info (news, weather, prices, sports scores) you may use Google Search grounding when enabled. " + _current_datetime_line() + ". "
                 )
             _sys_parts = [{"text": (
                     system_line +
@@ -2076,7 +2094,7 @@ def ai_assistant():
                 "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with a warm, human tone, "
                 "like a helpful friend. If you do not actually know, say so plainly in one line instead of "
                 "guessing or inventing. The security guardrails below apply only to security-related requests; "
-                "for general chat, just answer normally. "
+                "for general chat, just answer normally. " + _current_datetime_line() + ". "
             )
             if lesson_questions_block and persona == "tutor":
                 groq_system += chr(10) + "Current lesson exercise and quiz questions (with correct answers and short explanations):" + chr(10) + lesson_questions_block
