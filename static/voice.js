@@ -1,9 +1,10 @@
 // CyberLord voice input and spoken replies.
-// Tap once to start listening; tap again to stop. Review the transcript and press Send.
+// Speech playback fires ONLY when the user clicks a soundbar / Listen
+// control. Nothing on this page speaks on load, on message render, or
+// on arrival of a reply. There is no autoplay path.
 (function () {
   "use strict";
-  var VOICE_PREF = "cl-voice-replies";
-  var voiceOn = false;
+
   var activeRecognition = null;
   var activeButton = null;
   var activeForm = null;
@@ -12,8 +13,6 @@
   var interimTranscript = "";
   var recognitionError = "";
   var manuallyStopped = false;
-
-  try { voiceOn = localStorage.getItem(VOICE_PREF) === "1"; } catch (e) {}
 
   function recognitionConstructor() {
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -177,8 +176,11 @@
       }
     });
   }
+  // Playback only: reads the tapped message when the Listen / soundbar
+  // control is clicked. Called from the click handler below and from
+  // nothing else in this file.
   function speak(text) {
-    if (!voiceOn || !speechSynthesisAvailable()) return;
+    if (!speechSynthesisAvailable()) return;
     try {
       window.speechSynthesis.cancel();
       var utterance = new SpeechSynthesisUtterance(String(text || "").replace(/\s+/g, " ").trim().slice(0, 900));
@@ -187,30 +189,34 @@
       window.speechSynthesis.speak(utterance);
     } catch (e) {}
   }
+  function stopSpeech() {
+    if (speechSynthesisAvailable()) {
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+    }
+  }
+  // The soundbar control is a Listen button for the latest AI reply in
+  // the same panel. Clicking it reads that reply aloud. Nothing speaks
+  // until it is clicked, and there is no toggle that turns speech on
+  // for future messages.
   function bindSpeaker(button) {
     if (button.dataset.voiceBound === "1") return;
     button.dataset.voiceBound = "1";
     button.addEventListener("click", function (event) {
       event.preventDefault();
-      voiceOn = !voiceOn;
-      try { localStorage.setItem(VOICE_PREF, voiceOn ? "1" : "0"); } catch (e) {}
-      button.setAttribute("aria-pressed", voiceOn ? "true" : "false");
-      button.classList.toggle("on", voiceOn);
-      button.textContent = voiceOn ? "🔊" : "🔈";
-      button.title = voiceOn ? "Voice replies on" : "Voice replies off";
-      if (!voiceOn && speechSynthesisAvailable()) window.speechSynthesis.cancel();
+      if (speechSynthesisAvailable() && window.speechSynthesis.speaking) {
+        stopSpeech();
+        return;
+      }
+      var root = button.closest("section, aside, div") || document;
+      var nodes = root.querySelectorAll(".cl-ai-message.bot, .tutor-msg.bot, .chat-msg.bot");
+      var target = null;
+      for (var i = nodes.length - 1; i >= 0; i--) {
+        var text = (nodes[i].textContent || "").trim();
+        if (text && text !== "Thinking…" && text !== "Searching CyberLord knowledge…") { target = text; break; }
+      }
+      if (target) speak(target);
     });
-    button.setAttribute("aria-pressed", voiceOn ? "true" : "false");
-    button.classList.toggle("on", voiceOn);
-    button.textContent = voiceOn ? "🔊" : "🔈";
-  }
-  function scanReplies(root) {
-    if (!root || !root.querySelectorAll) return;
-    root.querySelectorAll(".cl-ai-message.bot, .tutor-msg.bot, .chat-msg.bot").forEach(function (node) {
-      if (node.dataset.voiceScanned === "1") return;
-      node.dataset.voiceScanned = "1";
-      if (voiceOn) speak(node.textContent);
-    });
+    button.setAttribute("aria-pressed", "false");
   }
   function wire(root) {
     if (!root || !root.querySelectorAll) return;
@@ -219,11 +225,12 @@
     root.querySelectorAll("[data-mic-btn]").forEach(bindMic);
     root.querySelectorAll("[data-voice-toggle]").forEach(bindSpeaker);
   }
+  // Wire controls on load only. No reply scanning, no greeting playback,
+  // no speech on render.
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", function () { wire(document); scanReplies(document); });
+    document.addEventListener("DOMContentLoaded", function () { wire(document); });
   } else {
     wire(document);
-    scanReplies(document);
   }
   if (window.MutationObserver && document.body) {
     new MutationObserver(function (mutations) {
@@ -231,7 +238,6 @@
         mutation.addedNodes.forEach(function (node) {
           if (node.nodeType !== 1) return;
           wire(node);
-          scanReplies(node);
         });
       });
     }).observe(document.body, { childList: true, subtree: true });
