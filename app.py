@@ -581,10 +581,12 @@ def technology_fingerprint(domain):
 def ip_intelligence(value):
     ip=ipaddress.ip_address(value)
     if not ip.is_global: raise ValueError("Only public IP addresses can be queried.")
-    try: ptr=socket.gethostbyaddr(str(ip))[0]
-    except Exception: ptr=None
+    try: ptr, _aliases, _names = socket.gethostbyaddr(str(ip))
+    except Exception: ptr, _names = None, []
+    # Named reverse loses the source order when there is no PTR; report the
+    # full name list only when the lookup actually succeeded.
     return {"ip":str(ip),"version":ip.version,"is_global":ip.is_global,"reverse_dns":ptr,
-        "reverse_dns_names":socket.gethostbyaddr(str(ip))[2][:10] if ptr else [],
+        "reverse_dns_names":list(_names)[:10] if ptr else [],
         "rdap_url":"https://rdap.org/ip/"+str(ip),"note":"RDAP link points to registration data; allocation data does not identify a device owner or prove malicious activity."}
 
 
@@ -598,22 +600,35 @@ def ip_intelligence(value):
 # ---------------------------------------------------------------------------
 
 def _rdap_whois(domain):
-    """Registration data via RDAP, keyless. Returns parsed summary."""
+    """Registration data via RDAP, keyless. Returns parsed summary.
+    Honest degradation: any transport or parse failure returns
+    status 'not_available' with the reason, never a guessed value."""
     out = {"source": "RDAP (rdap.org)", "status": "not_available", "registrar": None,
+           "registrar_handle": None,
            "created": None, "expires": None, "updated": None, "status_flags": [],
            "name_servers": [], "registrant_country": None, "registrar_country": None,
            "note": "(parsed from public RDAP record; empty fields mean not published)"}
-    try:
-        r = requests.get("https://rdap.org/domain/" + domain,
-                         headers={"Accept": "application/json", "User-Agent": "CyberLord-Deep-Scan/1.0"},
-                         timeout=12)
-        if r.status_code == 404:
-            out["status"] = "no_rdap_record"
-            return out
-        r.raise_for_status()
-        data = r.json()
-    except Exception as exc:
-        out["reason"] = str(exc)[:180]
+    data = None
+    last_exc = None
+    for attempt in range(3):
+        try:
+            r = requests.get("https://rdap.org/domain/" + domain,
+                             headers={"Accept": "application/json", "User-Agent": "CyberLord-Deep-Scan/1.0"},
+                             timeout=12)
+            if r.status_code == 404:
+                out["status"] = "no_rdap_record"
+                return out
+            r.raise_for_status()
+            data = r.json()
+            break
+        except Exception as exc:
+            last_exc = exc
+            if r is not None and getattr(r, "status_code", None) in (400, 403, 410):
+                break
+            if attempt < 2:
+                time.sleep(1 + attempt)
+    if data is None:
+        out["reason"] = str(last_exc)[:180] if last_exc else "RDAP request failed"
         return out
     out["status"] = "ok"
     out["status_flags"] = data.get("status", []) or []
@@ -628,42 +643,58 @@ def _rdap_whois(domain):
         roles = [str(x).lower() for x in (ent.get("roles") or [])]
         vcard = ent.get("vcardArray")
         country = None
+        fn = None
         if isinstance(vcard, list) and len(vcard) > 1:
             for item in vcard[1] or []:
                 try:
+                    if item[0] == "fn" and item[3]:
+                        fn = item[3]
                     if item[0] == "adr" and isinstance(item[3], list) and item[3]:
                         country = item[3][-1] or None
-                        break
                 except Exception:
                     continue
         if "registrar" in roles:
-            out["registrar"] = ent.get("handle") or None
+            out["registrar"] = fn or ent.get("handle") or None
+            out["registrar_handle"] = ent.get("handle") or None
             out["registrar_country"] = country
         if "registrant" in roles and country:
             out["registrant_country"] = country
     return out
 
 def _ct_history(domain):
-    """Certificate Transparency history + subdomain enumeration via crt.sh (keyless)."""
+    """Certificate Transparency history + subdomain enumeration via crt.sh (keyless).
+    crt.sh is rate-limited and frequently times out: retry up to 3 times with
+    backoff, then report status 'not_available' honestly. A domain with no CT
+    entries is reported as total_entries=0, never as an invented list."""
     out = {"source": "crt.sh Certificate Transparency", "status": "not_available",
            "total_entries": 0, "subdomains": [], "subdomain_count": 0,
            "earliest_seen": None, "latest_seen": None,
            "issuers": [], "note": "CT logs are public; absence of entries does not prove a certificate never existed."}
-    try:
-        r = requests.get("https://crt.sh/", params={"q": "%." + domain, "output": "json"},
-                         headers={"User-Agent": "CyberLord-Deep-Scan/1.0"}, timeout=15)
-        r.raise_for_status()
-        rows = r.json()
-        if not isinstance(rows, list):
-            out["status"] = "unexpected_response"
-            return out
-    except Exception as exc:
-        out["reason"] = str(exc)[:180]
+    rows = None
+    last_exc = None
+    for attempt in range(3):
+        try:
+            r = requests.get("https://crt.sh/", params={"q": "%." + domain, "output": "json"},
+                             headers={"User-Agent": "CyberLord-Deep-Scan/1.0"}, timeout=25)
+            r.raise_for_status()
+            parsed = r.json()
+            if not isinstance(parsed, list):
+                out["status"] = "unexpected_response"
+                return out
+            rows = parsed
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt < 2:
+                time.sleep(2 + attempt * 3)
+    if rows is None:
+        out["reason"] = ("crt.sh unavailable after 3 attempts: " +
+                         (str(last_exc)[:150] if last_exc else "request failed"))
         return out
     out["status"] = "ok"
     out["total_entries"] = len(rows)
     subs, issuers, dates = set(), set(), []
-    for row in rows[:1000]:
+    for row in rows:
         if not isinstance(row, dict): continue
         for name in str(row.get("name_value", "")).splitlines():
             name = name.strip().lower().lstrip("*.")
@@ -679,7 +710,9 @@ def _ct_history(domain):
     return out
 
 def _deeper_dns(domain):
-    """Deeper DNS: MX/NS/TXT/CAA/SOA plus DMARC, SPF split, DKIM common selectors, DNSSEC."""
+    """Deeper DNS: MX/NS/TXT/CAA/SOA plus DMARC, SPF split, DKIM common selectors, DNSSEC.
+    DKIM found sets are the UNION of all TXT records per selector, so long keys
+    split across multiple strings are never truncated or lost."""
     records = {kind: dns_records(domain, kind) for kind in ("MX", "NS", "TXT", "CAA", "SOA", "DNSKEY", "DS")}
     txt = records["TXT"]
     spf = [x for x in txt if "v=spf1" in x.lower()]
@@ -688,9 +721,11 @@ def _deeper_dns(domain):
     if dmarc:
         m = re.search(r"(?:^|;)\s*p\s*=\s*(none|quarantine|reject)", ";".join(dmarc), re.I)
         if m: dmarc_policy = m.group(1).lower()
-    dkim = {sel: dns_records(sel + "._domainkey." + domain, "TXT")
-            for sel in ("default", "google", "selector1", "selector2", "s1", "s2", "k1", "dkim")}
-    dkim_found = {k: v for k, v in dkim.items() if v}
+    dkim_found = {}
+    for sel in ("default", "google", "selector1", "selector2", "s1", "s2", "k1", "dkim"):
+        vals = dns_records(sel + "._domainkey." + domain, "TXT")
+        if vals:
+            dkim_found[sel] = [" ".join(vals)]
     soa = records["SOA"]
     findings = []
     if not records["CAA"]:
@@ -699,7 +734,7 @@ def _deeper_dns(domain):
         findings.append({"severity": "low", "title": "No DNSSEC records observed", "detail": "No DNSKEY or DS record was returned at the apex.", "fix": "If your registrar supports it, sign the zone with DNSSEC."})
     return {"records": records, "spf": spf, "dmarc": dmarc, "dmarc_policy": dmarc_policy,
             "dkim_selectors_found": dkim_found,
-            "dkim_selectors_checked": list(dkim.keys()),
+            "dkim_selectors_checked": ["default", "google", "selector1", "selector2", "s1", "s2", "k1", "dkim"],
             "dnssec_present": bool(records["DNSKEY"] or records["DS"]),
             "soa": soa, "findings": findings,
             "note": "DKIM uses common public selectors only; unknown selectors will not be found. DNS responses reflect the resolver used by this service."}
@@ -754,18 +789,18 @@ DEEP_TECH_PATTERNS = [
     ("WordPress", r"wp-content|wp-includes|wp-json"), ("Drupal", r"/sites/(?:default|all)/files|drupal"),
     ("Joomla", r"/media/system/js/|joomla"), ("React", r"react(?:\.production)?\.min\.js|__react"), ("Next.js", r"/_next/static/"),
     ("Nuxt", r"__nuxt"), ("Vue.js", r"vue(?:\.runtime)?(?:\.global)?\.js|__vue"), ("Angular", r"ng-version|angular"),
-    ("Svelte", r"svelte"), ("Laravel", r"laravel_session|XSRF-TOKEN"), ("Django", r"csrftoken|django"),
-    ("Ruby on Rails", r"csrf-param|rails-ujs"), ("ASP.NET", r"__viewstate|x-aspnet-version"), ("PHP", r"php(?:sess|version)"),
-    ("Shopify", r"cdn\.shopify\.com|Shopify\.theme"), ("WooCommerce", r"woocommerce"), ("Magento", r"mage/"),
+    ("Svelte", r"svelte"), ("Laravel", r"(?:^|[\s\"'.,;])(?:laravel_session|XSRF-TOKEN)(?:[\s\"'.,;]|$)"), ("Django", r"(?:^|[\s\"'.,;])(?:csrftoken|django)(?:[\s\"'.,;]|$)"),
+    ("Ruby on Rails", r"csrf-param|rails-ujs"), ("ASP.NET", r"__viewstate|x-aspnet-version"), ("PHP", r"phpsessid|phpversion"),
+    ("Shopify", r"cdn\.shopify\.com|Shopify\.theme"), ("WooCommerce", r"woocommerce"), ("Magento", r"(?:^|[\s\"'`<>=/])mage/(?:js|version)|mage\.js|magento|mage_init"),
     ("Cloudflare", r"cloudflare|__cf_bm|cf-ray"), ("AWS / Amazon", r"server:.*(awselb|amazon)|x-amz-"),
-    ("Google Analytics", r"googletagmanager|google-analytics|gtag\(|ga\("), ("Google Tag Manager", r"googletagmanager\.com/gtm"),
+    ("Google Analytics", r"googletagmanager|google-analytics|gtag\("), ("Google Tag Manager", r"googletagmanager\.com/gtm"),
     ("Facebook Pixel", r"fbevents\.js|connect\.facebook\.net"), ("Bootstrap", r"bootstrap(?:\.min)?\.css"),
     ("jQuery", r"jquery(?:\.min)?\.js"), ("Tailwind CSS", r"tailwind(?:css)?"), ("Font Awesome", r"font-?awesome"),
     ("reCAPTCHA", r"recaptcha"), ("Stripe", r"js\.stripe\.com|stripe\.js"), ("PayPal", r"paypal"),
-    ("Mailchimp", r"mailchimp"), ("Intercom", r"intercom|widget\.intercom"), ("Hotjar", r"hotjar"),
+    ("Mailchimp", r"mailchimp"), ("Intercom", r"widget\.intercom\.io|intercomApp|Intercom\(|api\.intercom\.io"), ("Hotjar", r"hotjar"),
     ("New Relic", r"newrelic|nr-spa"), ("Datadog", r"datadog"), ("Sentry", r"sentry"),
     ("Vercel", r"x-vercel|vercel"), ("Netlify", r"x-nf-request-id|netlify"), ("Heroku", r"x-heroku|herokuapp"),
-    ("Nginx", r"nginx"), ("Apache", r"apache"), ("LiteSpeed", r"litespeed"),
+    ("Nginx", r"(?:^|[\s\"'.,;])(?:nginx|openresty)(?:[\s\"'.,;]|$)"), ("Apache", r"(?:^|[\s\"'.,;])(?:apache|httpd)(?:[\s\"'.,;]|$)"), ("LiteSpeed", r"litespeed"),
     ("openresty", r"openresty"), ("IIS", r"microsoft-iis"), ("Express (Node)", r"x-powered-by:\s*express"),
 ]
 
