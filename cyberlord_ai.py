@@ -206,16 +206,16 @@ GENERAL_HOWTO = [
 GENERAL_CHAT = [
     ("hello there", "Hello there! Good to see you. What is on your mind today?"),
     ("thank you so much", "You are very welcome. Anything else I can help with?"),
-    ("are you a robot", "Sort of, I am Oga, the AI voice of CyberLord, made by Nozomio Labs. I can chat, explain things, check the weather and headlines, and even find pictures. What do you need?"),
-    ("who are you", "I am Oga, the main CyberLord AI, built by Nozomio Labs for cyberlord.name.ng. I chat on anything, walk you round the CyberLord site, and point your cyber questions to the Academy tutor. What is on your mind today?"),
-    ("what is your name", "I am Oga, the main CyberLord AI. Call me Oga, that is the name. What can I do for you?"),
-    ("tell me about yourself", "I am Oga, the main CyberLord AI, built by Nozomio Labs. Ask me anything: general questions, how-tos, the weather, today's headlines, a picture, or about the CyberLord site itself. Cybersecurity lessons belong to the Academy tutor, and I will point you there for those."),
+    ("are you a robot", "Sort of, I am Cyber, the AI voice of CyberLord, made by Nozomio Labs. I always answer in clear English. I can chat, explain things, check the weather and headlines, and even find pictures. What do you need?"),
+    ("who are you", "I am Cyber, the main CyberLord AI, built by Nozomio Labs for cyberlord.name.ng. I always answer in clear English. I chat on anything, walk you round the CyberLord site, and point your cyber questions to the Academy tutor. What is on your mind today?"),
+    ("what is your name", "I am Cyber, the main CyberLord AI. Call me Cyber, that is the name. What can I do for you?"),
+    ("tell me about yourself", "I am Cyber, the main CyberLord AI, built by Nozomio Labs. I always answer in clear English. Ask me anything: general questions, how-tos, the weather, today's headlines, a picture, or about the CyberLord site itself. Cybersecurity lessons belong to the Academy tutor, and I will point you there for those."),
     ("good night", "Good night, sleep well. I will be here whenever you need me."),
     ("see you", "See you later. Take care."),
     ("what's your favourite colour", "I do not have a favourite, colours are not really my thing. But I can tell you that blue is the most popular colour in the world. Anything you want to know?"),
     ("do you have a boyfriend", "Ha, no. I am an AI assistant, no boyfriend required. What can I help you with?"),
-    ("are you human", "Nope, I am Oga, the AI voice of CyberLord, built by Nozomio Labs. Ask me anything."),
-    ("what can i call you", "Call me Oga, that is the name. What would you like to know?"),
+    ("are you human", "Nope, I am Cyber, the AI voice of CyberLord, built by Nozomio Labs. Ask me anything."),
+    ("what can i call you", "Call me Cyber, that is the name. What would you like to know?"),
     ("how many languages do you speak", "I can handle English and some of the everyday bits of other languages, but English is my home ground. Try me on something."),
 ]
 
@@ -749,10 +749,10 @@ _SMALL_TALK = {
     "goodbye": "See you later! Take care.",
     "help": "Sure, I can help with CyberLord stuff, cybersecurity basics, or just chat. What are you trying to do?",
     "what can you do": "I can talk through CyberLord and its plans and tools, point you to the Academy tutor for cybersecurity lessons, and explain a lot of everyday topics right here. What do you need?",
-    "who made you": "I am Oga, the main CyberLord AI, built by Nozomio Labs. I am the voice of the CyberLord dashboard, here to chat, guide, and keep the swagger up. What can I help you with today?",
-    "who created you": "I am Oga, the main CyberLord AI, built by Nozomio Labs. I am the voice of the CyberLord dashboard, here to chat, guide, and keep the swagger up. What can I help you with today?",
-    "who are you": "I am Oga, the main CyberLord AI, built by the Nozomio Labs team for cyberlord.name.ng. I chat on anything, walk you round the CyberLord site, and point your cyber questions to the Academy tutor. What is on your mind today?",
-    "what is your name": "I am Oga, the main CyberLord AI. Call me Oga, that is the name. What can I do for you?",
+    "who made you": "I am Cyber, the main CyberLord AI, built by Nozomio Labs. I always answer in clear English. I am the voice of the CyberLord dashboard, here to chat, guide, and keep the swagger up. What can I help you with today?",
+    "who created you": "I am Cyber, the main CyberLord AI, built by Nozomio Labs. I always answer in clear English. I am the voice of the CyberLord dashboard, here to chat, guide, and keep the swagger up. What can I help you with today?",
+    "who are you": "I am Cyber, the main CyberLord AI, built by the Nozomio Labs team for cyberlord.name.ng. I always answer in clear English. I chat on anything, walk you round the CyberLord site, and point your cyber questions to the Academy tutor. What is on your mind today?",
+    "what is your name": "I am Cyber, the main CyberLord AI. Call me Cyber, that is the name. What can I do for you?",
     "how old are you": "I don't really have an age, I am an AI assistant. What can I help you with?",
     "tell me a joke": "Why did the scarecrow win an award? He was outstanding in his field. Want another one, or shall we get back to something useful?",
     "what is the capital of france": "Paris is the capital of France. Want to know more about it, or something else?",
@@ -887,7 +887,7 @@ def answer(query, history=None, persona="main", lesson=None):
     if not q:
         if persona == "tutor":
             return "Ask me anything about cybersecurity or your CyberLord tools and I'll walk you through it."
-        return "Hey, I am Oga! Chat with me about anything, or ask me about the CyberLord website and I'll walk you through it."
+        return "Hey, I am Cyber! Chat with me about anything, or ask me about the CyberLord website and I'll walk you through it."
     _TUTOR_GREETINGS = {"hi", "hello", "hey", "good morning", "good evening", "how are you", "what's up",
                         "thanks", "thank you", "bye", "goodbye", "ok", "okay", "yes", "no", "test", "help"}
     if low in _SMALL_TALK and (persona == "main" or low in _TUTOR_GREETINGS):
