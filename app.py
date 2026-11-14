@@ -75,6 +75,7 @@ RATE_LIMITS = {
     "register": (_env_int("REGISTER_MAX_ATTEMPTS", 10), _env_int("REGISTER_WINDOW_SEC", 900)),
     "forgot": (_env_int("FORGOT_MAX_ATTEMPTS", 5), _env_int("FORGOT_WINDOW_SEC", 900)),
     "scan": (_env_int("SCAN_MAX_ATTEMPTS", 10), _env_int("SCAN_WINDOW_SEC", 60)),
+    "review": (_env_int("REVIEW_MAX_ATTEMPTS", 5), _env_int("REVIEW_WINDOW_SEC", 3600)),
 
 }
 
@@ -1007,7 +1008,12 @@ def kali_worker_phone_intel(phone_number):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    try:
+        from reviews import get_store as _review_store
+        review_summary = _review_store().public_summary(limit=6)
+    except Exception:
+        review_summary = {"average_rating": 0.0, "review_count": 0, "reviews": []}
+    return render_template("index.html", review_summary=review_summary)
 
 
 @app.route("/about")
@@ -1880,6 +1886,46 @@ def _require_admin():
     if not supplied or not expected or not hmac.compare_digest(supplied, expected):
         abort(400, description="The security token expired. Refresh the page and try again.")
 
+@app.route("/api/reviews", methods=["GET"])
+def api_list_reviews():
+    try:
+        from reviews import get_store as _review_store
+        return jsonify(_review_store().public_summary(limit=50))
+    except Exception:
+        return jsonify({"average_rating": 0.0, "review_count": 0, "reviews": []})
+
+
+@app.route("/api/reviews", methods=["POST"])
+def api_submit_review():
+    limit_resp = _check_rate("review")
+    if limit_resp is not None:
+        return limit_resp
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = request.form
+    name = (payload.get("name") or "").strip() if hasattr(payload, "get") else ""
+    text = (payload.get("text") or "").strip() if hasattr(payload, "get") else ""
+    email = (payload.get("email") or "").strip() if hasattr(payload, "get") else ""
+    rating = payload.get("rating") if hasattr(payload, "get") else None
+    # Logged-in reviewers get their account email attached automatically.
+    if current_user.is_authenticated and not email:
+        email = current_user.email
+    try:
+        from reviews import get_store as _review_store
+        ok, err, row = _review_store().submit(name, rating, text, email)
+    except Exception:
+        ok, err, row = False, "Could not save your review right now. Please try again.", None
+    if not ok:
+        return jsonify(error=err), 400
+    if not request.is_json:
+        flash("Thanks! Your review is waiting for approval and will show on this page once approved.", "success")
+        return redirect(url_for("index") + "#reviews")
+    return jsonify(
+        message="Thanks! Your review is waiting for approval and will show on this page once approved.",
+        status="pending", id=row["id"] if row else None
+    ), 201
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin_dashboard():
     """Private payment administration; separate from customer accounts and login."""
@@ -1913,7 +1959,12 @@ def admin_dashboard():
         status_filter = "all"
     payments = query.order_by(Payment.created_at.desc()).limit(250).all()
     counts = {status: Payment.query.filter_by(status=status).count() for status in ("pending", "success", "rejected", "failed")}
-    return render_template("admin_payments.html", payments=payments, counts=counts, status_filter=status_filter, csrf_token=_admin_csrf_token())
+    try:
+        from reviews import get_store as _review_store
+        review_counts = _review_store().status_counts()
+    except Exception:
+        review_counts = {"pending": 0, "approved": 0, "rejected": 0}
+    return render_template("admin_payments.html", payments=payments, counts=counts, status_filter=status_filter, csrf_token=_admin_csrf_token(), review_counts=review_counts)
 
 @app.route("/admin/logout", methods=["POST"])
 def admin_logout():
@@ -1951,6 +2002,41 @@ def admin_reject_bank_payment(payment_id):
     return redirect(url_for("admin_dashboard"))
 
 
+
+
+@app.route("/admin/reviews", methods=["GET"])
+def admin_reviews():
+    if not _admin_authenticated():
+        return redirect(url_for("admin_dashboard"))
+    status_filter = request.args.get("status", "pending")
+    try:
+        from reviews import get_store as _review_store
+        reviews = _review_store().list_by_status(status_filter, limit=250)
+        review_counts = _review_store().status_counts()
+    except Exception:
+        reviews, review_counts = [], {"pending": 0, "approved": 0, "rejected": 0}
+    if status_filter not in ("pending", "approved", "rejected", "all"):
+        status_filter = "pending"
+    return render_template("admin_reviews.html", reviews=reviews, review_counts=review_counts, status_filter=status_filter, csrf_token=_admin_csrf_token())
+
+
+@app.route("/admin/reviews/<int:review_id>/<action>", methods=["POST"])
+def admin_moderate_review(review_id, action):
+    _require_admin()
+    new_status = {"approve": "approved", "reject": "rejected"}.get(action)
+    if not new_status:
+        flash("Unknown action.", "error")
+        return redirect(url_for("admin_reviews"))
+    try:
+        from reviews import get_store as _review_store
+        changed = _review_store().set_status(review_id, new_status)
+    except Exception:
+        changed = False
+    if changed:
+        flash(f"Review #{review_id} {new_status}.", "success")
+    else:
+        flash("That review could not be updated.", "error")
+    return redirect(url_for("admin_reviews"))
 
 
 def _lesson_questions_context(lesson, max_chars=8000):

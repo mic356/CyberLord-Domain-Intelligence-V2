@@ -43,5 +43,20 @@
  <div><div class="eyebrow">COMING SOON · PAID ADD-ON</div><h2>Keep watch on your digital assets.</h2><p>CyberLord's planned continuous monitoring service will periodically recheck approved domains and alert customers when important security signals change. It will be a paid service because it requires recurring scans, storage and notification infrastructure.</p><div class="monitoring-pills"><span>Change alerts</span><span>Scheduled rechecks</span><span>Security summaries</span></div></div>
  <aside><b>Available today</b><p>Run individual checks with your current plan and review saved results in Security Centre.</p><small>Automated background monitoring is not active yet. This preview does not sell or promise a monitoring service that is not built.</small></aside>
 </section>
+<section class="reviews-section" id="reviews">
+ <div class="section-intro"><div class="eyebrow">WHAT PEOPLE SAY</div><h2>Reviews from<br><span>our visitors.</span></h2>
+ {% if review_summary and review_summary.review_count %}<p class="reviews-average">Average rating: {{ review_summary.average_rating }} / 5 from {{ review_summary.review_count }} approved review{{ 's' if review_summary.review_count != 1 else '' }}</p>{% else %}<p>Be the first to review CyberLord. Approved reviews show here.</p>{% endif %}</div>
+ {% if review_summary and review_summary.reviews %}<div class="review-grid">{% for review in review_summary.reviews %}<article class="review-card"><div class="review-stars" aria-label="{{ review.rating }} out of 5 stars">{{ '★' * review.rating }}{{ '☆' * (5 - review.rating) }}</div><p>{{ review.text }}</p><footer>{{ review.name }} · {{ review.created_at.strftime('%Y-%m-%d') if (review.created_at and review.created_at.strftime is defined) else '' }}</footer></article>{% endfor %}</div>{% endif %}
+ <form class="review-form" method="post" action="{{ url_for('api_submit_review') }}">
+  <h3>Leave a review</h3>
+  <label>Your name (optional)<input type="text" name="name" maxlength="60" placeholder="anonymous" autocomplete="name"></label>
+  <label>Rating
+   <select name="rating" required><option value="">Choose a rating</option><option value="5">★★★★★ (5)</option><option value="4">★★★★ (4)</option><option value="3">★★★ (3)</option><option value="2">★★ (2)</option><option value="1">★ (1)</option></select></label>
+  <label>Your review<textarea name="text" maxlength="500" rows="3" required placeholder="How was your experience with CyberLord?"></textarea></label>
+  {% if not current_user.is_authenticated %}<label>Your email (optional, only stored for logged-in accounts)<input type="email" name="email" maxlength="120" placeholder="you@example.com" autocomplete="email"></label>{% endif %}
+  <button class="btn primary" type="submit">Submit review</button>
+  <p class="review-note">Reviews are checked before they appear publicly.</p>
+ </form>
+</section>
 <section class="final-cta"><div class="eyebrow">START WITH THE BASICS. GROW INTO THE DETAILS.</div><h2>Your next security insight<br>starts here.</h2><p>Create a free account and explore the CyberLord workspace.</p><a class="btn dark-cta" href="{{ url_for('register') }}">Launch CyberLord <span>↗</span></a></section>
 {% endblock %}
