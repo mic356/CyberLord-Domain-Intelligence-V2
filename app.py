@@ -1138,6 +1138,7 @@ def academy_quiz_generate():
     )
     generated = None
     provider = "practice-bank"
+
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip() or "gemini-3.5-flash"
     if api_key:
@@ -1793,6 +1794,44 @@ def _lesson_questions_context(lesson, max_chars=8000):
     return block
 
 
+
+# --- Live info for main persona (ai-live-info), Gemini-gated ---
+# Guardrail: never ground cybersecurity. Reuses the fallback's cyber key
+# list so main + "what is nmap" still redirects to the tutor with no search.
+_LIVE_CYBER_KEYS = (
+    "nmap", "wireshark", "burp", "metasploit", "sqlmap", "gobuster", "nikto", "searchsploit", "john the ripper", "hashcat",
+    "cybersecurity", "cyber security", "penetration test", "pen test", "ethical hacker", "ethical hacking", "phishing", "malware", "ransomware",
+    "vulnerability", "exploit", "cve", "cvss", "owasp", "xss", "sql injection", "zero day", "rootkit", "botnet", "ddos",
+    "social engineering", "2fa", "mfa", "two factor", "firewall", "cryptography", "encryption", "tls", "https", "dns",
+    "tcp", "udp", "subnet", "port scan", "kali", "linux", "ssh", "password manager", "strong password",
+    "bug bounty", "bugbounty", "incident response", "forensics", "threat intelligence", "mitre", "zero trust",
+    "api security", "cloud security", "container", "kubernetes", "wifi security", "wireless", "android", "mobile security",
+    "git", "github secrets", "code injection", "how do i hack", "hack into", "break into", "course",
+)
+_LIVE_SITE_KEYS = (
+    "cyberlord", "pro plus", "how much is pro", "subscription", "payment", "paystack", "bank transfer", "usdt",
+    "deep scan", "interaction board", "security centre", "advanced intelligence", "academy", "tutor",
+)
+_LIVE_TRIGGER_KEYS = (
+    "latest", "today", "tonight", "news", "headline", "weather", "forecast", "temperature", "rain", "sunny",
+    "score", "scores", "result", "results", "football", "soccer", "basketball", "tennis", "cricket", "match",
+    "price", "prices", "cost", "usd", "naira", "ngn", "bitcoin", "btc", "ethereum", "eth", "stock", "shares",
+    "exchange rate", "dollar", "election", "politic", "who won", "current", "now", "live", "update", "updates",
+    "trending", "trend", "happening", "recent", "break", "score line",
+)
+
+def _main_live_guard(q):
+    """Return ('cyber'|'site'|'live'|None) for main persona."""
+    low = (q or "").lower()
+    if any(k in low for k in _LIVE_CYBER_KEYS):
+        return "cyber"
+    if any(k in low for k in _LIVE_SITE_KEYS):
+        return "site"
+    if any(k in low for k in _LIVE_TRIGGER_KEYS):
+        return "live"
+    return None
+
+
 @app.route("/api/ai-assistant", methods=["POST"])
 @login_required
 def ai_assistant():
@@ -1814,6 +1853,12 @@ def ai_assistant():
     persona = str(body.get("persona") or body.get("mode") or "").strip().lower()
     if persona not in ("tutor", "main"):
         persona = "tutor" if lesson_slug else "main"
+    # Live info guardrail (main persona only, Gemini grounding only).
+    # cyber -> hard tutor-redirect, never search; site -> unchanged behaviour;
+    # live -> Gemini google_search grounding.
+    _live_guard = _main_live_guard(fallback_latest) if persona == "main" else None
+    if persona == "main" and _live_guard == "cyber":
+        return jsonify(reply="That is one for the tutor, head to the Academy tutor and they will walk you through it. The Academy covers Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, and Career Path & Certifications, so pick the course that matches your question and the tutor will help step by step.", mode="tutor-redirect", persona=persona, live_sources=[])
     # Tutor Pro gating: free tutor is limited, Tutor Pro is unlimited.
     # The main (dashboard) assistant is never limited by this.
     if persona == "tutor":
@@ -1939,6 +1984,7 @@ def ai_assistant():
                     "like a helpful friend. If you do not actually know, say so plainly in one line instead of "
                     "guessing or inventing. The security guardrails below apply only to security-related requests; "
                     "for general chat, just answer normally. "
+                    "For current real-world info (news, weather, prices, sports scores) you may use Google Search grounding when enabled. "
                 )
             _sys_parts = [{"text": (
                     system_line +
@@ -1959,6 +2005,11 @@ def ai_assistant():
                 "contents": contents,
                 "generationConfig": {"temperature": 0.55, "maxOutputTokens": 1200, "candidateCount": 1},
             }
+            # Gemini Google Search grounding for main persona live questions only.
+            # Tool name varies by model/api version ("google_search" newer, "googleSearch" older);
+            # include google_search and fall back gracefully if the API rejects it.
+            if _live_guard == "live":
+                payload["tools"] = [{"google_search": {}}]
             # Gemini can take longer than a short web-request timeout and may
             # return temporary 429/5xx capacity errors. Retry only transient
             # failures a limited number of times with exponential backoff.
@@ -1997,7 +2048,7 @@ def ai_assistant():
             if not reply:
                 raise ValueError("Gemini returned an empty response.")
             return jsonify(reply=reply, mode="gemini", model=model, persona=persona,
-                           live_sources="Gemini response; verify important security findings against primary sources")
+                           live_sources=(["Google Search grounding"] if _live_guard == "live" else "Gemini response; verify important security findings against primary sources"))
         except Exception as exc:
             app.logger.warning("Gemini API unavailable; trying next provider: %s", str(exc)[:240])
 
@@ -2029,6 +2080,7 @@ def ai_assistant():
             )
             if lesson_questions_block and persona == "tutor":
                 groq_system += chr(10) + "Current lesson exercise and quiz questions (with correct answers and short explanations):" + chr(10) + lesson_questions_block
+            # Groq path: no live fetch. Gemini grounding is the only live path (owner scope).
             convo = [{"role": "system", "content": (
                 groq_system +
                 "Give clear, accurate, beginner-friendly explanations. Prefer practical, "
