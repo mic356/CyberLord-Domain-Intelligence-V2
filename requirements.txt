@@ -7,6 +7,4 @@ phonenumbers==9.0.10
 gunicorn==23.0.0
 psycopg[binary]==3.2.13
 itsdangerous==2.2.0
-Pillow>=11.0,<13
-boto3>=1.35,<2
 reportlab==4.4.3
