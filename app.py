@@ -75,7 +75,6 @@ RATE_LIMITS = {
     "register": (_env_int("REGISTER_MAX_ATTEMPTS", 10), _env_int("REGISTER_WINDOW_SEC", 900)),
     "forgot": (_env_int("FORGOT_MAX_ATTEMPTS", 5), _env_int("FORGOT_WINDOW_SEC", 900)),
     "scan": (_env_int("SCAN_MAX_ATTEMPTS", 10), _env_int("SCAN_WINDOW_SEC", 60)),
-    "review": (_env_int("REVIEW_MAX_ATTEMPTS", 5), _env_int("REVIEW_WINDOW_SEC", 3600)),
 
 }
 
@@ -164,8 +163,8 @@ def form_str(name, max_length):
 # ---------------------------------------------------------------------------
 CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data: https:; "
     "connect-src 'self' https:; "
@@ -198,14 +197,7 @@ PLANS = {
     "free": {"name": "FREE", "price": 0, "ngn": 0, "usdt": "0.00", "rank": 0},
     "pro": {"name": "PRO", "price": 6300, "ngn": 6300, "usdt": "4.50", "rank": 1},
     "pro_plus": {"name": "PRO PLUS", "price": 12600, "ngn": 12600, "usdt": "9.00", "rank": 2},
-    # Tutor Pro is a separate add-on entitlement (see tutor_pro_expires_at on User).
-    # rank stays 0 so it never unlocks PRO / PRO PLUS scan tools or courses on its own;
-    # it only unlocks unlimited tutor chat + voice UI + Code Lab.
-    "tutor_pro": {"name": "TUTOR PRO", "price": 6300, "ngn": 6300, "usdt": "4.50", "rank": 0},
 }
-TUTOR_FREE_DAILY_LIMIT = 10
-TUTOR_PRO_NGN = 6300
-TUTOR_PRO_USDT = "4.50"
 USDT_WALLETS = {
     "trc20": "TSLdKMFJB3pqWMkkZoUfdo5j2GVh2ANHSw",
     "bep20": "0xab22fd86fbf75f7082436b25c0f851d4d7484e32",
@@ -230,10 +222,6 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     plan = db.Column(db.String(20), default="free", nullable=False)
     plan_expires_at = db.Column(db.DateTime)
-    # Separate add-on: Tutor Pro (unlimited tutor + Code Lab) for 30 days.
-    # Kept distinct from `plan` so a PRO / PRO PLUS user can add Tutor Pro
-    # without losing their main plan.
-    tutor_pro_expires_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -308,37 +296,12 @@ class BoardPost(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
-class TutorUsage(db.Model):
-    """One row per tutor question, used for the free daily tutor limit."""
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
-    day = db.Column(db.String(10), nullable=False, index=True)  # UTC YYYY-MM-DD
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-
-
 class BoardReply(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     post_id = db.Column(db.Integer, db.ForeignKey("board_post.id"), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     body = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-
-
-class UserMemory(db.Model):
-    """Per-user AI memory: what Cyber should remember about a logged-in user
-    between sessions (topics asked, lessons completed, preferences they state,
-    last visit). Mirrors the user_memory.py store; used when that store is
-    wired to the site database. Rows per user are capped in user_memory.py."""
-    __tablename__ = "user_memory"
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String(64), nullable=False, index=True)
-    email = db.Column(db.String(255), default="", nullable=False)
-    kind = db.Column(db.String(20), default="fact", nullable=False)
-    summary = db.Column(db.Text, nullable=False)
-    topic = db.Column(db.String(200), default="")
-    persona = db.Column(db.String(20), default="")
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 @login_manager.user_loader
@@ -384,55 +347,11 @@ def refresh_subscription(user):
 def activate_subscription(user, payment):
     """Start a fresh 30-day term only after server-side payment verification."""
     now = datetime.utcnow()
-    if payment.plan == "tutor_pro":
-        # Add-on: do not overwrite the main plan (PRO / PRO PLUS / free).
-        user.tutor_pro_expires_at = now + timedelta(days=30)
-        payment.status = "success"
-        payment.verified_at = now
-        payment.expires_at = user.tutor_pro_expires_at
-        db.session.commit()
-        return
     user.plan = payment.plan
     user.plan_expires_at = now + timedelta(days=30)
     payment.status = "success"
     payment.verified_at = now
     payment.expires_at = user.plan_expires_at
-    db.session.commit()
-
-
-def tutor_pro_active(user=None):
-    """True only while a verified Tutor Pro add-on is unexpired."""
-    user = current_user if user is None else user
-    if not user:
-        return False
-    refresh_subscription(user)
-    expiry = getattr(user, "tutor_pro_expires_at", None)
-    if expiry and expiry <= datetime.utcnow():
-        user.tutor_pro_expires_at = None
-        db.session.commit()
-        return False
-    return bool(expiry)
-
-
-def tutor_usage_today(user=None):
-    user = current_user if user is None else user
-    if not user or getattr(user, "id", None) is None:
-        return 0
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    return TutorUsage.query.filter_by(user_id=user.id, day=today).count()
-
-
-def tutor_remaining(user=None):
-    if tutor_pro_active(user):
-        return None  # unlimited
-    return max(0, TUTOR_FREE_DAILY_LIMIT - tutor_usage_today(user))
-
-
-def record_tutor_use(user=None):
-    user = current_user if user is None else user
-    if not user or getattr(user, "id", None) is None:
-        return
-    db.session.add(TutorUsage(user_id=user.id, day=datetime.utcnow().strftime("%Y-%m-%d")))
     db.session.commit()
 
 def allowed_tool(tool):
@@ -581,88 +500,6 @@ def email_posture(domain):
         "dkim_selectors_checked":{sel:dns_records(sel+"._domainkey."+domain,"TXT") for sel in ["default","google","selector1","selector2","s1","s2"]},
         "note":"DNS-based email posture only. It cannot prove mailbox existence, sender identity or actual delivery."}
 
-# ---------------------------------------------------------------------------
-# Email exposure check (public, free tier) — Hudson Rock infostealer intel
-#
-# Source decision (verified 2026-11-14): Hudson Rock's free "Cavalier" email
-# endpoint at
-#   https://www.hudsonrock.com/api/json/v2/stats/website-results/email?email=...
-# is keyless, needs no account and no API key. It backs the public checker on
-# hudsonrock.com and returns JSON. It reports whether the email appears in
-# infostealer (malware) credential dumps, i.e. a computer infected by an
-# infostealer had this email's saved credentials. It does NOT list named
-# breaches (unlike HIBP, which requires a paid API key and is therefore not
-# used). Free alternatives checked and rejected: XposedOrNot's API
-# (api.xposedornot.com) aggressively rate-limits automated callers — 429
-# "Request dropped / scanning_protection" even on the public breaches list —
-# so it cannot serve a production lookup; breach.directory / cib.db.rip
-# were also unreachable from our network.
-#
-# The lookup is pluggable via check_email_exposure(): only this one function
-# talks to the sources, so a future keyed provider (e.g. HIBP) can be swapped
-# in without touching routes or templates. The function NEVER raises: any
-# failure is reported as status "source_unavailable" and the UI says so
-# plainly instead of showing fake or empty results.
-# ---------------------------------------------------------------------------
-
-HUDSON_ROCK_EMAIL_URL = "https://www.hudsonrock.com/api/json/v2/stats/website-results/email"
-# Second keyless endpoint on Cavalier's own host, tried as fallback if the
-# main hudsonrock.com host fails (both return the same JSON shape).
-HUDSON_ROCK_FALLBACK_URL = "https://cavalier.hudsonrock.com/api/json/v2/stats/website-results/email"
-
-
-def _hudson_rock_email_check(email):
-    """Keyless infostealer-exposure lookup. Returns a normalised dict."""
-    out = {"source": "Hudson Rock infostealer intelligence (free, no key required)",
-           "status": "source_unavailable", "found": False,
-           "date_compromised": None, "computer_name": None,
-           "total_user_services": 0, "total_corporate_services": 0,
-           "provider_url": "https://www.hudsonrock.com/free-tools"}
-    last_exc = None
-    for url in (HUDSON_ROCK_EMAIL_URL, HUDSON_ROCK_FALLBACK_URL):
-        try:
-            r = requests.get(url, params={"email": email},
-                             headers={"User-Agent": "CyberLord-Email-Check/1.0", "Accept": "application/json"},
-                             timeout=15)
-            r.raise_for_status()
-            data = r.json()
-        except Exception as exc:
-            last_exc = exc
-            continue
-        if not isinstance(data, dict):
-            out["reason"] = "The exposure source returned an unexpected response."
-            return out
-        out["status"] = "ok"
-        out["computer_name"] = data.get("computer_name")
-        out["date_compromised"] = data.get("date_compromised")
-        out["total_user_services"] = int(data.get("total_user_services") or 0)
-        out["total_corporate_services"] = int(data.get("total_corporate_services") or 0)
-        out["found"] = bool(out["date_compromised"] or out["total_user_services"] or out["total_corporate_services"])
-        if data.get("message"):
-            out["provider_message"] = data.get("message")
-        return out
-    out["reason"] = "The exposure source could not be reached just now (" + str(last_exc)[:140] + ")."
-    return out
-
-
-def check_email_exposure(email):
-    """Pluggable breach-source entry point. No fake data: if the source fails,
-    status is 'source_unavailable' and callers must say so."""
-    email = (email or "").strip().lower()
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-        return {"email": email, "status": "invalid", "found": False,
-                "reason": "Enter a valid email address."}
-    result = _hudson_rock_email_check(email)
-    result["email"] = email
-    result["checked_at"] = datetime.now(timezone.utc).isoformat()
-    result["scope_note"] = ("This checks public infostealer-compromise intelligence only. "
-                            "It is not a full breach database: an email not listed here may "
-                            "still appear in a breach this source does not cover. A listing "
-                            "means credentials tied to this email were recovered from an "
-                            "infected computer; change those passwords from a clean device.")
-    return result
-
-
 def technology_fingerprint(domain):
     response, body, addresses=fetch_site(domain)
     headers={k.lower():v for k,v in response.headers.items()}
@@ -681,12 +518,10 @@ def technology_fingerprint(domain):
 def ip_intelligence(value):
     ip=ipaddress.ip_address(value)
     if not ip.is_global: raise ValueError("Only public IP addresses can be queried.")
-    try: ptr, _aliases, _names = socket.gethostbyaddr(str(ip))
-    except Exception: ptr, _names = None, []
-    # Named reverse loses the source order when there is no PTR; report the
-    # full name list only when the lookup actually succeeded.
+    try: ptr=socket.gethostbyaddr(str(ip))[0]
+    except Exception: ptr=None
     return {"ip":str(ip),"version":ip.version,"is_global":ip.is_global,"reverse_dns":ptr,
-        "reverse_dns_names":list(_names)[:10] if ptr else [],
+        "reverse_dns_names":socket.gethostbyaddr(str(ip))[2][:10] if ptr else [],
         "rdap_url":"https://rdap.org/ip/"+str(ip),"note":"RDAP link points to registration data; allocation data does not identify a device owner or prove malicious activity."}
 
 
@@ -700,35 +535,22 @@ def ip_intelligence(value):
 # ---------------------------------------------------------------------------
 
 def _rdap_whois(domain):
-    """Registration data via RDAP, keyless. Returns parsed summary.
-    Honest degradation: any transport or parse failure returns
-    status 'not_available' with the reason, never a guessed value."""
+    """Registration data via RDAP, keyless. Returns parsed summary."""
     out = {"source": "RDAP (rdap.org)", "status": "not_available", "registrar": None,
-           "registrar_handle": None,
            "created": None, "expires": None, "updated": None, "status_flags": [],
            "name_servers": [], "registrant_country": None, "registrar_country": None,
            "note": "(parsed from public RDAP record; empty fields mean not published)"}
-    data = None
-    last_exc = None
-    for attempt in range(3):
-        try:
-            r = requests.get("https://rdap.org/domain/" + domain,
-                             headers={"Accept": "application/json", "User-Agent": "CyberLord-Deep-Scan/1.0"},
-                             timeout=12)
-            if r.status_code == 404:
-                out["status"] = "no_rdap_record"
-                return out
-            r.raise_for_status()
-            data = r.json()
-            break
-        except Exception as exc:
-            last_exc = exc
-            if r is not None and getattr(r, "status_code", None) in (400, 403, 410):
-                break
-            if attempt < 2:
-                time.sleep(1 + attempt)
-    if data is None:
-        out["reason"] = str(last_exc)[:180] if last_exc else "RDAP request failed"
+    try:
+        r = requests.get("https://rdap.org/domain/" + domain,
+                         headers={"Accept": "application/json", "User-Agent": "CyberLord-Deep-Scan/1.0"},
+                         timeout=12)
+        if r.status_code == 404:
+            out["status"] = "no_rdap_record"
+            return out
+        r.raise_for_status()
+        data = r.json()
+    except Exception as exc:
+        out["reason"] = str(exc)[:180]
         return out
     out["status"] = "ok"
     out["status_flags"] = data.get("status", []) or []
@@ -743,58 +565,42 @@ def _rdap_whois(domain):
         roles = [str(x).lower() for x in (ent.get("roles") or [])]
         vcard = ent.get("vcardArray")
         country = None
-        fn = None
         if isinstance(vcard, list) and len(vcard) > 1:
             for item in vcard[1] or []:
                 try:
-                    if item[0] == "fn" and item[3]:
-                        fn = item[3]
                     if item[0] == "adr" and isinstance(item[3], list) and item[3]:
                         country = item[3][-1] or None
+                        break
                 except Exception:
                     continue
         if "registrar" in roles:
-            out["registrar"] = fn or ent.get("handle") or None
-            out["registrar_handle"] = ent.get("handle") or None
+            out["registrar"] = ent.get("handle") or None
             out["registrar_country"] = country
         if "registrant" in roles and country:
             out["registrant_country"] = country
     return out
 
 def _ct_history(domain):
-    """Certificate Transparency history + subdomain enumeration via crt.sh (keyless).
-    crt.sh is rate-limited and frequently times out: retry up to 3 times with
-    backoff, then report status 'not_available' honestly. A domain with no CT
-    entries is reported as total_entries=0, never as an invented list."""
+    """Certificate Transparency history + subdomain enumeration via crt.sh (keyless)."""
     out = {"source": "crt.sh Certificate Transparency", "status": "not_available",
            "total_entries": 0, "subdomains": [], "subdomain_count": 0,
            "earliest_seen": None, "latest_seen": None,
            "issuers": [], "note": "CT logs are public; absence of entries does not prove a certificate never existed."}
-    rows = None
-    last_exc = None
-    for attempt in range(3):
-        try:
-            r = requests.get("https://crt.sh/", params={"q": "%." + domain, "output": "json"},
-                             headers={"User-Agent": "CyberLord-Deep-Scan/1.0"}, timeout=25)
-            r.raise_for_status()
-            parsed = r.json()
-            if not isinstance(parsed, list):
-                out["status"] = "unexpected_response"
-                return out
-            rows = parsed
-            break
-        except Exception as exc:
-            last_exc = exc
-            if attempt < 2:
-                time.sleep(2 + attempt * 3)
-    if rows is None:
-        out["reason"] = ("crt.sh unavailable after 3 attempts: " +
-                         (str(last_exc)[:150] if last_exc else "request failed"))
+    try:
+        r = requests.get("https://crt.sh/", params={"q": "%." + domain, "output": "json"},
+                         headers={"User-Agent": "CyberLord-Deep-Scan/1.0"}, timeout=15)
+        r.raise_for_status()
+        rows = r.json()
+        if not isinstance(rows, list):
+            out["status"] = "unexpected_response"
+            return out
+    except Exception as exc:
+        out["reason"] = str(exc)[:180]
         return out
     out["status"] = "ok"
     out["total_entries"] = len(rows)
     subs, issuers, dates = set(), set(), []
-    for row in rows:
+    for row in rows[:1000]:
         if not isinstance(row, dict): continue
         for name in str(row.get("name_value", "")).splitlines():
             name = name.strip().lower().lstrip("*.")
@@ -810,9 +616,7 @@ def _ct_history(domain):
     return out
 
 def _deeper_dns(domain):
-    """Deeper DNS: MX/NS/TXT/CAA/SOA plus DMARC, SPF split, DKIM common selectors, DNSSEC.
-    DKIM found sets are the UNION of all TXT records per selector, so long keys
-    split across multiple strings are never truncated or lost."""
+    """Deeper DNS: MX/NS/TXT/CAA/SOA plus DMARC, SPF split, DKIM common selectors, DNSSEC."""
     records = {kind: dns_records(domain, kind) for kind in ("MX", "NS", "TXT", "CAA", "SOA", "DNSKEY", "DS")}
     txt = records["TXT"]
     spf = [x for x in txt if "v=spf1" in x.lower()]
@@ -821,11 +625,9 @@ def _deeper_dns(domain):
     if dmarc:
         m = re.search(r"(?:^|;)\s*p\s*=\s*(none|quarantine|reject)", ";".join(dmarc), re.I)
         if m: dmarc_policy = m.group(1).lower()
-    dkim_found = {}
-    for sel in ("default", "google", "selector1", "selector2", "s1", "s2", "k1", "dkim"):
-        vals = dns_records(sel + "._domainkey." + domain, "TXT")
-        if vals:
-            dkim_found[sel] = [" ".join(vals)]
+    dkim = {sel: dns_records(sel + "._domainkey." + domain, "TXT")
+            for sel in ("default", "google", "selector1", "selector2", "s1", "s2", "k1", "dkim")}
+    dkim_found = {k: v for k, v in dkim.items() if v}
     soa = records["SOA"]
     findings = []
     if not records["CAA"]:
@@ -834,7 +636,7 @@ def _deeper_dns(domain):
         findings.append({"severity": "low", "title": "No DNSSEC records observed", "detail": "No DNSKEY or DS record was returned at the apex.", "fix": "If your registrar supports it, sign the zone with DNSSEC."})
     return {"records": records, "spf": spf, "dmarc": dmarc, "dmarc_policy": dmarc_policy,
             "dkim_selectors_found": dkim_found,
-            "dkim_selectors_checked": ["default", "google", "selector1", "selector2", "s1", "s2", "k1", "dkim"],
+            "dkim_selectors_checked": list(dkim.keys()),
             "dnssec_present": bool(records["DNSKEY"] or records["DS"]),
             "soa": soa, "findings": findings,
             "note": "DKIM uses common public selectors only; unknown selectors will not be found. DNS responses reflect the resolver used by this service."}
@@ -889,18 +691,18 @@ DEEP_TECH_PATTERNS = [
     ("WordPress", r"wp-content|wp-includes|wp-json"), ("Drupal", r"/sites/(?:default|all)/files|drupal"),
     ("Joomla", r"/media/system/js/|joomla"), ("React", r"react(?:\.production)?\.min\.js|__react"), ("Next.js", r"/_next/static/"),
     ("Nuxt", r"__nuxt"), ("Vue.js", r"vue(?:\.runtime)?(?:\.global)?\.js|__vue"), ("Angular", r"ng-version|angular"),
-    ("Svelte", r"svelte"), ("Laravel", r"(?:^|[\s\"'.,;])(?:laravel_session|XSRF-TOKEN)(?:[\s\"'.,;]|$)"), ("Django", r"(?:^|[\s\"'.,;])(?:csrftoken|django)(?:[\s\"'.,;]|$)"),
-    ("Ruby on Rails", r"csrf-param|rails-ujs"), ("ASP.NET", r"__viewstate|x-aspnet-version"), ("PHP", r"phpsessid|phpversion"),
-    ("Shopify", r"cdn\.shopify\.com|Shopify\.theme"), ("WooCommerce", r"woocommerce"), ("Magento", r"(?:^|[\s\"'`<>=/])mage/(?:js|version)|mage\.js|magento|mage_init"),
+    ("Svelte", r"svelte"), ("Laravel", r"laravel_session|XSRF-TOKEN"), ("Django", r"csrftoken|django"),
+    ("Ruby on Rails", r"csrf-param|rails-ujs"), ("ASP.NET", r"__viewstate|x-aspnet-version"), ("PHP", r"php(?:sess|version)"),
+    ("Shopify", r"cdn\.shopify\.com|Shopify\.theme"), ("WooCommerce", r"woocommerce"), ("Magento", r"mage/"),
     ("Cloudflare", r"cloudflare|__cf_bm|cf-ray"), ("AWS / Amazon", r"server:.*(awselb|amazon)|x-amz-"),
-    ("Google Analytics", r"googletagmanager|google-analytics|gtag\("), ("Google Tag Manager", r"googletagmanager\.com/gtm"),
+    ("Google Analytics", r"googletagmanager|google-analytics|gtag\(|ga\("), ("Google Tag Manager", r"googletagmanager\.com/gtm"),
     ("Facebook Pixel", r"fbevents\.js|connect\.facebook\.net"), ("Bootstrap", r"bootstrap(?:\.min)?\.css"),
     ("jQuery", r"jquery(?:\.min)?\.js"), ("Tailwind CSS", r"tailwind(?:css)?"), ("Font Awesome", r"font-?awesome"),
     ("reCAPTCHA", r"recaptcha"), ("Stripe", r"js\.stripe\.com|stripe\.js"), ("PayPal", r"paypal"),
-    ("Mailchimp", r"mailchimp"), ("Intercom", r"widget\.intercom\.io|intercomApp|Intercom\(|api\.intercom\.io"), ("Hotjar", r"hotjar"),
+    ("Mailchimp", r"mailchimp"), ("Intercom", r"intercom|widget\.intercom"), ("Hotjar", r"hotjar"),
     ("New Relic", r"newrelic|nr-spa"), ("Datadog", r"datadog"), ("Sentry", r"sentry"),
     ("Vercel", r"x-vercel|vercel"), ("Netlify", r"x-nf-request-id|netlify"), ("Heroku", r"x-heroku|herokuapp"),
-    ("Nginx", r"(?:^|[\s\"'.,;])(?:nginx|openresty)(?:[\s\"'.,;]|$)"), ("Apache", r"(?:^|[\s\"'.,;])(?:apache|httpd)(?:[\s\"'.,;]|$)"), ("LiteSpeed", r"litespeed"),
+    ("Nginx", r"nginx"), ("Apache", r"apache"), ("LiteSpeed", r"litespeed"),
     ("openresty", r"openresty"), ("IIS", r"microsoft-iis"), ("Express (Node)", r"x-powered-by:\s*express"),
 ]
 
@@ -1008,27 +810,10 @@ def kali_worker_phone_intel(phone_number):
 
 @app.route("/")
 def index():
-    try:
-        from reviews import get_store as _review_store
-        review_summary = _review_store().public_summary(limit=6)
-    except Exception:
-        review_summary = {"average_rating": 0.0, "review_count": 0, "reviews": []}
-    return render_template("index.html", review_summary=review_summary)
-
-
-@app.route("/about")
-def about():
-    return render_template("about.html")
-
-
-@app.route("/pricing")
-def pricing():
-    return render_template("pricing.html")
+    return render_template("index.html")
 
 SEO_PUBLIC_PAGES = [
     ("index", "https://cyberlord.name.ng/", "1.0", "daily"),
-    ("about", "https://cyberlord.name.ng/about", "0.8", "monthly"),
-    ("pricing", "https://cyberlord.name.ng/pricing", "0.8", "monthly"),
     ("faq", "https://cyberlord.name.ng/faq", "0.9", "weekly"),
     ("guide_email_compromised", "https://cyberlord.name.ng/guides/check-if-email-is-compromised", "0.9", "weekly"),
     ("guide_website_security", "https://cyberlord.name.ng/guides/website-security-check", "0.9", "weekly"),
@@ -1122,19 +907,7 @@ def login():
         if not ok and not user:
             check_password_hash("pbkdf2:sha256:600000", password)
         if ok:
-            login_user(user)
-            # Per-user memory: stamp this visit so Cyber can greet a
-            # returning user and knows when they last came back.
-            try:
-                from user_memory import get_store as _mem_store
-                _mem_store().touch_visit(str(user.id), user.email)
-                _store = _mem_store()
-                row_count = len(_store.load(str(user.id)))
-                session["cyber_memory_count"] = row_count
-                session["cyber_welcome_back"] = bool(row_count > 1)
-            except Exception:
-                pass
-            return redirect(url_for("dashboard"))
+            login_user(user); return redirect(url_for("dashboard"))
         time.sleep(LOGIN_FAIL_DELAY)
         flash("Email or password is incorrect.", "error")
     return render_template("auth.html", mode="login")
@@ -1194,10 +967,7 @@ def reset_password(token):
 def dashboard():
     refresh_subscription(current_user)
     history = ScanHistory.query.filter_by(user_id=current_user.id).order_by(ScanHistory.created_at.desc()).limit(50).all()
-    # Per-user memory: one greeting flag the templates can use. Greeting copy
-    # stays short; the AI itself gets the full memory context on each request.
-    _returning = bool(session.get("cyber_welcome_back"))
-    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS, tutor_pro=tutor_pro_active(current_user), tutor_remaining=tutor_remaining(current_user), tutor_limit=TUTOR_FREE_DAILY_LIMIT, tutor_pro_expires_at=getattr(current_user, "tutor_pro_expires_at", None), tutor_pro_status=tutor_pro_active(current_user), cyber_returning=_returning)
+    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS)
 
 # Academy lessons and their exercise questions now live in academy_questions.py
 # (add practitioner-level questions there; see the how-to at the top of that file).
@@ -1270,15 +1040,6 @@ def academy_lesson(slug):
         if pct == 100:
             progress.completed_at = datetime.utcnow()
         db.session.commit()
-        # Per-user memory: remember completed lessons so Cyber can continue
-        # with the user next time without making them redo finished work.
-        if pct == 100:
-            try:
-                from user_memory import get_store as _mem_store2, lesson_completed_summary as _lcs
-                _mem_store2().save(str(current_user.id), current_user.email, "progress",
-                                   _lcs(lesson.get("title")), persona="tutor")
-            except Exception:
-                pass
         result = {"answers": answers, "correct_count": correct_count, "total": len(questions), "pct": pct,
                   "explain": [next((item for item in questions if item is q), {}).get("explain", "") for q in questions]}
     return render_template("academy_lesson.html", lesson=lesson, questions=questions, progress=progress, result=result, total=len(questions), course=course)
@@ -1314,9 +1075,8 @@ def academy_quiz_generate():
     )
     generated = None
     provider = "practice-bank"
-
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = _gemini_model()
+    model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip() or "gemini-3.5-flash"
     if api_key:
         try:
             resp = requests.post(
@@ -1442,7 +1202,7 @@ def tutor():
     browser session (sessionStorage) by templates/tutor.html."""
     lesson_slug = (request.args.get("lesson") or "").strip()
     lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == lesson_slug), None)
-    return render_template("tutor.html", lesson_slug=lesson["slug"] if lesson else "", tutor_pro=tutor_pro_active(current_user), tutor_remaining=tutor_remaining(current_user), tutor_limit=TUTOR_FREE_DAILY_LIMIT, tutor_pro_expires_at=getattr(current_user, "tutor_pro_expires_at", None))
+    return render_template("tutor.html", lesson_slug=lesson["slug"] if lesson else "")
 
 
 @app.route("/interaction-board")
@@ -1494,25 +1254,6 @@ def security_centre():
     total = ScanHistory.query.filter_by(user_id=current_user.id).count()
     domains = len({x.target.lower() for x in items if "." in x.target and "@" not in x.target})
     return render_template("security_centre.html", items=items, total=total, domains=domains)
-
-@app.route("/email-exposure-check", methods=["GET", "POST"])
-def email_exposure_check():
-    """Public 'Has my email been leaked?' checker (free tier).
-
-    No login required. Free viewers see the verdict plus a small teaser;
-    signed-in PRO members get the full exposure record. Results are saved to
-    scan history only for signed-in users (so their own checks are trackable),
-    never for anonymous visitors.
-    """
-    result = None
-    email_val = ""
-    if request.method == "POST":
-        email_val = (request.form.get("email") or "").strip()
-        result = check_email_exposure(email_val)
-        if result.get("status") == "ok" and current_user.is_authenticated:
-            save_scan("email_exposure_check", email_val.lower(), result)
-    is_pro = bool(current_user.is_authenticated and PLANS.get(current_user.plan, PLANS["free"])["rank"] >= 1)
-    return render_template("email_exposure.html", result=result, email_val=email_val, is_pro=is_pro)
 
 @app.route("/history/<int:scan_id>/delete", methods=["POST"])
 @login_required
@@ -1633,17 +1374,6 @@ def run_tool(tool):
                 if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",target): raise ValueError("Enter a valid email address.")
                 domain=normalize_domain(target.split("@",1)[1]); posture=email_posture(domain)
                 result={"email":target,"domain":domain,"syntax_valid":True,"domain_email_posture":posture,"mailbox_exists":None,"note":"No mailbox login or delivery test is performed; this does not verify that the individual mailbox exists."}
-            elif tool == "breach":
-                if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",target): raise ValueError("Enter a valid email address for Breach Exposure.")
-                result = check_email_exposure(target)
-                result["target"] = target
-                result["provider_status"] = "connected" if result.get("status") == "ok" else "not_connected"
-                if result.get("status") == "ok":
-                    result["message"] = "Infostealer exposure verdict from Hudson Rock (free, keyless)."
-                elif result.get("status") == "invalid":
-                    raise ValueError(result["reason"])
-                else:
-                    result["message"] = "The exposure source is unavailable right now. This is not a clean result; no breach conclusion can be made until the source answers."
             else:
                 domain=normalize_domain(target)
                 if tool in {"domain","dns"}: result=scan_domain(domain)
@@ -1657,6 +1387,8 @@ def run_tool(tool):
                 elif tool=="cve":
                     tech=technology_fingerprint(domain)
                     result={"target":domain,"technology_evidence":tech,"cve_matches":[],"message":"No verified product/version pair was identified. CVE matches are intentionally withheld rather than guessed.","next_step":"Confirm exact product and version from authoritative asset inventory before mapping advisories."}
+                elif tool=="breach":
+                    result={"target":domain,"provider_status":"not_connected","message":"No licensed breach-intelligence provider is connected. This is not a clean-breach result; no breach conclusion can be made."}
         save_scan(tool,target,result)
         return jsonify(result=result)
     except ValueError as e: return jsonify(error=str(e)),400
@@ -1743,7 +1475,7 @@ def payment_usdt_submit():
     plan = request.form.get("plan", "")
     network = request.form.get("network", "").lower()
     tx_hash = request.form.get("tx_hash", "").strip()
-    if plan not in ("pro", "pro_plus", "tutor_pro") or network not in USDT_WALLETS:
+    if plan not in ("pro", "pro_plus") or network not in USDT_WALLETS:
         flash("Select a valid plan and USDT network.", "error")
         return redirect(url_for("dashboard") + "#plans")
     valid_hash = (re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash) if network == "bep20" else re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash))
@@ -1780,7 +1512,7 @@ def payment_usdt_submit():
 def payment_bank_submit():
     plan = request.form.get("plan", "")
     bank_reference = request.form.get("bank_reference", "").strip()
-    if plan not in ("pro", "pro_plus", "tutor_pro") or not bank_reference or len(bank_reference) > 115:
+    if plan not in ("pro", "pro_plus") or not bank_reference or len(bank_reference) > 115:
         flash("Select a plan and enter your bank transfer reference.", "error")
         return redirect(url_for("dashboard") + "#plans")
     reference = "BANK-" + bank_reference
@@ -1805,7 +1537,7 @@ def payment_initialize():
         flash("Paystack is temporarily disabled while the account is awaiting approval.", "warning")
         return redirect(url_for("dashboard") + "#plans")
     plan=request.form.get("plan") or (request.get_json(silent=True) or {}).get("plan")
-    if plan not in ("pro","pro_plus","tutor_pro"): return jsonify(error="Invalid plan"), 400
+    if plan not in ("pro","pro_plus"): return jsonify(error="Invalid plan"), 400
     secret=os.getenv("PAYSTACK_SECRET_KEY")
     if not secret: return jsonify(error="Paystack is not configured on the server."), 503
     reference="CLD-"+secrets.token_urlsafe(18)
@@ -1886,46 +1618,6 @@ def _require_admin():
     if not supplied or not expected or not hmac.compare_digest(supplied, expected):
         abort(400, description="The security token expired. Refresh the page and try again.")
 
-@app.route("/api/reviews", methods=["GET"])
-def api_list_reviews():
-    try:
-        from reviews import get_store as _review_store
-        return jsonify(_review_store().public_summary(limit=50))
-    except Exception:
-        return jsonify({"average_rating": 0.0, "review_count": 0, "reviews": []})
-
-
-@app.route("/api/reviews", methods=["POST"])
-def api_submit_review():
-    limit_resp = _check_rate("review")
-    if limit_resp is not None:
-        return limit_resp
-    payload = request.get_json(silent=True)
-    if payload is None:
-        payload = request.form
-    name = (payload.get("name") or "").strip() if hasattr(payload, "get") else ""
-    text = (payload.get("text") or "").strip() if hasattr(payload, "get") else ""
-    email = (payload.get("email") or "").strip() if hasattr(payload, "get") else ""
-    rating = payload.get("rating") if hasattr(payload, "get") else None
-    # Logged-in reviewers get their account email attached automatically.
-    if current_user.is_authenticated and not email:
-        email = current_user.email
-    try:
-        from reviews import get_store as _review_store
-        ok, err, row = _review_store().submit(name, rating, text, email)
-    except Exception:
-        ok, err, row = False, "Could not save your review right now. Please try again.", None
-    if not ok:
-        return jsonify(error=err), 400
-    if not request.is_json:
-        flash("Thanks! Your review is waiting for approval and will show on this page once approved.", "success")
-        return redirect(url_for("index") + "#reviews")
-    return jsonify(
-        message="Thanks! Your review is waiting for approval and will show on this page once approved.",
-        status="pending", id=row["id"] if row else None
-    ), 201
-
-
 @app.route("/admin", methods=["GET", "POST"])
 def admin_dashboard():
     """Private payment administration; separate from customer accounts and login."""
@@ -1959,12 +1651,7 @@ def admin_dashboard():
         status_filter = "all"
     payments = query.order_by(Payment.created_at.desc()).limit(250).all()
     counts = {status: Payment.query.filter_by(status=status).count() for status in ("pending", "success", "rejected", "failed")}
-    try:
-        from reviews import get_store as _review_store
-        review_counts = _review_store().status_counts()
-    except Exception:
-        review_counts = {"pending": 0, "approved": 0, "rejected": 0}
-    return render_template("admin_payments.html", payments=payments, counts=counts, status_filter=status_filter, csrf_token=_admin_csrf_token(), review_counts=review_counts)
+    return render_template("admin_payments.html", payments=payments, counts=counts, status_filter=status_filter, csrf_token=_admin_csrf_token())
 
 @app.route("/admin/logout", methods=["POST"])
 def admin_logout():
@@ -2003,190 +1690,10 @@ def admin_reject_bank_payment(payment_id):
 
 
 
-
-@app.route("/admin/reviews", methods=["GET"])
-def admin_reviews():
-    if not _admin_authenticated():
-        return redirect(url_for("admin_dashboard"))
-    status_filter = request.args.get("status", "pending")
-    try:
-        from reviews import get_store as _review_store
-        reviews = _review_store().list_by_status(status_filter, limit=250)
-        review_counts = _review_store().status_counts()
-    except Exception:
-        reviews, review_counts = [], {"pending": 0, "approved": 0, "rejected": 0}
-    if status_filter not in ("pending", "approved", "rejected", "all"):
-        status_filter = "pending"
-    return render_template("admin_reviews.html", reviews=reviews, review_counts=review_counts, status_filter=status_filter, csrf_token=_admin_csrf_token())
-
-
-@app.route("/admin/reviews/<int:review_id>/<action>", methods=["POST"])
-def admin_moderate_review(review_id, action):
-    _require_admin()
-    new_status = {"approve": "approved", "reject": "rejected"}.get(action)
-    if not new_status:
-        flash("Unknown action.", "error")
-        return redirect(url_for("admin_reviews"))
-    try:
-        from reviews import get_store as _review_store
-        changed = _review_store().set_status(review_id, new_status)
-    except Exception:
-        changed = False
-    if changed:
-        flash(f"Review #{review_id} {new_status}.", "success")
-    else:
-        flash("That review could not be updated.", "error")
-    return redirect(url_for("admin_reviews"))
-
-
-def _lesson_questions_context(lesson, max_chars=8000):
-    """Compact per-lesson quiz context for the tutor: exercise plus each question
-    (text, correct answer letter + choice text, short explanation). Capped so the
-    system prompt stays bounded; lives in system parts, not the 1800-char user
-    message, so truncation never clips it."""
-    if not lesson:
-        return ""
-    parts = []
-    ex = str(lesson.get("exercise", "") or "").strip()
-    if ex:
-        parts.append("Exercise: " + ex[:300])
-    letters = "ABCDEFGHIJ"
-    out = []
-    for i, q in enumerate(lesson.get("questions", []) or [], 1):
-        if not isinstance(q, dict):
-            continue
-        choices = q.get("choices", []) or []
-        ans = q.get("answer", 0)
-        try:
-            ans = int(ans)
-        except Exception:
-            ans = 0
-        letter = letters[ans] if 0 <= ans < len(letters) else str(ans + 1)
-        choice_text = str(choices[ans]) if 0 <= ans < len(choices) else ""
-        line = f"Q{i}: {str(q.get('question','')).strip()[:200]}"
-        if choice_text:
-            line += f" Answer {letter}: {choice_text[:120]}"
-        expl = str(q.get("explain", "") or q.get("explanation", "") or "").strip()
-        if expl:
-            line += f" Why: {expl[:180]}"
-        out.append(line)
-    if out:
-        parts.append("Lesson quiz questions:" + chr(10) + chr(10).join(out))
-    block = chr(10).join(parts).strip()
-    if len(block) > max_chars:
-        block = block[:max_chars].rsplit(chr(10), 1)[0]
-    return block
-
-
-
-# --- Live info for main persona (ai-live-info), Gemini-gated ---
-# Guardrail: never ground cybersecurity. Reuses the fallback's cyber key
-# list so main + "what is nmap" still redirects to the tutor with no search.
-try:
-    from zoneinfo import ZoneInfo as _ZoneInfo
-    _LAGOS_TZ = _ZoneInfo("Africa/Lagos")
-except Exception:
-    _LAGOS_TZ = timezone(timedelta(hours=1), "Africa/Lagos")
-
-_LIVE_CYBER_KEYS = (
-    "nmap", "wireshark", "burp", "metasploit", "sqlmap", "gobuster", "nikto", "searchsploit", "john the ripper", "hashcat",
-    "cybersecurity", "cyber security", "penetration test", "pen test", "ethical hacker", "ethical hacking", "phishing", "malware", "ransomware",
-    "vulnerability", "exploit", "cve", "cvss", "owasp", "xss", "sql injection", "zero day", "rootkit", "botnet", "ddos",
-    "social engineering", "2fa", "mfa", "two factor", "firewall", "cryptography", "encryption", "tls", "https", "dns",
-    "tcp", "udp", "subnet", "port scan", "kali", "linux", "ssh", "password manager", "strong password",
-    "bug bounty", "bugbounty", "incident response", "forensics", "threat intelligence", "mitre", "zero trust",
-    "api security", "cloud security", "container", "kubernetes", "wifi security", "wireless", "android", "mobile security",
-    "git", "github secrets", "code injection", "how do i hack", "hack into", "break into", "course",
-)
-_LIVE_SITE_KEYS = (
-    "cyberlord", "pro plus", "how much is pro", "subscription", "payment", "paystack", "bank transfer", "usdt",
-    "deep scan", "interaction board", "security centre", "advanced intelligence", "academy", "tutor",
-)
-_LIVE_TRIGGER_KEYS = (
-    "latest", "today", "tonight", "news", "headline", "headlines", "top stories", "weather", "forecast",
-    "temperature", "rain", "sunny", "cloudy", "humidity", "climate",
-    "score", "scores", "result", "results", "football", "soccer", "basketball", "tennis", "cricket", "match",
-    "price", "prices", "cost", "usd", "naira", "ngn", "bitcoin", "btc", "ethereum", "eth", "stock", "shares",
-    "exchange rate", "dollar", "election", "politic", "who won", "current", "now", "live", "update", "updates",
-    "trending", "trend", "happening", "recent", "break", "score line", "lagos", "abuja", "nigeria",
-)
-
-_LIVE_IMAGE_KEYS = ("picture", "pictures", "image", "images", "photo", "photos", "pic", "pics", "puctures", "wallpaper", "show me a", "show me an")
-_LIVE_WEATHER_KEYS = ("weather", "forecast", "wether", "wheather", "temperature", "rain", "sunny", "cloudy", "humidity", "climate")
-_LIVE_NEWS_KEYS = ("news", "headline", "headlines", "top stories", "latest news", "what is happening", "newz")
-
-# Per-user memory: try to persist an explicit "remember this" fact before
-# anything else runs in the AI path. Returns a short confirmation reply, or
-# None when the user did not ask to remember anything. Anonymous handled by
-# the @login_required wrapper on the caller; still guarded here.
-def _memory_store():
-    from user_memory import get_store
-    return get_store()
-
-def _user_memory_context(priority_note=None):
-    """Short system-context block for the logged-in user, or '' for anon."""
-    if not current_user or not current_user.is_authenticated:
-        return ""
-    try:
-        summary = _memory_store().context_summary(str(current_user.id), current_user.email)
-    except Exception:
-        return ""
-    if not summary:
-        return ""
-    from user_memory import compose_system_context
-    return compose_system_context(current_user.email, summary)
-
-def _maybe_persist_remember(text):
-    if not current_user or not current_user.is_authenticated:
-        return None
-    try:
-        from user_memory import extract_remember
-        fact = extract_remember(text)
-        if not fact:
-            return None
-        _memory_store().save(str(current_user.id), current_user.email, "preference", fact)
-        return "Got it, I will remember: %s. Welcome back anytime and I will carry on from here." % fact
-    except Exception:
-        return None
-
-def _gemini_model():
-    # Valid stable Gemini names per Google docs 14 Nov 2026.
-    # gemini-3.5-flash is deprecated (auto-routed to gemini-3.6-flash),
-    # gemini-2.5-flash is deprecated (auto-routed to gemini-3.5-flash-lite),
-    # gemini-3.5-flash-lite is REAL stable, gemini-3.8-flash is REAL stable.
-    m = (os.getenv("GEMINI_MODEL", "") or "").strip()
-    if m in ("gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.7-flash"):
-        m = ""
-    return m or "gemini-3.5-flash-lite"
-
-def _main_live_guard(q):
-    """Return ('cyber'|'site'|'images'|'weather'|'news'|'live'|None) for main persona."""
-    low = (q or "").lower()
-    if any(k in low for k in _LIVE_CYBER_KEYS):
-        return "cyber"
-    if any(k in low for k in _LIVE_SITE_KEYS):
-        return "site"
-    if any(k in low for k in _LIVE_IMAGE_KEYS):
-        return "images"
-    if any(k in low for k in _LIVE_WEATHER_KEYS):
-        return "weather"
-    if any(k in low for k in _LIVE_NEWS_KEYS):
-        return "news"
-    if any(k in low for k in _LIVE_TRIGGER_KEYS) or _TIME_QUESTION_RE.search(low):
-        return "live"
-    return None
-
-
-_TIME_QUESTION_RE = re.compile(r"(what[\'\s]+(?:time|day|date)|whats[\'\s]+(?:the[\'\s]+)?(?:time|day|date)|current[\'\s]+(?:time|date|day)|time[\'\s]+is[\'\s]+it|date[\'\s]+is[\'\s]+it|day[\'\s]+is[\'\s]+it|what[\'\s]+is[\'\s]+(?:the[\'\s]+)?current|whats[\'\s]+the[\'\s]+time|what[\'\s]+is[\'\s]+the[\'\s]+time|what[\'\s]+time[\'\s]+is[\'\s]+it|tell[\'\s]+me[\'\s]+the[\'\s]+time|exact[\'\s]+time|todays[\'\s]+date|today[\'\s]+s[\'\s]+date)", re.I)
-
-def _current_datetime_line():
-    now = datetime.now(_LAGOS_TZ)
-    return "Today is " + now.strftime("%A, %B %d, %Y") + ", " + now.strftime("%-I:%M %p").lstrip("0") + " (Lagos time)"
-
 @app.route("/api/ai-assistant", methods=["POST"])
 @login_required
 def ai_assistant():
-    """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. Provider chain: Gemini (gemini-3.5-flash-lite default, or valid GEMINI_MODEL) -> Groq (openai/gpt-oss-20b) -> built-in base. On any failure it silently falls back to the next provider, then to the built-in base, so the site stays fully functional without a key."""
+    """Optional LLM assistant. Without a key it uses the curated built-in knowledge base (cyberlord_ai.py), which is not a live LLM. Provider chain: Gemini (gemini-3.8-flash) -> Groq (openai/gpt-oss-20b) -> built-in base. On any failure it silently falls back to the next provider, then to the built-in base, so the site stays fully functional without a key."""
     now = time.time()
     window = session.get("ai_rate_window", [])
     window = [stamp for stamp in window if now - stamp < 60]
@@ -2198,55 +1705,16 @@ def ai_assistant():
     body = request.get_json(silent=True) or {}
     messages = list(body.get("messages", []) or [])
     fallback_latest = next((m.get("content", "") for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str)), "")
-    # Per-user memory: an explicit "remember this/remember me as X" is saved
-    # and confirmed immediately, before any provider spends a call on it.
-    _remember_reply = _maybe_persist_remember(fallback_latest)
-    if _remember_reply:
-        _persona_for_remember = str(body.get("persona") or body.get("mode") or "").strip().lower()
-        if _persona_for_remember not in ("tutor", "main"):
-            _persona_for_remember = "tutor" if (body.get("lesson_slug") or body.get("lesson")) else "main"
-        return jsonify(reply=_remember_reply, mode="user-memory", persona=_persona_for_remember, live_sources=[])
-    _user_mem_ctx = _user_memory_context()
     lesson_slug = body.get("lesson_slug") or body.get("lesson") or ""
     # Persona flag: "tutor" = academy tutor surfaces (lesson panels + /tutor
     # page, always carry a lesson_slug); "main" = dashboard assistant, broad.
     persona = str(body.get("persona") or body.get("mode") or "").strip().lower()
     if persona not in ("tutor", "main"):
         persona = "tutor" if lesson_slug else "main"
-    # Live info guardrail (main persona only, Gemini grounding only).
-    # cyber -> hard tutor-redirect, never search; site -> unchanged behaviour;
-    # live -> Gemini google_search grounding.
-    _live_guard = _main_live_guard(fallback_latest) if persona == "main" else None
-    if persona == "main" and _live_guard == "cyber":
-        return jsonify(reply="That is one for the tutor, head to the Academy tutor and they will walk you through it. The Academy covers Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, and Career Path & Certifications, so pick the course that matches your question and the tutor will help step by step.", mode="tutor-redirect", persona=persona, live_sources=[])
-    if persona == "main":
-        _low_q = (fallback_latest or "").lower()
-        if _TIME_QUESTION_RE.search(_low_q):
-            _now = datetime.now(_LAGOS_TZ)
-            _exact = _now.strftime("Today is %A, %B %d, %Y, and the exact time is %-I:%M %p").lstrip("0")
-            return jsonify(reply=_exact + " (Lagos time). It is the current time in Lagos, Nigeria.", mode="datetime-direct", persona=persona, live_sources=["Server clock (Africa/Lagos)"])
-        if _live_guard == "images":
-            from cyberlord_ai import fetch_images as _fi
-            _imgs = _fi(fallback_latest, limit=4)
-            _txt = "Here are some pictures I found for you." if _imgs else "I searched Wikimedia Commons and could not find a free picture for that just now. Try a different subject."
-            return jsonify(reply=_txt, mode="images", persona=persona, images=_imgs, live_sources=["Wikimedia Commons"] if _imgs else [])
-        if _live_guard in ("weather", "news"):
-            from cyberlord_ai import fetch_live_fact as _flf
-            _kind, _fact = _flf(fallback_latest)
-            if _kind and _fact:
-                return jsonify(reply=_fact, mode=_kind + "-direct", persona=persona, live_sources=["Open-Meteo" if _kind == "weather" else "Google News RSS"])
-    # Tutor Pro gating: free tutor is limited, Tutor Pro is unlimited.
-    # The main (dashboard) assistant is never limited by this.
-    if persona == "tutor":
-        if not tutor_pro_active(current_user) and tutor_usage_today(current_user) >= TUTOR_FREE_DAILY_LIMIT:
-            return jsonify(error="You have used your free tutor questions for today (%d). Upgrade to Tutor Pro for unlimited tutor questions." % TUTOR_FREE_DAILY_LIMIT, tutor_pro=False, tutor_remaining=0, upgrade_url=url_for("dashboard") + "#plans"), 429
-        record_tutor_use(current_user)
     lesson = None
-    lesson_questions_block = ""
     if lesson_slug:
         lesson = next((x for x in ACADEMY_LESSONS if x["slug"] == str(lesson_slug).strip()), None)
         if lesson:
-            lesson_questions_block = _lesson_questions_context(lesson)
             if persona == "tutor":
                 context = (
                     "You are the CyberLord Academy Tutor. "
@@ -2259,53 +1727,27 @@ def ai_assistant():
                     "Keep it natural, human and short. Lesson: '" + str(lesson.get("title", "")) + "' (" + str(lesson.get("level", "")) + "). "
                     "Lesson description: " + str(lesson.get("desc", "")) + ". "
                     "Key points: " + " ".join(lesson.get("content", []) or []) + ". "
-                    "Quiz rule: when a student asks about a lesson quiz question, you may "
-                    "discuss and explain it, but reveal the correct answer only if they ask to check "
-                    "their answer or have already attempted it; otherwise keep answers hidden so they learn. "
                     "Teach in plain, beginner-friendly steps; never give account/payment/scan results. "
-                    "Safety: defensive and authorised-lab guidance only. "
-                    + (" " + _user_mem_ctx if _user_mem_ctx else "")
+                    "Safety: defensive and authorised-lab guidance only."
                 )
             else:
                 context = (
-                    "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
-                    "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
-                    "LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
-                    "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
-                    "Chat naturally on ANY everyday topic: greetings, small talk, general knowledge, advice, "
-                    "brainstorming, planning, everyday questions, and anything else the user asks. "
-                    "Do NOT redirect non-cybersecurity topics back to cybersecurity and do NOT force a security angle. "
-                    "You can also answer about the CyberLord website itself: it offers domain scans, deep scan, "
-                    "CyberLord Academy, the AI tutor, the interaction board, the security centre, and advanced "
-                    "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). "
-                    "Answer truthfully and concisely in clear standard English, with a warm and playful tone, like a sharp friend. ALWAYS answer in clear standard English first. "
+                    "You are CyberLord AI, the broad dashboard assistant. "
+                    "Answer ANY question the user asks, including general knowledge. "
+                    "Be truthful and concise, keep a human tone. "
                     "If you do not actually know, say so plainly in one line instead of guessing or inventing. "
-                    "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. "
-                    " " + _current_datetime_line() + ". "
-                    "The user is also studying lesson '" + str(lesson.get("title", "")) + "'; only refer to it if it fits the conversation. "
-                    "Never invent CyberLord account, payment, scan or subscription status. "
-                    + (" " + _user_mem_ctx if _user_mem_ctx else "")
+                    "The user is also studying lesson '" + str(lesson.get("title", "")) + "'; lead with that lesson's material when relevant. "
+                    "Teach in plain, beginner-friendly steps; never give account/payment/scan results. "
+                    "Safety: defensive and authorised-lab guidance only."
                 )
             messages = [{"role": "user", "content": context}] + messages
     else:
         if persona == "main":
             messages = [{"role": "user", "content": (
-                "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
-                    "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
-                "LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
-                    "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
-                "Chat naturally on ANY everyday topic: greetings, small talk, general knowledge, advice, "
-                "brainstorming, planning, everyday questions, and anything else the user asks. "
-                "Do NOT redirect non-cybersecurity topics back to cybersecurity and do NOT force a security angle. "
-                "You can also answer about the CyberLord website itself: it offers domain scans, deep scan, "
-                "CyberLord Academy, the AI tutor, the interaction board, the security centre, and advanced "
-                "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). "
-                "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. "
-                "Answer truthfully and concisely with a warm, human tone, like a helpful friend. "
+                "You are CyberLord AI, the broad CyberLord dashboard assistant. "
+                "Answer ANY question the user asks, including general knowledge, truthfully and concisely with a human tone. "
                 "If you do not actually know, say so plainly in one line instead of guessing or inventing a wrong answer. "
-                "Never invent CyberLord account, payment, scan or subscription status. "
-                + _current_datetime_line() + "."
-                + (" " + _user_mem_ctx if _user_mem_ctx else "")
+                "Never invent CyberLord account, payment, scan or subscription status."
             )}] + messages
         else:
             messages = [{"role": "user", "content": (
@@ -2313,7 +1755,6 @@ def ai_assistant():
                 "If asked something off-academy, do NOT refuse flatly: redirect cleverly, tying the question back to a "
                 "cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                 "Keep it natural, human and short."
-                + (" " + _user_mem_ctx if _user_mem_ctx else "")
             )}] + messages
     if not isinstance(messages, list):
         return jsonify(error="Invalid conversation format."), 400
@@ -2342,7 +1783,7 @@ def ai_assistant():
         return jsonify(error="Please enter a question."), 400
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = _gemini_model()
+    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
     if api_key:
         try:
             endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -2352,29 +1793,16 @@ def ai_assistant():
                     "and course topics (current lesson first, other academy topics second). If asked "
                     "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                     "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
-                    "Natural, human, short. "
-                    "Quiz rule: when a student asks about a lesson quiz question, you may discuss and "
-                    "explain it, but reveal the correct answer only if they ask to check their answer or "
-                    "have already attempted it; otherwise keep answers hidden so they learn."
+                    "Natural, human, short."
                 )
             else:
                 system_line = (
-                    "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
-                    "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
-                    "You are NOT a cybersecurity-only bot and NOT the academy tutor. Chat naturally on ANY "
-                    "everyday topic: greetings, small talk, general knowledge, advice, brainstorming, planning, "
-                    "everyday questions, and anything else. Do NOT redirect non-cybersecurity topics back to "
-                    "cybersecurity and do NOT force a security angle. You can also answer about the CyberLord "
-                    "website itself: it offers domain scans, deep scan, CyberLord Academy, the AI tutor, the "
-                    "interaction board, the security centre, and advanced intelligence. Pricing is Free NGN 0, "
-                    "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with a warm, human tone, "
-                    "like a helpful friend. If you do not actually know, say so plainly in one line instead of "
-                    "guessing or inventing. The security guardrails below apply only to security-related requests; "
-                    "for general chat, just answer normally. "
-                    "For current real-world info (news, weather, prices, sports scores) you may use Google Search grounding when enabled. " + _current_datetime_line() + ". "
-                    "If the user asks for pictures/images/photos, tell them pictures are shown automatically in the chat below your reply; you cannot embed image URLs yourself. "
+                    "You are CyberLord AI, the broad dashboard assistant. Answer ANY question the user "
+                    "asks, including general knowledge, truthfully and concisely with a human tone. If you "
+                    "do not actually know, say so plainly in one line instead of guessing or inventing. "
                 )
-            _sys_parts = [{"text": (
+            payload = {
+                "systemInstruction": {"parts": [{"text": (
                     system_line +
                     "Give clear, accurate, beginner-friendly explanations. Prefer practical, "
                     "step-by-step defensive guidance. Support authorised security testing only; "
@@ -2385,20 +1813,10 @@ def ai_assistant():
                     "Do not invent CyberLord account, payment, scan or subscription status. "
                     "Do not request passwords, OTPs, API keys, wallet seed phrases or private keys. "
                     "If uncertain, say so and recommend checking primary documentation."
-                )}]
-            if lesson_questions_block and persona == "tutor":
-                _sys_parts.append({"text": "Current lesson exercise and quiz questions (with correct answers and short explanations) for this tutor session:" + chr(10) + lesson_questions_block})
-            if _user_mem_ctx:
-                _sys_parts.append({"text": _user_mem_ctx})
-            payload = {
-                "systemInstruction": {"parts": _sys_parts},
+                )}]},
                 "contents": contents,
                 "generationConfig": {"temperature": 0.55, "maxOutputTokens": 1200, "candidateCount": 1},
             }
-            # Gemini Google Search grounding for main persona live questions only.
-            # Docs: REST generateContent uses tools=[{"google_search":{}}] (generateContent API). JS/Vertex uses googleSearch camelCase. Old code used googleSearch for weather/news, which the REST generateContent API rejects with 400, so grounded calls failed while plain calls (no tools) succeeded. Use google_search for all live guards. If a grounded request is rejected, retry once without tools before falling back to Groq/built-in, so chat still answers.
-            if _live_guard in ("live", "weather", "news"):
-                payload["tools"] = [{"google_search": {}}]
             # Gemini can take longer than a short web-request timeout and may
             # return temporary 429/5xx capacity errors. Retry only transient
             # failures a limited number of times with exponential backoff.
@@ -2436,33 +1854,9 @@ def ai_assistant():
             reply = "\n".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
             if not reply:
                 raise ValueError("Gemini returned an empty response.")
-            _images = []
-            try:
-                _meta = candidates[0].get("groundingMetadata") or {}
-                for _ch in ((_meta.get("groundingChunks") or []) + (_meta.get("webImages") or [])):
-                    _u = (_ch.get("web") or {}).get("uri") or _ch.get("uri") or ""
-                    if _u.startswith("http"):
-                        _images.append({"url": _u, "thumb": _u, "title": (_ch.get("web") or {}).get("title", "")})
-            except Exception:
-                pass
-            _ls = ["Google Search grounding"] if _live_guard in ("live", "weather", "news") else "Gemini response; verify important security findings against primary sources"
-            return jsonify(reply=reply, mode="gemini", model=model, persona=persona, live_sources=_ls, images=_images[:4])
+            return jsonify(reply=reply, mode="gemini", model=model, persona=persona,
+                           live_sources="Gemini response; verify important security findings against primary sources")
         except Exception as exc:
-            # If grounding was attached and the API rejected it, retry once plain (no tools) so only the search fails, not the whole chat.
-            _grounded_exc = exc
-            if "payload" in locals() and isinstance(payload, dict) and payload.pop("tools", None):
-                try:
-                    _r = requests.post(endpoint, headers={"Content-Type":"application/json","x-goog-api-key":api_key}, json=payload, timeout=(10,60))
-                    _r.raise_for_status()
-                    _d = _r.json()
-                    _c = _d.get("candidates") or []
-                    _parts = ((_c[0].get("content") or {}).get("parts") or []) if _c else []
-                    _reply = "\n".join(_p.get("text","") for _p in _parts if isinstance(_p, dict)).strip()
-                    if _reply:
-                        app.logger.warning("Gemini grounding rejected, plain retry succeeded: %s", str(_grounded_exc)[:180])
-                        return jsonify(reply=_reply, mode="gemini", model=model, persona=persona, live_sources=["Gemini response; search grounding unavailable"], images=[])
-                except Exception:
-                    pass
             app.logger.warning("Gemini API unavailable; trying next provider: %s", str(exc)[:240])
 
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
@@ -2475,29 +1869,11 @@ def ai_assistant():
                 "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                 "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                 "Natural, human, short. "
-                "Quiz rule: when a student asks about a lesson quiz question, you may discuss and "
-                "explain it, but reveal the correct answer only if they ask to check their answer or "
-                "have already attempted it; otherwise keep answers hidden so they learn."
             ) if persona == "tutor" else (
-                "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
-                    "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
-                "You are NOT a cybersecurity-only bot and NOT the academy tutor. Chat naturally on ANY "
-                "everyday topic: greetings, small talk, general knowledge, advice, brainstorming, planning, "
-                "everyday questions, and anything else. Do NOT redirect non-cybersecurity topics back to "
-                "cybersecurity and do NOT force a security angle. You can also answer about the CyberLord "
-                "website itself: it offers domain scans, deep scan, CyberLord Academy, the AI tutor, the "
-                "interaction board, the security centre, and advanced intelligence. Pricing is Free NGN 0, "
-                "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with swagger, "
-                "like a sharp friend who knows the streets of Lagos. If you do not actually know, say so plainly in one line instead of "
-                "guessing or inventing. The security guardrails below apply only to security-related requests; "
-                "for general chat, just answer normally. " + _current_datetime_line() + ". "
-                "If the user asks for pictures, say pictures will appear below your reply in the chat. "
+                "You are CyberLord AI, the broad dashboard assistant. Answer ANY question the user "
+                "asks, including general knowledge, truthfully and concisely with a human tone. If you "
+                "do not actually know, say so plainly in one line instead of guessing or inventing. "
             )
-            if lesson_questions_block and persona == "tutor":
-                groq_system += chr(10) + "Current lesson exercise and quiz questions (with correct answers and short explanations):" + chr(10) + lesson_questions_block
-            if _user_mem_ctx:
-                groq_system += chr(10) + _user_mem_ctx
-            # Groq path: no live fetch. Gemini grounding is the only live path (owner scope).
             convo = [{"role": "system", "content": (
                 groq_system +
                 "Give clear, accurate, beginner-friendly explanations. Prefer practical, "
@@ -2539,24 +1915,8 @@ def ai_assistant():
             fallback_history.append({"role": "assistant" if item["role"] == "model" else "user",
                                      "content": item["parts"][0]["text"]})
         reply = answer(fallback_latest, fallback_history, persona=persona, lesson=lesson)
-        _fb_images = []
-        _fb_sources = "NIST NVD and CISA KEV when reachable"
-        if persona == "main":
-            try:
-                from cyberlord_ai import fetch_images as _fi2, fetch_live_fact as _flf2
-                if _live_guard == "images":
-                    _fb_images = _fi2(fallback_latest, limit=4)
-                    _fb_sources = ["Wikimedia Commons"] if _fb_images else []
-                elif _live_guard in ("weather", "news"):
-                    _k, _f = _flf2(fallback_latest)
-                    if _k:
-                        _fb_sources = ["Open-Meteo" if _k == "weather" else "Google News RSS"]
-            except Exception:
-                pass
         return jsonify(reply=reply, mode="built-in-fallback", persona=persona,
-                       tutor_pro=tutor_pro_active(current_user) if persona == "tutor" else None,
-                       tutor_remaining=tutor_remaining(current_user) if persona == "tutor" else None,
-                       live_sources=_fb_sources, images=_fb_images)
+                       live_sources="NIST NVD and CISA KEV when reachable")
     except Exception:
         app.logger.exception("CyberLord assistant error")
         return jsonify(error="CyberLord AI is temporarily unavailable. Please try again shortly."), 500
@@ -2884,172 +2244,6 @@ def run_advanced_intelligence(tool):
         app.logger.exception("Advanced intelligence module failed")
         return jsonify(ok=False,error="The investigation could not be completed. Please try again later."),500
 
-
-# ---------------------------------------------------------------------------
-# Academy Training Terminal + Code Lab (Tutor Pro)
-#
-# Safety model (deliberate, keep it this way):
-# * Terminal: strict whitelist executor. No shell, no subprocess, no real
-#   network, no real filesystem. Every command is parsed and answered from a
-#   fixed in-memory practice-lab model. Unknown / hostile input is rejected.
-#   The only "targets" are the built-in lab hosts; any other host is refused.
-# * Code Lab: small Python snippets only, run in a separate child process
-#   with a hard timeout, CPU/RLIMIT, no network (socket blocked), and the
-#   working directory is an empty temp dir that is deleted afterwards.
-#   Forbidden modules / attributes are blocked before execution by an AST
-#   check, and the child also installs a blocked-import guard.
-# ---------------------------------------------------------------------------
-import ast as _ast
-import resource as _resource
-import sys as _sys
-import tempfile as _tempfile
-
-# NOTE: The Academy Training Terminal is now a REAL in-browser terminal.
-# Its command execution happens entirely in the visitor's browser (xterm.js
-# shell + Pyodide Python + in-browser virtual filesystem), so the server
-# NEVER receives or executes user shell commands. The old server-side
-# whitelist simulator (/api/terminal/run -> terminal_execute) has been
-# removed entirely: no request path lets user input reach a server shell,
-# subprocess, or the real filesystem. See TERMINAL_SETUP.md.
-
-@app.route("/academy/terminal")
-@login_required
-def academy_terminal():
-    return render_template("terminal.html", tutor_pro=tutor_pro_active(current_user))
-
-
-# --- Code Lab: sandboxed Python snippets (Tutor Pro) ---
-
-CODE_LAB_MAX_CHARS = 4000
-CODE_LAB_TIMEOUT = 5
-_CODE_FORBIDDEN_MODULES = {
-    "os", "sys", "subprocess", "socket", "ctypes", "importlib", "pathlib",
-    "shutil", "pty", "multiprocessing", "threading", "requests", "urllib",
-    "http", "ftplib", "telnetlib", "webbrowser", "runpy", "inspect",
-    "builtins", "pkgutil", "code", "codeop",
-}
-_CODE_FORBIDDEN_ATTRS = {
-    "system", "popen", "exec", "eval", "open", "compile", "__import__",
-    "fork", "spawn", "execv", "execve", "kill", "remove", "unlink", "rmdir",
-    "mkdir", "makedirs", "rename", "chmod", "chown", "symlink", "link",
-    "socket", "connect", "urlopen", "request", "getattr",
-}
-
-
-def _code_lab_check(source):
-    """AST screen. Returns (ok, reason)."""
-    if len(source) > CODE_LAB_MAX_CHARS:
-        return False, "Code too long (max %d characters)." % CODE_LAB_MAX_CHARS
-    try:
-        tree = _ast.parse(source)
-    except SyntaxError as e:
-        return False, "Syntax error: %s" % e
-    for node in _ast.walk(tree):
-        if isinstance(node, _ast.Import):
-            for a in node.names:
-                root = a.name.split(".")[0]
-                if root in _CODE_FORBIDDEN_MODULES:
-                    return False, "Import of '%s' is not allowed in the Code Lab." % root
-        elif isinstance(node, _ast.ImportFrom):
-            root = (node.module or "").split(".")[0]
-            if root in _CODE_FORBIDDEN_MODULES:
-                return False, "Import of '%s' is not allowed in the Code Lab." % root
-        elif isinstance(node, _ast.Attribute):
-            if node.attr in _CODE_FORBIDDEN_ATTRS or node.attr.startswith("__"):
-                return False, "Use of '%s' is not allowed in the Code Lab." % node.attr
-        elif isinstance(node, _ast.Name):
-            if node.id in _CODE_FORBIDDEN_ATTRS or node.id in ("__import__", "eval", "exec", "open", "compile"):
-                return False, "Use of '%s' is not allowed in the Code Lab." % node.id
-        elif isinstance(node, _ast.Constant) and isinstance(node.value, str):
-            low = node.value.lower()
-            if "os.system" in low or "subprocess" in low or "__import__" in low:
-                return False, "That pattern is not allowed in the Code Lab."
-    return True, ""
-
-
-_CHILD = (
-    "import builtins, sys, os, resource\n"
-    "resource.setrlimit(resource.RLIMIT_CPU, (5, 5))\n"
-    "resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))\n"
-    "resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))\n"
-    "resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))\n"
-    "try:\n"
-    "    import socket\n"
-    "    socket.socket = None\n"
-    "    socket.create_connection = None\n"
-    "except Exception:\n"
-    "    pass\n"
-    "_blocked = {'os', 'sys', 'subprocess', 'socket', 'ctypes', 'importlib', 'pathlib', 'shutil', 'requests', 'urllib', 'http', 'multiprocessing', 'pty'}\n"
-    "_real_import = builtins.__import__\n"
-    "_real_open = builtins.open\n"
-    "_real_compile = builtins.compile\n"
-    "_real_print = builtins.print\n"
-    "def _guard(name, *a, **k):\n"
-    "    root = name.split('.')[0] if name else ''\n"
-    "    if root in _blocked:\n"
-    "        raise ImportError('blocked in Code Lab sandbox: ' + root)\n"
-    "    return _real_import(name, *a, **k)\n"
-    "os.chdir(os.environ.get('CODE_LAB_CWD', '.'))\n"
-    "with _real_open('snippet.py', 'r') as _f:\n"
-    "    _src = _f.read()\n"
-    "_b = dict(vars(builtins))\n"
-    "_b['__import__'] = _guard\n"
-    "_b['open'] = None\n"
-    "_b['eval'] = None\n"
-    "_b['exec'] = None\n"
-    "_b['compile'] = None\n"
-    "_b['print'] = _real_print\n"
-    "try:\n"
-    "    _code = _real_compile(_src, 'snippet.py', 'exec')\n"
-    "    exec(_code, {'__builtins__': _b, '__name__': '__main__'})\n"
-    "except Exception as _e:\n"
-    "    _real_print('Error: %s: %s' % (type(_e).__name__, _e))\n"
-)
-
-
-def run_sandboxed_code(source):
-    """Run a snippet in a child process. Returns (stdout, stderr, timed_out)."""
-    ok, reason = _code_lab_check(source)
-    if not ok:
-        return "", reason, False
-    with _tempfile.TemporaryDirectory(prefix="codelab-") as td:
-        with open(os.path.join(td, "snippet.py"), "w") as f:
-            f.write(source)
-        env = {"PATH": "/usr/bin:/bin", "CODE_LAB_CWD": td, "PYTHONNOUSERSITE": "1"}
-        try:
-            proc = subprocess.run(
-                [_sys.executable, "-I", "-c", _CHILD],
-                cwd=td, env=env, capture_output=True, text=True,
-                timeout=CODE_LAB_TIMEOUT,
-            )
-            out = (proc.stdout or "")[:4000]
-            err = (proc.stderr or "")[:2000]
-            return out, err, False
-        except subprocess.TimeoutExpired:
-            return "Timed out after %d seconds. The Code Lab sandbox stopped your code." % CODE_LAB_TIMEOUT, "", True
-
-
-@app.route("/code-lab")
-@login_required
-def code_lab():
-    return render_template("code_lab.html", tutor_pro=tutor_pro_active(current_user))
-
-
-@app.route("/api/code-lab/run", methods=["POST"])
-@login_required
-def code_lab_run():
-    if not tutor_pro_active(current_user):
-        return jsonify(ok=False, error="Code Lab is a Tutor Pro feature. Upgrade to Tutor Pro for unlimited tutor questions, voice, and Code Lab access.", tutor_pro=False, upgrade_url=url_for("dashboard") + "#plans"), 403
-    if rate_limited(key="codelab:" + client_ip() + ":" + str(current_user.id), limit=20, window=60):
-        return jsonify(ok=False, error="Too many Code Lab runs. Wait a moment and try again."), 429
-    body = request.get_json(silent=True) or {}
-    source = str(body.get("code") or "")
-    if not source.strip():
-        return jsonify(ok=False, error="Paste some Python code first."), 400
-    out, err, timed_out = run_sandboxed_code(source)
-    return jsonify(ok=True, output=out, stderr=err, timed_out=timed_out)
-
-
 @app.route("/health")
 def health(): return jsonify(status="ok",service="CyberLord Domain Intelligence")
 
@@ -3063,8 +2257,6 @@ with app.app_context():
     with db.engine.begin() as conn:
         if "plan_expires_at" not in user_cols:
             conn.execute(text('ALTER TABLE "user" ADD COLUMN plan_expires_at TIMESTAMP NULL'))
-        if "tutor_pro_expires_at" not in user_cols:
-            conn.execute(text('ALTER TABLE "user" ADD COLUMN tutor_pro_expires_at TIMESTAMP NULL'))
         for name, definition in [("currency", "VARCHAR(10) NOT NULL DEFAULT 'NGN'"), ("network", "VARCHAR(20) NULL"), ("tx_hash", "VARCHAR(140) NULL"), ("expires_at", "TIMESTAMP NULL")]:
             if name not in payment_cols:
                 conn.execute(text(f"ALTER TABLE payment ADD COLUMN {name} {definition}"))

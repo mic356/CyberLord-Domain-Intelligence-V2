@@ -109,4 +109,39 @@
 .voice-bars i:nth-child(5){height:10px;animation-delay:.4s}
 @keyframes clWave{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
 
-.cl-ai-images{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 10px}.cl-ai-images a{display:block;width:104px;height:80px;border-radius:9px;overflow:hidden;border:1px solid #2a4055}.cl-ai-images img{width:100%;height:100%;object-fit:cover;display:block}.cl-ai-message a,.tutor-msg a{color:#8affc1;text-decoration:underline}
+
+/* CyberLord Academy live learning and course syllabus */
+.course-syllabus{margin:16px 0 20px;border:1px solid var(--line,rgba(255,255,255,.14));border-radius:15px;background:rgba(255,255,255,.025);overflow:hidden}
+.course-syllabus summary{cursor:pointer;list-style:none;padding:16px 18px;font-weight:750;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.course-syllabus summary::-webkit-details-marker{display:none}
+.course-syllabus summary:after{content:"＋";color:#55e0ae;font-size:1.2rem}
+.course-syllabus[open] summary:after{content:"−"}
+.course-syllabus summary span{font-size:.82rem;font-weight:500;opacity:.7}
+.syllabus-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:0 18px 18px}
+.syllabus-grid>div{padding:14px;border-radius:11px;background:rgba(255,255,255,.035)}
+.syllabus-grid h3{font-size:.95rem;margin:0 0 8px;color:#55e0ae}
+.syllabus-grid p,.syllabus-grid ul{font-size:.9rem;line-height:1.65;margin:0;opacity:.88}
+.syllabus-grid ul{padding-left:18px}
+.academy-live-quiz{position:sticky;top:16px;align-self:start}
+.live-quiz-status{padding:10px 12px;margin:12px 0;border-radius:10px;background:rgba(255,255,255,.055);font-size:.88rem;line-height:1.5}
+.live-quiz-status.success{color:#55e0ae}
+.live-quiz-status.error{color:#ff9a9a}
+.live-quiz-status.working{color:#83baff}
+.live-quiz-question{border:1px solid var(--line,rgba(255,255,255,.13));border-radius:12px;padding:14px;margin:14px 0;min-width:0}
+.live-quiz-question legend{font-weight:700;line-height:1.55;padding:0 4px}
+.live-quiz-results{margin-top:14px}
+.live-score{display:flex;flex-direction:column;gap:4px;padding:16px;border-radius:12px;background:rgba(85,224,174,.09);border:1px solid rgba(85,224,174,.25);margin-bottom:12px}
+.live-score>strong{font-size:2rem;color:#55e0ae}
+.live-score p{margin:4px 0 0;line-height:1.5}
+@media(max-width:760px){.syllabus-grid{grid-template-columns:1fr}.academy-live-quiz{position:static}.course-syllabus summary{align-items:flex-start}}
+
+.academy-achievements{display:grid;grid-template-columns:.65fr 1.35fr;gap:14px;margin-top:18px}
+.xp-card,.badge-card{padding:17px;border:1px solid var(--line,rgba(255,255,255,.13));border-radius:14px;background:rgba(255,255,255,.035)}
+.xp-card>span,.badge-card>span{display:block;font-size:.72rem;letter-spacing:.12em;font-weight:800;opacity:.72}
+.xp-card>strong{display:block;font-size:2.2rem;color:#55e0ae;margin:4px 0}
+.xp-card small,.earned-badge small{display:block;font-size:.78rem;opacity:.72;line-height:1.45}
+.badge-list{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.earned-badge{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:11px;background:rgba(85,224,174,.08);border:1px solid rgba(85,224,174,.18)}
+.earned-badge>b{font-size:1.35rem}
+.earned-badge strong{display:block;font-size:.84rem}
+@media(max-width:760px){.academy-achievements{grid-template-columns:1fr}}

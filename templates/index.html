@@ -2,9 +2,8 @@
 <section class="landing-hero">
  <div class="hero-copy"><div class="eyebrow pill-eyebrow"><span class="live-dot"></span> YOUR DIGITAL DEFENCE WORKSPACE</div>
   <h1>See the risks.<br><span>Own your security.</span></h1>
-  <p class="hero-lede">Check your website for security problems and learn to fix them. A free, plain-language security check for your website.</p>
-  <div class="how-it-works"><span><b>1. Check your site</b> type in your website address</span><span><b>2. See the report</b> plain-language findings in under a minute</span><span><b>3. Learn to fix it</b> step-by-step guidance to fix each problem</span></div>
-  <div class="actions"><a class="btn primary hero-cta" href="{{ url_for('register') }}">Run a free website + email check <span>↗</span></a><a class="btn ghost hero-secondary" href="#what-you-get">Explore CyberLord</a></div>
+  <p class="hero-lede">A smarter way to understand your digital footprint. Explore domain intelligence, website security checks, threat insights and practical cybersecurity learning — all in one place.</p>
+  <div class="actions"><a class="btn primary hero-cta" href="{{ url_for('register') }}">Create your free account <span>↗</span></a><a class="btn ghost hero-secondary" href="#what-you-get">Explore CyberLord</a></div>
   <div class="hero-proof"><span>✓ Evidence-led findings</span><span>✓ Beginner-friendly guides</span><span>✓ Built for authorised security work</span></div>
  </div>
  <div class="hero-visual" aria-label="Illustration of a digital security operations dashboard" role="img">
@@ -18,7 +17,6 @@
  </div>
 </section>
 <section class="trust-strip"><div><b>13</b><span>security modules</span></div><div><b>24/7</b><span>learn at your pace</span></div><div><b>1</b><span>unified workspace</span></div><div><b>∞</b><span>room to grow</span></div></section>
-<section class="exposure-hero"><div class="exposure-copy"><div class="eyebrow">FREE CHECK</div><h2>Has your email<br><span>been leaked?</span></h2><p>Most breaches start with a leaked email and password. Check yours now, free, no account needed. If it shows up in infostealer-compromise data, you will see exactly what to change first.</p></div><form method="post" action="{{ url_for('email_exposure_check') }}" class="exposure-form"><input type="email" name="email" placeholder="you@example.com" required autocomplete="off"><button type="submit" class="btn primary">Check my email</button><p class="exposure-note">No account needed. We only save a check if you are signed in.</p></form></section>
 <section id="what-you-get" class="landing-section"><div class="section-intro"><div class="eyebrow">MORE THAN A SCANNER</div><h2>Everything you need to<br><span>move with confidence.</span></h2><p>CyberLord brings practical security checks, clear explanations and a place to turn findings into action.</p></div>
  <div class="feature-grid">
   <article class="feature-card feature-lilac"><div class="feature-icon">⌕</div><span class="feature-kicker">01 / DISCOVER</span><h3>Know your digital footprint</h3><p>Review DNS records, subdomains, IP intelligence, website technologies and exposed security signals.</p><div class="feature-art art-network"><i></i><i></i><i></i><i></i><i></i><b></b></div></article>
@@ -36,27 +34,12 @@
   <article class="public-plan"><div class="eyebrow">GET STARTED</div><h3>FREE</h3><div class="public-price">₦0 <small>forever</small></div><ul><li>Cyber Academy learning guides</li><li>CyberLord AI knowledge assistant</li><li>Core domain and DNS intelligence</li><li>Basic scan history</li></ul><a class="btn ghost" href="{{ url_for('register') }}">Create free account</a></article>
   <article class="public-plan"><div class="eyebrow">MORE INTELLIGENCE</div><h3>PRO</h3><div class="public-price">₦6,300 <small>or 4.50 USDT / 30 days</small></div><ul><li>Everything in Free</li><li>Phone Intelligence</li><li>Individual Email Review</li><li>Breach Exposure module</li></ul><a class="btn primary" href="{{ url_for('register') }}">Explore Pro</a></article>
   <article class="public-plan public-plan-featured"><div class="eyebrow">FULL TOOL ACCESS</div><h3>PRO PLUS</h3><div class="public-price">₦12,600 <small>or 9.00 USDT / 30 days</small></div><ul><li>Everything in Pro</li><li>Attack Surface Map</li><li>CVE Intelligence</li><li>Compare Domains and Limited Port Scanner</li></ul><a class="btn primary" href="{{ url_for('register') }}">Explore Pro Plus</a></article>
- <article class="public-plan"><div class="eyebrow">TUTOR UPGRADE</div><h3>TUTOR PRO</h3><div class="public-price">₦6,300 <small>or 4.50 USDT / 30 days</small></div><ul><li>Unlimited tutor questions</li><li>Voice tutor</li><li>Code Lab - Python practice, sandboxed</li><li>Add-on: stack with PRO or PRO PLUS</li></ul><a class="btn ghost" href="{{ url_for('register') }}">Explore Tutor Pro</a></article></div>
+ </div>
  <p class="pricing-footnote">Paid subscriptions last 30 days after payment is independently verified. A payment screenshot alone never unlocks an account.</p>
 </section>
 <section class="monitoring-preview">
  <div><div class="eyebrow">COMING SOON · PAID ADD-ON</div><h2>Keep watch on your digital assets.</h2><p>CyberLord's planned continuous monitoring service will periodically recheck approved domains and alert customers when important security signals change. It will be a paid service because it requires recurring scans, storage and notification infrastructure.</p><div class="monitoring-pills"><span>Change alerts</span><span>Scheduled rechecks</span><span>Security summaries</span></div></div>
  <aside><b>Available today</b><p>Run individual checks with your current plan and review saved results in Security Centre.</p><small>Automated background monitoring is not active yet. This preview does not sell or promise a monitoring service that is not built.</small></aside>
-</section>
-<section class="reviews-section" id="reviews">
- <div class="section-intro"><div class="eyebrow">WHAT PEOPLE SAY</div><h2>Reviews from<br><span>our visitors.</span></h2>
- {% if review_summary and review_summary.review_count %}<p class="reviews-average">Average rating: {{ review_summary.average_rating }} / 5 from {{ review_summary.review_count }} approved review{{ 's' if review_summary.review_count != 1 else '' }}</p>{% else %}<p>Be the first to review CyberLord. Approved reviews show here.</p>{% endif %}</div>
- {% if review_summary and review_summary.reviews %}<div class="review-grid">{% for review in review_summary.reviews %}<article class="review-card"><div class="review-stars" aria-label="{{ review.rating }} out of 5 stars">{{ '★' * review.rating }}{{ '☆' * (5 - review.rating) }}</div><p>{{ review.text }}</p><footer>{{ review.name }} · {{ review.created_at.strftime('%Y-%m-%d') if (review.created_at and review.created_at.strftime is defined) else '' }}</footer></article>{% endfor %}</div>{% endif %}
- <form class="review-form" method="post" action="{{ url_for('api_submit_review') }}">
-  <h3>Leave a review</h3>
-  <label>Your name (optional)<input type="text" name="name" maxlength="60" placeholder="anonymous" autocomplete="name"></label>
-  <label>Rating
-   <select name="rating" required><option value="">Choose a rating</option><option value="5">★★★★★ (5)</option><option value="4">★★★★ (4)</option><option value="3">★★★ (3)</option><option value="2">★★ (2)</option><option value="1">★ (1)</option></select></label>
-  <label>Your review<textarea name="text" maxlength="500" rows="3" required placeholder="How was your experience with CyberLord?"></textarea></label>
-  {% if not current_user.is_authenticated %}<label>Your email (optional, only stored for logged-in accounts)<input type="email" name="email" maxlength="120" placeholder="you@example.com" autocomplete="email"></label>{% endif %}
-  <button class="btn primary" type="submit">Submit review</button>
-  <p class="review-note">Reviews are checked before they appear publicly.</p>
- </form>
 </section>
 <section class="final-cta"><div class="eyebrow">START WITH THE BASICS. GROW INTO THE DETAILS.</div><h2>Your next security insight<br>starts here.</h2><p>Create a free account and explore the CyberLord workspace.</p><a class="btn dark-cta" href="{{ url_for('register') }}">Launch CyberLord <span>↗</span></a></section>
 {% endblock %}
