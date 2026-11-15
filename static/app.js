@@ -85,6 +85,41 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   form.after(body);
 });
 
+// Academy exercise: show one question at a time while preserving all answers for submit.
+(function(){
+  document.querySelectorAll("[data-quiz-form]").forEach(form=>{
+    const questions=[...form.querySelectorAll("[data-quiz-question]")];
+    const dots=[...document.querySelectorAll("[data-quiz-dot]")];
+    const prev=form.querySelector("[data-quiz-prev]");
+    const next=form.querySelector("[data-quiz-next]");
+    const submit=form.querySelector("[data-quiz-submit]");
+    const status=document.querySelector("[data-quiz-status]");
+    if(!questions.length) return;
+    let index=0;
+    function isAnswered(i){
+      return Boolean(questions[i].querySelector("input[type='radio']:checked"));
+    }
+    function render(){
+      questions.forEach((question,i)=>{ question.hidden=i!==index; });
+      dots.forEach((dot,i)=>{
+        dot.classList.toggle("answered",isAnswered(i));
+        if(i===index) dot.setAttribute("aria-current","true");
+        else dot.removeAttribute("aria-current");
+      });
+      prev.disabled=index===0;
+      next.hidden=index===questions.length-1;
+      submit.hidden=index!==questions.length-1;
+      if(status) status.textContent="Question "+(index+1)+" of "+questions.length;
+    }
+    function go(i){ index=Math.max(0,Math.min(questions.length-1,i)); render(); }
+    prev.addEventListener("click",()=>go(index-1));
+    next.addEventListener("click",()=>go(index+1));
+    dots.forEach(dot=>dot.addEventListener("click",()=>go(Number(dot.dataset.quizDot))));
+    form.addEventListener("change",render);
+    render();
+  });
+})();
+
 // CyberLord AI support chat: conversations are sent to the authenticated Flask backend.
 (()=>{
   const panel=document.getElementById("cl-ai-panel");
@@ -96,6 +131,21 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   if(!panel||!open||!form)return;
   const history=[];
   const scroll=()=>{messagesEl.scrollTop=messagesEl.scrollHeight};
+
+  const linkify=(el)=>{
+    // Escape-first: bubble() uses textContent, so re-scan and wrap URLs as links safely.
+    const txt = el.textContent;
+    if(!/https?:\/\//.test(txt)) return;
+    el.textContent = "";
+    txt.split(/(https?:\/\/[^\s)]+)/g).forEach(part=>{
+      if(/^https?:\/\//.test(part)){
+        const a=document.createElement("a");a.href=part;a.target="_blank";a.rel="noopener noreferrer";a.textContent=part;
+        el.appendChild(a);
+      } else {
+        el.appendChild(document.createTextNode(part));
+      }
+    });
+  };
   const bubble=(text,role)=>{
     // Reuse the live voice bubble so a spoken question already shown
     // as text before sending is not added twice.
@@ -109,7 +159,7 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     const el=document.createElement("div");
     el.className="cl-ai-message "+role;
     el.textContent=text;
-    messagesEl.appendChild(el);scroll();return el;
+    messagesEl.appendChild(el);if(role==="bot")linkify(el);scroll();return el;
   };
   const toggle=(show)=>{
     panel.hidden=!show;open.setAttribute("aria-expanded",String(show));
@@ -136,6 +186,15 @@ document.querySelectorAll(".tool-card").forEach(card=>{
       pending.remove();
       if(!res.ok)throw new Error(data.error||"The assistant is temporarily unavailable.");
       bubble(data.reply,"bot");history.push({role:"assistant",content:data.reply});
+      if(Array.isArray(data.images)&&data.images.length){
+        const grid=document.createElement("div");grid.className="cl-ai-images";
+        data.images.forEach(img=>{
+          const a=document.createElement("a");a.href=img.url||"#";a.target="_blank";a.rel="noopener noreferrer";
+          const im=document.createElement("img");im.src=img.thumb||img.url;im.alt=img.title||"image";im.loading="lazy";
+          a.appendChild(im);grid.appendChild(a);
+        });
+        messagesEl.appendChild(grid);scroll();
+      }
     }catch(err){pending.textContent=err.message||"Something went wrong. Please try again.";}
     finally{submit.disabled=false;scroll();}
   }
@@ -175,7 +234,14 @@ document.querySelectorAll(".tool-card").forEach(card=>{
         const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({persona:"tutor",lesson_slug:slug,messages:[{role:"user",content:text}]})});
         const data=await res.json();
         pending.remove();
-        if(!res.ok) throw new Error(data.error||"The tutor is temporarily unavailable.");
+        if(!res.ok){
+          if(res.status===429){
+            var lock=card.querySelector(".tutor-lock")||document.getElementById("tutor-lock");
+            if(lock) lock.hidden=false;
+            input.disabled=true; form.querySelector("button[type=submit]").disabled=true;
+          }
+          throw new Error(data.error||"The tutor is temporarily unavailable.");
+        }
         add(data.reply,"bot");
       }catch(err){ pending.textContent=err.message||"Something went wrong. Please try again."; }
     });

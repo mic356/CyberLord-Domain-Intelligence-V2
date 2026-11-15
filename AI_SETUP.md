@@ -43,3 +43,49 @@ The speaker ("Listen") buttons use the browser's built-in Web Speech API (`speec
 - Current default Groq model: `openai/gpt-oss-20b`. Groq model availability, account access, rate limits and token charges are controlled by Groq; do not assume API inference is unlimited or free.
 - Add both API keys as Render environment variables. Never commit real API keys or `.env` files to GitHub.
 - The application tries Gemini first, then Groq, then its built-in knowledge base. A successful HTTP response from `/api/ai-assistant` can still be a built-in fallback; inspect the JSON `mode` field (`gemini`, `groq`, or `built-in-fallback`) to identify which path answered.
+
+
+## Tutor Pro, Training Terminal and Code Lab
+
+Tutor Pro is an add-on subscription that works alongside Free, PRO and PRO
+PLUS. It does not replace the main plan.
+
+- Price: NGN 6,300 per month, or 4.50 USDT (same price as PRO) (USDT wallet address and network
+  are shown on the payment page, same as PRO / PRO PLUS).
+- Duration: 30 days from manual verification (`activate_subscription` sets
+  `tutor_pro_expires_at`; the main `plan` is left untouched).
+- Includes: unlimited tutor questions, voice tutor UI, and Code Lab access.
+- Free tutor limit: 10 questions per day. The limit is counted in the
+  `tutor_usage` table (one row per tutor question, UTC day).
+- Manual payment verification flow is unchanged: users submit a payment
+  reference, an admin verifies it, and only then is Tutor Pro activated.
+
+### Training Terminal (`/academy/terminal`)
+
+A Kali-dark simulated terminal for the academy. It is a strict whitelist
+executor: no shell, no subprocess, no real network and no real filesystem.
+Commands are answered from a fixed in-memory practice-lab model. Allowed
+commands: help, nmap, dig, whois, ping, ls, cd, cat, pwd, echo, clear and
+theharvester (simulated, fictional output). Only the built-in lab host
+`lab.local` can be named; any other target is refused. Shell operators
+(;, &, |, >, <, backticks, $, parentheses) are rejected outright.
+
+### Code Lab (`/code-lab`, Tutor Pro only)
+
+Learners paste small Python snippets (max 4,000 characters). Snippets run in
+a child process (`python -I -c`) with:
+
+- 5 second timeout, CPU and memory rlimits, read-only file size limit.
+- Working directory is a fresh temp dir, deleted after the run.
+- AST screen blocks forbidden imports (os, sys, subprocess, socket, ctypes,
+  importlib, pathlib, shutil, requests, urllib, http, multiprocessing, pty,
+  threading, inspect, runpy, webbrowser, builtins, code, codeop, pkgutil)
+  and forbidden names/attributes (system, popen, exec, eval, open, compile,
+  __import__, fork, spawn, execv, execve, kill, remove, unlink, rmdir,
+  mkdir, rename, chmod, chown, symlink, link, urlopen, getattr, and any
+  dunder attribute).
+- The child also installs a blocked-import guard and disables socket,
+  open, eval, exec and compile at runtime as defence in depth.
+
+This is an educational sandbox for practice, not a security boundary for
+untrusted code. Keep snippets small and keep the timeouts.

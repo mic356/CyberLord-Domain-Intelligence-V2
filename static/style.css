@@ -167,11 +167,21 @@ body{background:radial-gradient(ellipse at 8% 0%,#e8e5ff 0,transparent 34%),radi
 .deep-scan-sections{list-style:none;padding:0;margin:10px 0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .deep-scan-sections li{background:#0b1423;border:1px solid #263650;border-radius:9px;padding:10px 12px;font-size:12px;color:#b6c5da}
 
+/* Academy: one-question-at-a-time exercise */
+.quiz-stepper{margin-top:16px}.quiz-progress{display:flex;flex-wrap:wrap;gap:5px;max-height:96px;overflow:auto;padding:2px}.quiz-dot{border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.04);color:inherit;padding:5px 7px;font-size:.68rem;line-height:1;cursor:pointer}.quiz-dot[aria-current="true"]{background:#32d6a0;color:#07150f;border-color:#32d6a0;font-weight:800}.quiz-dot.answered{background:rgba(50,214,160,.16);border-color:rgba(50,214,160,.55);color:#55e0ae}.quiz-status{margin:9px 0 0;font-size:.82rem;opacity:.7}.quiz-question{animation:quiz-in .22s ease-out}.quiz-question[hidden]{display:none}.quiz-controls{display:flex;gap:9px;align-items:center;margin-top:16px}.quiz-controls .btn{white-space:nowrap}.quiz-controls .full{flex:1;margin:0}.quiz-controls .btn[hidden]{display:none}@keyframes quiz-in{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.quiz-question{animation:none}}
+
 /* Academy: multi-question exercises (academy-upgrades) */
 .quiz-question{border-top:1px solid rgba(255,255,255,.1);padding:14px 0 4px}
 .quiz-question h3{font-size:1rem;line-height:1.6;margin:0 0 6px;white-space:pre-wrap}
 .quiz-question .quiz-choice{margin:8px 0;padding:9px 11px}
-.quiz-result{margin:10px 0}
+.quiz-result{margin:10px 0;padding:14px 16px;line-height:1.65}
+.quiz-result strong{display:block;font-size:1.02rem;letter-spacing:.01em;margin-bottom:6px}
+.quiz-why{margin-top:8px;padding-top:10px;border-top:1px solid currentColor}
+.quiz-why-label{display:inline-block;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.85;margin-bottom:4px}
+.quiz-why p{margin:0;line-height:1.7;font-size:.95rem;white-space:pre-wrap}
+.quiz-score{margin-top:18px;padding:16px 18px}
+.quiz-score strong{font-size:1.15rem}
+.quiz-score p{margin:4px 0 0;line-height:1.65}
 
 /* Payment section: compact layout (visual only, academy-upgrades) */
 .plans{gap:10px}
@@ -277,3 +287,74 @@ footer{font-size:11px}
 .voice-bars i:nth-child(3){height:12px;animation-delay:.2s}.voice-bars i:nth-child(4){height:18px;animation-delay:.3s}
 .voice-bars i:nth-child(5){height:10px;animation-delay:.4s}
 @keyframes clWave{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
+
+.lab-home{margin:4px 0 26px}.lab-home-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.lab-home-card{border:1px solid var(--line,rgba(255,255,255,.12));border-radius:16px;background:rgba(255,255,255,.035);padding:20px}.lab-home-card h2{margin:8px 0}.lab-home-card .btn{margin-top:10px}
+.quick-links{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.tutor-status-card{display:flex;justify-content:space-between;gap:16px;align-items:center;border:1px solid var(--line,rgba(255,255,255,.12));border-radius:14px;background:rgba(255,255,255,.035);padding:16px 18px;margin:14px 0;flex-wrap:wrap}
+.tutor-pill{display:inline-block;border:1px solid rgba(76,224,208,.4);border-radius:999px;padding:6px 12px;font-size:.85rem;color:var(--cyan,#4ce0d0)}
+.tutor-lock{border:1px solid rgba(255,193,124,.5);background:rgba(255,170,80,.08);border-radius:12px;padding:16px;margin:14px 0}
+@media(max-width:760px){.lab-home-grid{grid-template-columns:1fr}}
+
+.cl-ai-images{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 10px}.cl-ai-images a{display:block;width:104px;height:80px;border-radius:9px;overflow:hidden;border:1px solid #2a4055}.cl-ai-images img{width:100%;height:100%;object-fit:cover;display:block}.cl-ai-message a,.tutor-msg a{color:#8affc1;text-decoration:underline}
+
+
+/* Visitor-clarity: how-it-works strip + plain-English tool one-liners */
+.how-it-works{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0 4px}
+.how-it-works span{flex:1 1 170px;padding:11px 13px;border:1px solid #e4e9f4;border-radius:13px;background:#fff;font-size:12px;color:#66718c;box-shadow:0 8px 22px #29365b08}
+.how-it-works b{display:block;font-size:13px;color:#20294a;margin-bottom:2px}
+.tool-card .tool-plain{font-size:12px;line-height:1.5;color:#34405c;background:#f0edff;border:1px solid #e1dcff;border-radius:9px;padding:8px 10px;margin:6px 0 8px}
+
+/* Dashboard tidy (additive only): calmer spacing, same dark+teal language */
+.panel{margin:16px 0;padding:20px}
+.panel h2{margin:2px 0 12px}
+.tool-grid{gap:11px}
+.tool-card{padding:13px}
+.tool-card h3{margin:10px 0 2px}
+.tool-card p{margin:4px 0 8px}
+.tool-card .tool-plain{background:transparent;border:0;border-left:3px solid var(--cyan,#4ce0d0);border-radius:0;padding:2px 0 2px 9px;margin:6px 0 8px;color:#b6c5da;font-size:12px;line-height:1.5}
+.tutor-status-card,.monitoring-status-card{margin:12px 0}
+.app-shortcuts{gap:8px;margin:10px 0}
+.plan-feature-list{line-height:1.7}
+
+/* Email exposure checker (public free tier, PRO full record) */
+.exposure-hero{display:grid;grid-template-columns:1.2fr 1fr;gap:22px;align-items:center;border:1px solid rgba(255,255,255,.12);border-radius:16px;background:rgba(255,255,255,.035);padding:24px;margin:18px 0}
+.exposure-hero h2{margin:8px 0 10px}
+.exposure-hero h2 span{color:var(--cyan,#4ce0d0)}
+.exposure-copy p{color:#b6c5da;max-width:52ch}
+.exposure-form{display:flex;gap:10px;flex-wrap:wrap}
+.exposure-form input{flex:1 1 220px;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.2);color:inherit;font:inherit}
+.exposure-form input:focus{border-color:var(--cyan,#4ce0d0);outline:none}
+.exposure-note{width:100%;color:#8fa3bd;font-size:13px;margin:4px 0 0}
+.exposure-wrap{max-width:860px;margin:0 auto}
+.exposure-head h1{margin:10px 0}
+.exposure-result{margin-top:20px}
+.notice{border-radius:12px;padding:16px 18px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);font-size:14px;line-height:1.6}
+.notice-ok{border-color:rgba(61,220,151,.45);background:rgba(61,220,151,.07)}
+.notice-danger{border-color:rgba(255,102,132,.45);background:rgba(255,102,132,.08)}
+.notice-warning{border-color:rgba(255,209,122,.45);background:rgba(255,209,122,.07)}
+.data-table{width:100%;border-collapse:collapse;font-size:14px}
+.data-table th,.data-table td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.1);text-align:left;vertical-align:top}
+.data-table th{color:#8fa3bd;font-weight:600;width:34%}
+.blur-card{border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px 18px;background:rgba(255,255,255,.03)}
+.blur-line{margin:6px 0;color:#8fa3bd}
+.blur-text{color:inherit;letter-spacing:2px;user-select:none}
+@media(max-width:860px){.exposure-hero{grid-template-columns:1fr}}
+
+/* Site reviews (homepage + form), dark+teal friendly */
+.reviews-section{padding:65px 0 10px}
+.reviews-average{font-weight:800;color:#138f9a}
+.review-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:10px 0 25px}
+.review-card{padding:20px;border:1px solid #e4e5f0;border-radius:16px;background:#fff;box-shadow:0 8px 24px #27345b08}
+.review-stars{color:#f5a623;font-size:16px;letter-spacing:2px}
+.review-card p{color:#35405f;line-height:1.7;margin:10px 0}
+.review-card footer{font-size:11px;color:#8189a0;font-weight:700}
+.review-form{max-width:620px;margin:0 auto;padding:24px;border:1px solid #e4e5f0;border-radius:18px;background:#fff;display:grid;gap:14px}
+.review-form h3{margin:0;color:#20294a}
+.review-form label{display:grid;gap:7px;font-weight:700;font-size:13px;color:#35405f}
+.review-form input,.review-form select,.review-form textarea{padding:12px;border:1px solid #dcd9ed;border-radius:10px;background:#fff;color:#202b49;font:inherit}
+.review-note{font-size:11px;color:#929bb0;margin:0}
+html[data-theme="dark"] .review-card,html[data-theme="dark"] .review-form{background:#111b2d;border-color:#1e3a5f}
+html[data-theme="dark"] .review-card p,html[data-theme="dark"] .review-form h3,html[data-theme="dark"] .review-form label{color:#e7ecf5}
+html[data-theme="dark"] .review-form input,html[data-theme="dark"] .review-form select,html[data-theme="dark"] .review-form textarea{background:#0f172a;border-color:#1e3a5f;color:#e7ecf5}
+html[data-theme="dark"] .reviews-average{color:#2dd4bf}
+@media(max-width:800px){.review-grid{grid-template-columns:1fr}}

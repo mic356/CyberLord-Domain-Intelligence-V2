@@ -25,13 +25,12 @@
       {% for block in courses[:3] %}<div class="dash-mini-row"><span>{{ block.course.title }}</span><span class="progress-track small"><i style="width:{{ block.pct }}%"></i></span><b>{{ block.pct }}%</b></div>{% endfor %}
     </div>
   </div>
-  <div class="academy-achievements">
-    <div class="xp-card"><span>YOUR LEARNING XP</span><strong>{{ xp_points }}</strong><small>Earn 100 XP for each completed lesson, plus score bonuses.</small></div>
-    <div class="badge-card"><span>ACHIEVEMENTS</span>
-      {% if badges %}<div class="badge-list">{% for badge in badges %}<div class="earned-badge"><b>{{ badge.icon }}</b><span><strong>{{ badge.name }}</strong><small>{{ badge.detail }}</small></span></div>{% endfor %}</div>
-      {% else %}<p class="muted">Your first badge is waiting. Complete a lesson to earn it.</p>{% endif %}
-    </div>
-  </div>
+</section>
+<section class="lab-home">
+<div class="lab-home-grid">
+<div class="lab-home-card"><div class="eyebrow">PRACTICE LAB · SAFE COMMANDS ONLY</div><h2>Training Terminal</h2><p class="muted">A Kali-dark practice terminal, separate from lessons. Type help, then nmap lab.local, dig, whois, ping, ls, cd, cat, pwd, and theharvester-style simulated outputs. Nothing here touches the real internet.</p><a class="btn primary" href="{{ url_for('academy_terminal') }}">Open Training Terminal</a></div>
+<div class="lab-home-card"><div class="eyebrow">TUTOR PRO · SANDBOXED</div><h2>Code Lab - Python practice, sandboxed</h2><p class="muted">Run small Python snippets in a restricted sandbox. No network, no file writes, no shell. Included with Tutor Pro.</p><a class="btn ghost" href="{{ url_for('code_lab') }}">Open Code Lab</a></div>
+</div>
 </section>
 <section id="paths" class="paths-section">
 <div class="paths-head"><h2>Learning paths</h2><p class="muted">Pick a path and work through it in order. Each card shows your progress, lesson count and plan.</p></div>
@@ -65,16 +64,6 @@
     </div>
     <img class="course-cover-img" src="{{ url_for('static', filename='academy/' + block.course.cover) }}" alt="{{ block.course.title }} cover artwork" loading="lazy">
   </header>
-  <details class="course-syllabus">
-    <summary>Course syllabus, outcomes & final project <span>View course details</span></summary>
-    <div class="syllabus-grid">
-      <div><h3>About this course</h3><p>{{ block.course.overview }}</p></div>
-      <div><h3>Prerequisites</h3><ul>{% for item in block.course.prerequisites %}<li>{{ item }}</li>{% endfor %}</ul></div>
-      <div><h3>What you'll be able to do</h3><ul>{% for item in block.course.outcomes %}<li>{{ item }}</li>{% endfor %}</ul></div>
-      <div><h3>Final practical project</h3><p>{{ block.course.capstone }}</p></div>
-      <div><h3>Study resources</h3><ul>{% for item in block.course.resources %}<li>{{ item }}</li>{% endfor %}</ul></div>
-    </div>
-  </details>
   {% if block.locked %}
   <div class="upgrade-card">
     <div>
