@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block title %}Messaging accounts · CyberLord{% endblock %}{% block content %}
+<section class="panel" style="max-width:760px;margin:2rem auto">
+  <div class="eyebrow">ACCOUNT CONNECTIONS</div><h1>Connect Telegram &amp; WhatsApp</h1>
+  <p class="muted">Link a chat to your signed-in CyberLord account. Your Tutor Pro expiry and the same 10-free-questions-per-day allowance are then used on the website and linked messaging channels.</p>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn primary" type="submit">Generate one-time link code</button></form>
+  {% if link_code %}<div class="tutor-status-card" style="margin-top:1rem"><div><div class="eyebrow">ONE-TIME CODE · EXPIRES IN 10 MINUTES</div><h2 style="letter-spacing:.18em">{{ link_code }}</h2><p class="muted">In Telegram or WhatsApp, send <code>/link {{ link_code }}</code>. Do not share this code with anyone else.</p></div></div>{% endif %}
+  <h2 style="margin-top:2rem">Connected accounts</h2>
+  {% if linked_accounts %}{% for item in linked_accounts %}<div class="history-item"><b>{{ item.channel|title }}</b><span>{{ item.external_id }}</span><small>Linked {{ item.linked_at.strftime('%Y-%m-%d %H:%M UTC') }}</small><form method="post" action="{{ url_for('messaging_unlink',link_id=item.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn small danger" type="submit">Disconnect</button></form></div>{% endfor %}{% else %}<p class="muted">No messaging accounts connected yet.</p>{% endif %}
+  <p class="muted small" style="margin-top:2rem"><a href="{{ url_for('dashboard') }}">Return to dashboard</a></p>
+</section>{% endblock %}
