@@ -2563,6 +2563,197 @@ def ai_assistant():
 
 
 
+# ---------------------------------------------------------------------------
+# Official WhatsApp Cloud API + Telegram bot adapters.
+# Both channels reuse the existing AI assistant implementation; they do not
+# create a second AI engine or alter the dashboard/tutor web experience.
+# ---------------------------------------------------------------------------
+_MESSAGING_HISTORY = {}  # process-local short conversation context, keyed by channel/chat
+_MESSAGING_HISTORY_LOCK = threading.Lock()
+_MESSAGING_SEEN = {}     # bounded duplicate-delivery protection
+_MESSAGING_PERSONAS = {}  # selected persona per channel chat
+
+
+def _messaging_history(channel, chat_id):
+    key = channel + ":" + str(chat_id)
+    with _MESSAGING_HISTORY_LOCK:
+        return list(_MESSAGING_HISTORY.get(key, []))
+
+
+def _messaging_remember(channel, chat_id, messages):
+    key = channel + ":" + str(chat_id)
+    with _MESSAGING_HISTORY_LOCK:
+        _MESSAGING_HISTORY[key] = list(messages[-10:])
+        # Keep memory bounded on a single-process deployment.
+        if len(_MESSAGING_HISTORY) > 2000:
+            oldest = next(iter(_MESSAGING_HISTORY))
+            _MESSAGING_HISTORY.pop(oldest, None)
+
+
+def _messaging_is_duplicate(channel, message_id):
+    if not message_id:
+        return False
+    key = channel + ":" + str(message_id)
+    now = time.time()
+    with _MESSAGING_HISTORY_LOCK:
+        for old_key, stamp in list(_MESSAGING_SEEN.items()):
+            if now - stamp > 3600:
+                _MESSAGING_SEEN.pop(old_key, None)
+        if key in _MESSAGING_SEEN:
+            return True
+        _MESSAGING_SEEN[key] = now
+        if len(_MESSAGING_SEEN) > 5000:
+            _MESSAGING_SEEN.pop(next(iter(_MESSAGING_SEEN)), None)
+    return False
+
+
+def _run_messaging_ai(channel, chat_id, text, persona):
+    """Run the same existing AI endpoint logic internally, without web login."""
+    history = _messaging_history(channel, chat_id)
+    messages = history + [{"role": "user", "content": text}]
+    payload = {"messages": messages, "persona": persona}
+    # The web endpoint is login-protected, but its underlying implementation is
+    # shared here so the bot uses the exact same Gemini -> Groq -> local chain.
+    with app.test_request_context("/api/ai-assistant", method="POST", json=payload):
+        response = ai_assistant.__wrapped__()
+        if isinstance(response, tuple):
+            response = response[0]
+        result = response.get_json(silent=True) if hasattr(response, "get_json") else None
+    if not result or not result.get("reply"):
+        return (result or {}).get("error", "CyberLord AI is temporarily unavailable."), history
+    updated = messages + [{"role": "assistant", "content": str(result["reply"])}]
+    _messaging_remember(channel, chat_id, updated)
+    return str(result["reply"]), updated
+
+
+def _messaging_command(text, current_persona):
+    clean = (text or "").strip()
+    low = clean.lower()
+    if low in ("/tutor", "tutor", "/academy"):
+        return "tutor", "CyberLord Academy Tutor selected. Ask your cybersecurity or course question."
+    if low in ("/main", "main", "/dashboard"):
+        return "main", "CyberLord Dashboard AI selected. Ask me anything."
+    if low in ("/start", "/help", "help"):
+        return current_persona, (
+            "Welcome to CyberLord. Send a message to chat with the AI.\n"
+            "Use /main for the Dashboard AI or /tutor for the Academy Tutor.\n"
+            "Use /reset to clear this chat's recent conversation context."
+        )
+    if low == "/reset":
+        return current_persona, "Conversation context cleared. What would you like to ask?"
+    return current_persona, None
+
+
+def _send_telegram_message(chat_id, text):
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token:
+        app.logger.error("Telegram bot is not configured: TELEGRAM_BOT_TOKEN is missing")
+        return False
+    try:
+        response = requests.post(
+            "https://api.telegram.org/bot%s/sendMessage" % token,
+            json={"chat_id": chat_id, "text": str(text)[:4000]}, timeout=15)
+        response.raise_for_status()
+        return True
+    except Exception as exc:
+        app.logger.warning("Telegram message delivery failed: %s", str(exc)[:180])
+        return False
+
+
+def _send_whatsapp_message(to, text):
+    token = os.getenv("WHATSAPP_ACCESS_TOKEN", "").strip()
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+    version = os.getenv("WHATSAPP_API_VERSION", "v26.0").strip() or "v26.0"
+    if not token or not phone_id:
+        app.logger.error("WhatsApp is not configured: access token or phone number ID is missing")
+        return False
+    try:
+        response = requests.post(
+            "https://graph.facebook.com/%s/%s/messages" % (version, phone_id),
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+            json={"messaging_product": "whatsapp", "recipient_type": "individual",
+                  "to": str(to), "type": "text", "text": {"preview_url": False, "body": str(text)[:4000]}},
+            timeout=15)
+        response.raise_for_status()
+        return True
+    except Exception as exc:
+        app.logger.warning("WhatsApp message delivery failed: %s", str(exc)[:180])
+        return False
+
+
+@app.route("/webhooks/telegram", methods=["POST"])
+def telegram_webhook():
+    expected = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
+    supplied = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not expected or not hmac.compare_digest(supplied, expected):
+        return jsonify(ok=False, error="Webhook not configured or unauthorized"), 403
+    update = request.get_json(silent=True) or {}
+    message = update.get("message") or update.get("edited_message") or {}
+    chat = message.get("chat") or {}
+    chat_id = chat.get("id")
+    text_in = message.get("text")
+    if not chat_id or not isinstance(text_in, str) or not text_in.strip():
+        return jsonify(ok=True, ignored=True)
+    if _messaging_is_duplicate("telegram", message.get("message_id")):
+        return jsonify(ok=True, duplicate=True)
+    persona_key = "telegram:" + str(chat_id)
+    current_persona = _MESSAGING_PERSONAS.get(persona_key, "main")
+    persona, command_reply = _messaging_command(text_in, current_persona)
+    if text_in.strip().lower() in ("/tutor", "tutor", "/academy", "/main", "main", "/dashboard"):
+        _MESSAGING_PERSONAS[persona_key] = persona
+    if text_in.strip().lower() == "/reset":
+        with _MESSAGING_HISTORY_LOCK:
+            _MESSAGING_HISTORY.pop("telegram:" + str(chat_id), None)
+    reply = command_reply
+    if reply is None:
+        reply, _ = _run_messaging_ai("telegram", chat_id, text_in, persona)
+    _send_telegram_message(chat_id, reply)
+    return jsonify(ok=True)
+
+
+@app.route("/webhooks/whatsapp", methods=["GET", "POST"])
+def whatsapp_webhook():
+    verify_token = os.getenv("WHATSAPP_VERIFY_TOKEN", "").strip()
+    if request.method == "GET":
+        mode = request.args.get("hub.mode", "")
+        token = request.args.get("hub.verify_token", "")
+        challenge = request.args.get("hub.challenge", "")
+        if verify_token and mode == "subscribe" and hmac.compare_digest(token, verify_token):
+            return challenge, 200, {"Content-Type": "text/plain"}
+        return "Webhook verification failed", 403
+
+    app_secret = os.getenv("WHATSAPP_APP_SECRET", "").strip()
+    if app_secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        expected = "sha256=" + hmac.new(app_secret.encode(), request.get_data(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            return jsonify(ok=False, error="Invalid signature"), 403
+    payload = request.get_json(silent=True) or {}
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value") or {}
+            for message in value.get("messages", []):
+                sender = message.get("from")
+                text_in = ((message.get("text") or {}).get("body") or "")
+                if not sender or not text_in.strip() or message.get("type") != "text":
+                    continue
+                if _messaging_is_duplicate("whatsapp", message.get("id")):
+                    continue
+                persona_key = "whatsapp:" + str(sender)
+                current_persona = _MESSAGING_PERSONAS.get(persona_key, "main")
+                persona, command_reply = _messaging_command(text_in, current_persona)
+                if text_in.strip().lower() in ("/tutor", "tutor", "/academy", "/main", "main", "/dashboard"):
+                    _MESSAGING_PERSONAS[persona_key] = persona
+                if text_in.strip().lower() == "/reset":
+                    with _MESSAGING_HISTORY_LOCK:
+                        _MESSAGING_HISTORY.pop("whatsapp:" + str(sender), None)
+                reply = command_reply
+                if reply is None:
+                    reply, _ = _run_messaging_ai("whatsapp", sender, text_in, persona)
+                _send_whatsapp_message(sender, reply)
+    return jsonify(ok=True)
+
+
 def monitoring_limits(user):
     refresh_subscription(user)
     rank = PLANS.get(user.plan, PLANS["free"])["rank"]
