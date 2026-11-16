@@ -24,7 +24,7 @@ The webhook endpoint rejects requests unless the secret is configured and matche
 - `WHATSAPP_ACCESS_TOKEN`: Meta WhatsApp Cloud API access token.
 - `WHATSAPP_PHONE_NUMBER_ID`: the WhatsApp Cloud API phone-number ID (not the displayed phone number).
 - `WHATSAPP_VERIFY_TOKEN`: a private string you choose; use the same value in Meta webhook verification.
-- `WHATSAPP_APP_SECRET`: Meta app secret; recommended so incoming webhook signatures are validated.
+- `WHATSAPP_APP_SECRET`: Meta app secret; required to validate incoming webhook signatures.
 - `WHATSAPP_API_VERSION`: optional Graph API version; defaults to `v26.0`. Update it to a currently supported version in your Meta app when needed.
 
 In Meta for Developers, configure the callback URL as `https://YOUR-DOMAIN/webhooks/whatsapp`, enter the verify token, and subscribe the WhatsApp Business Account to the `messages` webhook field. Add/verify a test recipient and complete Meta's required business/app setup before production messaging. WhatsApp free-form replies are subject to Meta's customer-service messaging window; outside that window, an approved message template may be required.
@@ -33,7 +33,9 @@ In Meta for Developers, configure the callback URL as `https://YOUR-DOMAIN/webho
 
 - `/main` selects the existing CyberLord Dashboard AI.
 - `/tutor` selects the existing CyberLord Academy Tutor.
-- `/reset` clears the recent in-process conversation context.
+- `/reset` clears the recent database-backed conversation context.
+- `/link CODE` securely links this chat to the currently signed-in CyberLord account.
+- `/unlink` disconnects this chat from the website account.
 - `/help` shows the commands.
 
 Messages without a command go to the currently selected persona. Each new chat starts with the Dashboard AI.
@@ -41,34 +43,35 @@ Messages without a command go to the currently selected persona. Each new chat s
 ## Operational notes
 
 - This is an adapter, not a replacement website or AI engine.
-- Messaging chats are anonymous channel identities; they are not linked to a CyberLord website account. Website account-specific memory, subscriptions, scan history and private dashboard data are therefore not exposed.
-- Recent chat context is kept in process memory (up to 10 messages per chat) and is lost when the service restarts or redeploys. For multi-instance durability, add a shared Redis/database conversation store before scaling horizontally.
-- The existing tutor free-question limit is account-based; anonymous messaging users are not charged against a website account's tutor allowance. Consider adding explicit phone-number account linking and abuse controls before opening the bot publicly.
+- Tutor access requires account linking; usernames, display names, email addresses and phone numbers are not used to prove identity.
+- Linked messaging tutor requests use the same website account's Tutor Pro expiry and 10-question daily free allowance.
+- Conversation context, persona selection, link mappings and webhook duplicate detection are stored in SQL tables.
+- WhatsApp production messaging still requires a configured Meta WhatsApp Business Cloud API number, valid credentials, webhook subscription and Meta verification.
 - Webhook endpoints require HTTPS in production. Keep all tokens in Render environment variables, not source files.
 
 ## GitHub safety
 
 Review `.gitignore` before committing. Do not upload `.env`, database files, API tokens, Meta app secrets, or Telegram bot tokens. Rotate any credential that has ever been committed publicly.
 
-## Uploading to GitHub
+## Updating the existing GitHub repository
 
-1. Extract the delivered ZIP on your computer.
-2. Create a new repository on GitHub (choose Private if the source should not be public).
-3. Open a terminal in the extracted project folder and run:
+This package is an update to the existing `mic356/CyberLord-Domain-Intelligence-V2` project, not a new application. Extract the ZIP and upload/replace its project files in that existing repository (keep the repository's current `main` branch and Render service). Do not run `git init`, do not create a second repository, and do not replace the existing Render service. Review the changed files before committing. Never upload `.env`, database files, API tokens, Telegram bot tokens or Meta app secrets. Once the changes are committed to the connected branch, Render can deploy through its existing GitHub integration.
 
-```bash
-git init
-git add .
-git status --short
-```
+Keep your existing `DATABASE_URL`, `SECRET_KEY`, Gemini/Groq keys, Telegram bot token and Telegram webhook secret unchanged. For WhatsApp, add the Meta values listed above to Render Environment. Existing database tables and subscription records are preserved; the new messaging and receipt tables are created additively on startup.
 
-4. Review `git status` carefully. Confirm that no `.env`, database, token, credential, or private file is staged. Then commit and connect your repository:
 
-```bash
-git commit -m "Add WhatsApp and Telegram AI integrations"
-git branch -M main
-git remote add origin https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git
-git push -u origin main
-```
+## Account linking and shared Tutor Pro (implemented)
 
-5. In Render, connect the GitHub repository to your existing web service. Add the environment variables above in Render's Environment page, then deploy. Keep your existing `DATABASE_URL`, `SECRET_KEY`, AI keys, and other service settings unchanged.
+Customers must sign in to the existing CyberLord website and open **Account → Messaging** (`/account/messaging`). Generate an eight-digit, one-time code and send `/link CODE` to the Telegram bot or WhatsApp business number. Codes expire after 10 minutes, are stored as hashes, can only be used once, and link by the verified channel chat identifier—not by username or phone/email matching. Link attempts are rate-limited. Use `/unlink` in the chat or the website Disconnect button to revoke a connection.
+
+Linked Telegram and WhatsApp Academy Tutor requests run through the same website AI tutor endpoint and use the same database `TutorUsage` daily counter (10 free questions per UTC day) and the linked website account's `tutor_pro_expires_at` entitlement. Tutor Pro remains a separate 30-day add-on. Messaging history, selected persona, and webhook event de-duplication are database-backed.
+
+## Bank transfer receipt uploads
+
+The OPay and Union Bank payment forms accept an optional JPG, PNG, WEBP or PDF receipt (maximum 5 MB). Files are stored in the configured SQL database, not Render's temporary filesystem. Admins can view an uploaded receipt from the payment card. Bank transfers remain pending until a human verifies the funds and approves the payment; uploading a receipt never activates a subscription. Existing USDT TRC20/BEP20 transaction verification is unchanged.
+
+## WhatsApp production configuration
+
+The WhatsApp Cloud API webhook is available at `https://cyberlord.name.ng/webhooks/whatsapp`. Configure the Meta app's webhook subscription for the `messages` field and set these Render environment variables: `WHATSAPP_VERIFY_TOKEN` (a random value you choose), `WHATSAPP_APP_SECRET` (Meta app secret, used to validate `X-Hub-Signature-256`), `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, and optionally `WHATSAPP_API_VERSION` (defaults to `v26.0`). The webhook rejects POST requests if `WHATSAPP_APP_SECRET` is absent. WhatsApp will not work until a Meta WhatsApp Business Cloud API number and credentials are configured and Meta verifies the callback.
+
+Keep all bot tokens and app secrets in Render Environment. Never put them in source code or share them in chat.

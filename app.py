@@ -29,6 +29,7 @@ from academy_questions import ACADEMY_LESSONS, ACADEMY_COURSES, get_course_for_l
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "CHANGE-ME-TO-A-LONG-RANDOM-SECRET")
+app.config["MAX_CONTENT_LENGTH"] = 6 * 1024 * 1024
 
 # Keep cookies out of reach of JavaScript, limit cross-site sending, and
 # mark them Secure over HTTPS. Render always serves the app over HTTPS, so
@@ -254,6 +255,52 @@ class Payment(db.Model):
     tx_hash = db.Column(db.String(140), unique=True, index=True)
     expires_at = db.Column(db.DateTime)
 
+class BankReceipt(db.Model):
+    """Private receipt evidence stored in the database (not ephemeral Render disk)."""
+    id = db.Column(db.Integer, primary_key=True)
+    payment_id = db.Column(db.Integer, db.ForeignKey("payment.id"), nullable=False, unique=True, index=True)
+    filename = db.Column(db.String(180), nullable=False)
+    content_type = db.Column(db.String(80), nullable=False)
+    data = db.Column(db.LargeBinary, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class MessagingLinkCode(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    code_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    used_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class MessagingAccount(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    channel = db.Column(db.String(16), nullable=False)
+    external_id = db.Column(db.String(160), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    linked_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (db.UniqueConstraint("channel", "external_id", name="uq_messaging_channel_external"),)
+
+
+class MessagingState(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    channel = db.Column(db.String(16), nullable=False)
+    external_id = db.Column(db.String(160), nullable=False)
+    persona = db.Column(db.String(16), default="main", nullable=False)
+    history_json = db.Column(db.Text, default="[]", nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    __table_args__ = (db.UniqueConstraint("channel", "external_id", name="uq_messaging_state"),)
+
+
+class MessagingEvent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    channel = db.Column(db.String(16), nullable=False)
+    event_id = db.Column(db.String(180), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (db.UniqueConstraint("channel", "event_id", name="uq_messaging_event"),)
+
+
 class ScanHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -373,8 +420,14 @@ def normalize_domain(value):
 
 
 def refresh_subscription(user):
-    """Downgrade expired paid plans before checking access or showing the dashboard."""
-    if user and user.plan != "free" and user.plan_expires_at:
+    """Downgrade expired paid plans before checking access or showing the dashboard.
+
+    Flask-Login's AnonymousUserMixin is truthy, but it has no subscription
+    attributes. Messaging webhooks run outside a logged-in browser session.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return
+    if user.plan != "free" and user.plan_expires_at:
         expiry = user.plan_expires_at
         if expiry <= datetime.utcnow():
             user.plan = "free"
@@ -403,7 +456,8 @@ def activate_subscription(user, payment):
 def tutor_pro_active(user=None):
     """True only while a verified Tutor Pro add-on is unexpired."""
     user = current_user if user is None else user
-    if not user:
+    # AnonymousUserMixin is truthy; never treat it as a real account.
+    if not user or not getattr(user, "is_authenticated", False):
         return False
     refresh_subscription(user)
     expiry = getattr(user, "tutor_pro_expires_at", None)
@@ -1791,10 +1845,27 @@ def payment_bank_submit():
     if payment_method not in ("opay", "union_bank"):
         flash("Select a valid bank payment method.", "error")
         return redirect(url_for("dashboard") + "#plans")
-    db.session.add(Payment(user_id=current_user.id, reference=reference, plan=plan, amount=PLANS[plan]["ngn"] * 100,
-        status="pending", currency="NGN", network=payment_method))
+    upload = request.files.get("receipt")
+    receipt_bytes = None
+    if upload and upload.filename:
+        allowed = {"image/jpeg", "image/png", "application/pdf", "image/webp"}
+        if upload.mimetype not in allowed:
+            flash("Receipt must be a JPG, PNG, WEBP or PDF file.", "error")
+            return redirect(url_for("dashboard") + "#plans")
+        receipt_bytes = upload.read(5 * 1024 * 1024 + 1)
+        if not receipt_bytes or len(receipt_bytes) > 5 * 1024 * 1024:
+            flash("Receipt file must be smaller than 5 MB.", "error")
+            return redirect(url_for("dashboard") + "#plans")
+    payment = Payment(user_id=current_user.id, reference=reference, plan=plan,
+        amount=PLANS[plan]["ngn"] * 100, status="pending", currency="NGN", network=payment_method)
+    db.session.add(payment)
+    db.session.flush()
+    if receipt_bytes:
+        db.session.add(BankReceipt(payment_id=payment.id,
+            filename=os.path.basename(upload.filename or "receipt")[:180],
+            content_type=upload.mimetype, data=receipt_bytes))
     db.session.commit()
-    flash("Payment request submitted successfully. Your subscription will activate after the payment is confirmed.", "success")
+    flash("Bank transfer submitted — awaiting manual confirmation. Your plan will activate only after the funds are confirmed.", "success")
     return redirect(url_for("dashboard") + "#plans")
 
 # Paystack integration is retained for future reactivation, but disabled unless explicitly enabled.
@@ -1964,7 +2035,8 @@ def admin_dashboard():
         review_counts = _review_store().status_counts()
     except Exception:
         review_counts = {"pending": 0, "approved": 0, "rejected": 0}
-    return render_template("admin_payments.html", payments=payments, counts=counts, status_filter=status_filter, csrf_token=_admin_csrf_token(), review_counts=review_counts)
+    receipt_payment_ids = {row.payment_id for row in BankReceipt.query.with_entities(BankReceipt.payment_id).all()}
+    return render_template("admin_payments.html", payments=payments, counts=counts, status_filter=status_filter, csrf_token=_admin_csrf_token(), review_counts=review_counts, receipt_payment_ids=receipt_payment_ids)
 
 @app.route("/admin/logout", methods=["POST"])
 def admin_logout():
@@ -1972,6 +2044,20 @@ def admin_logout():
     session.clear()
     flash("You have signed out of the administrator area.", "success")
     return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/payments/<int:payment_id>/receipt")
+def admin_payment_receipt(payment_id):
+    if not _admin_authenticated(): abort(403)
+    payment = db.session.get(Payment, payment_id)
+    receipt = BankReceipt.query.filter_by(payment_id=payment_id).first()
+    if not payment or not receipt: abort(404)
+    from flask import make_response
+    response = make_response(receipt.data)
+    response.headers["Content-Type"] = receipt.content_type
+    response.headers["Content-Disposition"] = 'inline; filename="%s"' % re.sub(r"[^A-Za-z0-9._-]", "_", receipt.filename)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 @app.route("/admin/payments/<int:payment_id>/approve", methods=["POST"])
 def admin_approve_bank_payment(payment_id):
@@ -2563,66 +2649,124 @@ def ai_assistant():
 
 
 
+@app.route("/account/messaging", methods=["GET", "POST"])
+@login_required
+def messaging_account_settings():
+    csrf = session.get("messaging_csrf")
+    if not csrf:
+        csrf = secrets.token_urlsafe(32)
+        session["messaging_csrf"] = csrf
+    if request.method == "POST":
+        supplied = request.form.get("csrf_token", "")
+        if not supplied or not hmac.compare_digest(supplied, csrf): abort(400)
+        now = datetime.utcnow()
+        # Only the most recently generated outstanding code remains valid.
+        MessagingLinkCode.query.filter_by(user_id=current_user.id, used_at=None).update({"used_at": now})
+        code = "%08d" % secrets.randbelow(100000000)
+        row = MessagingLinkCode(user_id=current_user.id,
+            code_hash=hashlib.sha256(code.encode()).hexdigest(),
+            expires_at=now + timedelta(minutes=10))
+        db.session.add(row)
+        db.session.commit()
+        session["messaging_link_code"] = code
+        return redirect(url_for("messaging_account_settings"))
+    code = session.pop("messaging_link_code", None)
+    linked = MessagingAccount.query.filter_by(user_id=current_user.id).order_by(MessagingAccount.linked_at.desc()).all()
+    return render_template("messaging_account.html", link_code=code, linked_accounts=linked, csrf_token=csrf)
+
+
+@app.route("/account/messaging/unlink/<int:link_id>", methods=["POST"])
+@login_required
+def messaging_unlink(link_id):
+    supplied = request.form.get("csrf_token", "")
+    expected = session.get("messaging_csrf", "")
+    if not supplied or not expected or not hmac.compare_digest(supplied, expected): abort(400)
+    row = MessagingAccount.query.filter_by(id=link_id, user_id=current_user.id).first_or_404()
+    db.session.delete(row)
+    db.session.commit()
+    flash("Messaging account disconnected.", "success")
+    return redirect(url_for("messaging_account_settings"))
+
+
+def _consume_messaging_link_code(channel, external_id, code):
+    if not isinstance(code, str) or not re.fullmatch(r"\d{8}", code.strip()):
+        return False, "Enter the eight-digit code from your CyberLord account settings."
+    if rate_limited(key="messaging-link:" + channel + ":" + str(external_id), limit=5, window=600):
+        return False, "Too many link attempts. Wait 10 minutes and generate a fresh code."
+    digest = hashlib.sha256(code.strip().encode()).hexdigest()
+    row = MessagingLinkCode.query.filter_by(code_hash=digest, used_at=None).with_for_update().first()
+    now = datetime.utcnow()
+    if not row or row.expires_at <= now:
+        return False, "That link code is invalid or expired. Generate a new one at CyberLord → Account → Messaging."
+    existing = MessagingAccount.query.filter_by(channel=channel, external_id=str(external_id)).first()
+    if existing and existing.user_id != row.user_id:
+        return False, "This messaging account is already linked to another CyberLord account. Contact support to change it."
+    # A user may link one account per channel; replace their old mapping only after a valid code is supplied.
+    old = MessagingAccount.query.filter_by(channel=channel, user_id=row.user_id).first()
+    if old and old.external_id != str(external_id):
+        db.session.delete(old)
+    if not existing:
+        db.session.add(MessagingAccount(channel=channel, external_id=str(external_id), user_id=row.user_id))
+    row.used_at = now
+    db.session.commit()
+    return True, "Your %s account is now securely linked to CyberLord. Use /tutor for Academy Tutor or /main for Dashboard AI." % channel.title()
+
+
 # ---------------------------------------------------------------------------
 # Official WhatsApp Cloud API + Telegram bot adapters.
 # Both channels reuse the existing AI assistant implementation; they do not
 # create a second AI engine or alter the dashboard/tutor web experience.
 # ---------------------------------------------------------------------------
-_MESSAGING_HISTORY = {}  # process-local short conversation context, keyed by channel/chat
 _MESSAGING_HISTORY_LOCK = threading.Lock()
-_MESSAGING_SEEN = {}     # bounded duplicate-delivery protection
-_MESSAGING_PERSONAS = {}  # selected persona per channel chat
 
 
-def _messaging_history(channel, chat_id):
-    key = channel + ":" + str(chat_id)
-    with _MESSAGING_HISTORY_LOCK:
-        return list(_MESSAGING_HISTORY.get(key, []))
-
-
-def _messaging_remember(channel, chat_id, messages):
-    key = channel + ":" + str(chat_id)
-    with _MESSAGING_HISTORY_LOCK:
-        _MESSAGING_HISTORY[key] = list(messages[-10:])
-        # Keep memory bounded on a single-process deployment.
-        if len(_MESSAGING_HISTORY) > 2000:
-            oldest = next(iter(_MESSAGING_HISTORY))
-            _MESSAGING_HISTORY.pop(oldest, None)
+def _messaging_state(channel, external_id):
+    row = MessagingState.query.filter_by(channel=channel, external_id=str(external_id)).first()
+    if not row:
+        row = MessagingState(channel=channel, external_id=str(external_id), persona="main", history_json="[]")
+        db.session.add(row)
+        db.session.commit()
+    try:
+        history = json.loads(row.history_json or "[]")
+        if not isinstance(history, list): history = []
+    except Exception:
+        history = []
+    return row, history
 
 
 def _messaging_is_duplicate(channel, message_id):
     if not message_id:
         return False
-    key = channel + ":" + str(message_id)
-    now = time.time()
-    with _MESSAGING_HISTORY_LOCK:
-        for old_key, stamp in list(_MESSAGING_SEEN.items()):
-            if now - stamp > 3600:
-                _MESSAGING_SEEN.pop(old_key, None)
-        if key in _MESSAGING_SEEN:
-            return True
-        _MESSAGING_SEEN[key] = now
-        if len(_MESSAGING_SEEN) > 5000:
-            _MESSAGING_SEEN.pop(next(iter(_MESSAGING_SEEN)), None)
-    return False
+    try:
+        db.session.add(MessagingEvent(channel=channel, event_id=str(message_id)[:180]))
+        db.session.commit()
+        return False
+    except Exception:
+        db.session.rollback()
+        return True
 
 
-def _run_messaging_ai(channel, chat_id, text, persona):
-    """Run the same existing AI endpoint logic internally, without web login."""
-    history = _messaging_history(channel, chat_id)
+def _run_messaging_ai(channel, external_id, text, persona, user_id=None):
+    row, history = _messaging_state(channel, external_id)
     messages = history + [{"role": "user", "content": text}]
-    payload = {"messages": messages, "persona": persona}
-    # The web endpoint is login-protected, but its underlying implementation is
-    # shared here so the bot uses the exact same Gemini -> Groq -> local chain.
+    payload = {"messages": messages[-12:], "persona": persona}
+    if persona == "tutor" and not user_id:
+        return "To use the Academy Tutor here, first sign in to CyberLord and link this chat. Visit Account → Messaging on the website, generate a one-time code, then send /link followed by that code here.", history
+    # Reuse the actual authenticated website user's subscription and daily quota.
     with app.test_request_context("/api/ai-assistant", method="POST", json=payload):
+        if user_id is not None:
+            session["_user_id"] = str(user_id)
+            session["_fresh"] = True
+        app.preprocess_request()  # load Flask-Login current_user from the test session
         response = ai_assistant.__wrapped__()
-        if isinstance(response, tuple):
-            response = response[0]
+        if isinstance(response, tuple): response = response[0]
         result = response.get_json(silent=True) if hasattr(response, "get_json") else None
     if not result or not result.get("reply"):
         return (result or {}).get("error", "CyberLord AI is temporarily unavailable."), history
-    updated = messages + [{"role": "assistant", "content": str(result["reply"])}]
-    _messaging_remember(channel, chat_id, updated)
+    updated = (messages + [{"role": "assistant", "content": str(result["reply"])}])[-12:]
+    row.history_json = json.dumps(updated)
+    row.updated_at = datetime.utcnow()
+    db.session.commit()
     return str(result["reply"]), updated
 
 
@@ -2636,13 +2780,55 @@ def _messaging_command(text, current_persona):
     if low in ("/start", "/help", "help"):
         return current_persona, (
             "Welcome to CyberLord. Send a message to chat with the AI.\n"
-            "Use /main for the Dashboard AI or /tutor for the Academy Tutor.\n"
-            "Use /reset to clear this chat's recent conversation context."
+            "Use /link 12345678 to connect your signed-in website account.\n"
+            "Use /main for Dashboard AI, /tutor for Academy Tutor, /reset to clear history, or /unlink to disconnect."
         )
     if low == "/reset":
         return current_persona, "Conversation context cleared. What would you like to ask?"
     return current_persona, None
 
+
+def _messaging_account(channel, external_id):
+    return MessagingAccount.query.filter_by(channel=channel, external_id=str(external_id)).first()
+
+
+def _handle_messaging_text(channel, external_id, event_id, text_in):
+    if _messaging_is_duplicate(channel, event_id):
+        return None
+    row, history = _messaging_state(channel, external_id)
+    clean = (text_in or "").strip()
+    low = clean.lower()
+    if low.startswith("/link "):
+        ok, reply = _consume_messaging_link_code(channel, external_id, clean.split(None, 1)[1])
+        return reply
+    if low == "/link":
+        return "Generate a fresh one-time code from Account → Messaging on the CyberLord website, then send /link followed by the eight-digit code."
+    if low == "/unlink":
+        linked = _messaging_account(channel, external_id)
+        if linked:
+            db.session.delete(linked)
+        row.persona = "main"
+        row.history_json = "[]"
+        db.session.commit()
+        return "This chat has been disconnected from your CyberLord account and its saved chat context has been cleared."
+    linked = _messaging_account(channel, external_id)
+    user_id = linked.user_id if linked else None
+    persona = row.persona or "main"
+    if low in ("/tutor", "tutor", "/academy", "/main", "main", "/dashboard"):
+        persona, reply = _messaging_command(clean, persona)
+        row.persona = persona; db.session.commit()
+        if persona == "tutor" and not _messaging_account(channel, external_id):
+            return "Academy Tutor requires your signed-in CyberLord account. Open Account → Messaging on cyberlord.name.ng, generate an eight-digit code, then send /link CODE here."
+        return reply
+    if low in ("/start", "/help", "help"):
+        return _messaging_command(clean, persona)[1]
+    if low == "/reset":
+        row.history_json = "[]"; db.session.commit()
+        return _messaging_command(clean, persona)[1]
+    if persona == "tutor" and not linked:
+        return "Tutor access requires a linked CyberLord account. Sign in at cyberlord.name.ng, open Account → Messaging, generate a code, then send /link 12345678 here."
+    reply, _ = _run_messaging_ai(channel, external_id, clean, persona, user_id=user_id)
+    return reply
 
 def _send_telegram_message(chat_id, text):
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
@@ -2694,19 +2880,8 @@ def telegram_webhook():
     text_in = message.get("text")
     if not chat_id or not isinstance(text_in, str) or not text_in.strip():
         return jsonify(ok=True, ignored=True)
-    if _messaging_is_duplicate("telegram", message.get("message_id")):
-        return jsonify(ok=True, duplicate=True)
-    persona_key = "telegram:" + str(chat_id)
-    current_persona = _MESSAGING_PERSONAS.get(persona_key, "main")
-    persona, command_reply = _messaging_command(text_in, current_persona)
-    if text_in.strip().lower() in ("/tutor", "tutor", "/academy", "/main", "main", "/dashboard"):
-        _MESSAGING_PERSONAS[persona_key] = persona
-    if text_in.strip().lower() == "/reset":
-        with _MESSAGING_HISTORY_LOCK:
-            _MESSAGING_HISTORY.pop("telegram:" + str(chat_id), None)
-    reply = command_reply
-    if reply is None:
-        reply, _ = _run_messaging_ai("telegram", chat_id, text_in, persona)
+    reply = _handle_messaging_text("telegram", chat_id, str(chat_id) + ":" + str(message.get("message_id")), text_in)
+    if reply is None: return jsonify(ok=True, duplicate=True)
     _send_telegram_message(chat_id, reply)
     return jsonify(ok=True)
 
@@ -2721,13 +2896,13 @@ def whatsapp_webhook():
         if verify_token and mode == "subscribe" and hmac.compare_digest(token, verify_token):
             return challenge, 200, {"Content-Type": "text/plain"}
         return "Webhook verification failed", 403
-
     app_secret = os.getenv("WHATSAPP_APP_SECRET", "").strip()
-    if app_secret:
-        signature = request.headers.get("X-Hub-Signature-256", "")
-        expected = "sha256=" + hmac.new(app_secret.encode(), request.get_data(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature, expected):
-            return jsonify(ok=False, error="Invalid signature"), 403
+    if not app_secret:
+        return jsonify(ok=False, error="WhatsApp webhook signature verification is not configured"), 503
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    expected = "sha256=" + hmac.new(app_secret.encode(), request.get_data(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return jsonify(ok=False, error="Invalid signature"), 403
     payload = request.get_json(silent=True) or {}
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
@@ -2735,22 +2910,9 @@ def whatsapp_webhook():
             for message in value.get("messages", []):
                 sender = message.get("from")
                 text_in = ((message.get("text") or {}).get("body") or "")
-                if not sender or not text_in.strip() or message.get("type") != "text":
-                    continue
-                if _messaging_is_duplicate("whatsapp", message.get("id")):
-                    continue
-                persona_key = "whatsapp:" + str(sender)
-                current_persona = _MESSAGING_PERSONAS.get(persona_key, "main")
-                persona, command_reply = _messaging_command(text_in, current_persona)
-                if text_in.strip().lower() in ("/tutor", "tutor", "/academy", "/main", "main", "/dashboard"):
-                    _MESSAGING_PERSONAS[persona_key] = persona
-                if text_in.strip().lower() == "/reset":
-                    with _MESSAGING_HISTORY_LOCK:
-                        _MESSAGING_HISTORY.pop("whatsapp:" + str(sender), None)
-                reply = command_reply
-                if reply is None:
-                    reply, _ = _run_messaging_ai("whatsapp", sender, text_in, persona)
-                _send_whatsapp_message(sender, reply)
+                if not sender or not text_in.strip() or message.get("type") != "text": continue
+                reply = _handle_messaging_text("whatsapp", sender, message.get("id"), text_in)
+                if reply is not None: _send_whatsapp_message(sender, reply)
     return jsonify(ok=True)
 
 

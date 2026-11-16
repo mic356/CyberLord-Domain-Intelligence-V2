@@ -140,3 +140,9 @@ The admin area is served by this same Flask application at `/admin`. Set `ADMIN_
 - **Interaction Board** is a member discussion forum. Signed-in members create posts and reply to other members. Posts are stored in the application database and are not AI-generated sample conversations.
 
 Set `GEMINI_API_KEY` under the Render service's Environment settings. Do not place the key in `static/`, HTML templates, JavaScript, GitHub files or public messages.
+
+## Linked messaging accounts and bank receipt uploads
+
+The existing Telegram and WhatsApp adapters now support signed-in website account linking at `/account/messaging`. Generate an eight-digit code, then send `/link CODE` in the relevant chat. Codes are hashed in the database, expire after 10 minutes, are single-use, and link using the platform chat identifier. Linked Academy Tutor conversations share the website account's Tutor Pro expiry and 10-question daily free quota. Messaging history, persona selection and duplicate webhook event IDs are database-backed.
+
+Bank transfer forms accept optional JPG/PNG/WEBP/PDF evidence up to 5 MB. Receipts are stored in SQL and visible to an authenticated admin. Bank payments still require manual confirmation and approval; receipt upload alone never activates a subscription. USDT TRC20/BEP20 verification remains unchanged. See `MESSAGING_INTEGRATION_SETUP.md` for Meta WhatsApp configuration requirements.
