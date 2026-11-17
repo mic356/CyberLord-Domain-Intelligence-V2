@@ -93,10 +93,13 @@ untrusted code. Keep snippets small and keep the timeouts.
 
 ## Image understanding, generation and web pictures
 
-The Dashboard AI, full-page Academy Tutor and lesson tutor panels now accept JPG,
-PNG and WEBP uploads (up to 5 MB per image, up to four images per message).
-When Gemini is configured, the images are sent to Gemini's multimodal model for
-visual analysis and OCR-style reading. Image bytes are processed for the request
+The Dashboard AI, full-page Academy Tutor and lesson tutor panels accept JPG,
+PNG and WEBP uploads (up to 25 MB per original image, up to four images per
+message). The browser resizes large images and the server normalizes them before
+sending them to the vision model. For accurate image analysis, CyberLord uses a
+vision-specific Gemini model (`GEMINI_VISION_MODEL`, default `gemini-3.8-flash`)
+and an explicit image-grounding instruction that tells the model to describe only
+visible evidence, identify uncertainty, and never invent unreadable text. Image bytes are processed for the request
 and are not written into the messaging conversation-history table.
 
 Image generation and reference-image editing use Gemini's image model:
@@ -122,10 +125,10 @@ image of`, or `create an image of` requests image generation; an attached image
 can be included as a reference for editing. Generated pictures are sent back
 using Telegram `sendPhoto` or WhatsApp Cloud API media upload/send.
 
-These features require a working Gemini API key with access to the configured
-vision/image models. Image generation and vision calls consume provider quota
-and may incur charges according to the current Google AI account terms. No
-provider key is exposed to browser JavaScript.
+Image understanding requires `GEMINI_API_KEY` with access to the configured
+vision model. Set `GEMINI_VISION_MODEL` to another vision-capable Gemini model if
+needed. Image generation can use Gemini first and Cloudflare Workers AI as a
+fallback. No provider key is exposed to browser JavaScript.
 
 
 ## Natural image creation from AI answers (latest update)
@@ -156,3 +159,43 @@ Add these in Render → your service → Environment. Do not put service-account
 The implementation requests a 720p, 16:9 MP4. Video generation can take several minutes and may incur Google Cloud charges. Model access, regional availability, quotas, safety rules and billing still apply. Without the Google Cloud variables, CyberLord will answer normally and explain that video generation is not configured; it will not pretend a video was created.
 
 Document formats use the Python packages listed in `requirements.txt`. Redeploy after updating dependencies. Large video/file payloads can increase response size and request duration.
+
+
+## Large image reading update
+
+CyberLord accepts JPG, PNG and WEBP image uploads up to 25 MB each in the web chat. The browser resizes/re-encodes each image before sending it to the AI, and the server validates and normalizes incoming images. Up to four images can be attached in one message. Messaging platforms still enforce their own media download limits, so WhatsApp and Telegram availability depends on the provider and Bot API limits.
+
+
+## Free/low-cost media provider fallback
+
+### Cloudflare Workers AI image generation
+
+CyberLord can generate text-to-image pictures with Cloudflare Workers AI when
+Gemini image generation is unavailable or not configured. Configure these Render
+Environment variables (never commit tokens to GitHub):
+
+- `CLOUDFLARE_ACCOUNT_ID` — your Cloudflare account ID.
+- `CLOUDFLARE_API_TOKEN` — a token with Account / Workers AI / Read permission.
+- `CLOUDFLARE_IMAGE_MODEL` — optional; defaults to `@cf/black-forest-labs/flux-1-schnell`.
+
+Cloudflare documents a 10,000-Neuron daily free allocation on Workers AI Free;
+usage depends on model and image settings, and requests can stop after the daily
+allowance is exhausted. It is a limited free allowance, not unlimited free use.
+The Cloudflare fallback currently generates images from text; reference-image
+editing still requires Gemini image generation. See Cloudflare's current pricing
+and model documentation before enabling it.
+
+### Free online picture sources
+
+Picture lookup combines Wikipedia/Wikimedia and Openverse results. Results link
+to the original landing page and may have different Creative Commons or other
+licenses. Users should check attribution and reuse rights before publishing.
+
+### Video generation reality
+
+There is no dependable unlimited free hosted video-generation API. The current
+Google Cloud Vertex AI video adapter remains optional and can incur charges. For
+a self-hosted open-source route, Wan2.1 provides text-to-video and image-to-video
+models, but it requires a compatible GPU and local/hosted GPU infrastructure; it
+will not run on an ordinary Render web service without a separate GPU worker.
+Do not advertise stock-video search or YouTube playback as AI video generation.

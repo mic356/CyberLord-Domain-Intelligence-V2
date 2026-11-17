@@ -580,13 +580,12 @@ def fetch_images(query, limit=4):
             out.append({"url": pg.get("fullurl", thumb), "thumb": thumb, "title": pg.get("title", subject)})
             if len(out) >= limit:
                 break
-        if len(out) >= limit:
-            return out[:limit]
-        # Broaden the search to Openverse when Wikipedia page thumbnails do not
-        # cover the requested subject. Results link to the original source.
+        # Combine independent free sources so results do not depend on one index.
+        # Openverse results carry their own landing page and license metadata.
+        seen = {str(item.get("thumb") or item.get("url") or "").split("?")[0] for item in out}
         try:
             ov = requests.get("https://api.openverse.org/v1/images/",
-                params={"q": subject, "page_size": min(20, max(4, limit * 3)), "license_type": "all"},
+                params={"q": subject, "page_size": min(20, max(8, limit * 4)), "license_type": "all"},
                 timeout=10, headers={"User-Agent": "CyberLord-Assistant/1.0"})
             if ov.ok:
                 results = (ov.json().get("results") or [])
@@ -595,10 +594,14 @@ def fetch_images(query, limit=4):
                     thumb_url = item.get("thumbnail") or image_url
                     if not image_url or not thumb_url or not str(image_url).startswith("http"):
                         continue
+                    key = str(thumb_url).split("?")[0]
+                    if key in seen:
+                        continue
+                    seen.add(key)
                     out.append({"url": item.get("foreign_landing_url") or image_url, "thumb": thumb_url,
                         "title": item.get("title") or subject,
-                        "source": item.get("foreign_landing_url") or item.get("provider") or "Openverse",
-                        "license": item.get("license") or ""})
+                        "source": item.get("provider") or "Openverse",
+                        "license": item.get("license") or "", "creator": item.get("creator") or ""})
                     if len(out) >= limit: break
         except Exception:
             pass

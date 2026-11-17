@@ -16,6 +16,7 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from io import BytesIO
+from PIL import Image, ImageOps
 from html.parser import HTMLParser
 from difflib import SequenceMatcher
 from xml.sax.saxutils import escape
@@ -29,7 +30,42 @@ from academy_questions import ACADEMY_LESSONS, ACADEMY_COURSES, get_course_for_l
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "CHANGE-ME-TO-A-LONG-RANDOM-SECRET")
-app.config["MAX_CONTENT_LENGTH"] = 30 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 30 * 1024 * 1024  # supports four optimized image attachments
+
+
+def _normalize_image_for_ai(raw, mime_type=None, max_bytes=2_500_000):
+    """Accept larger uploads, then resize/re-encode them for efficient AI vision input."""
+    if not raw or len(raw) > 25 * 1024 * 1024:
+        return None
+    try:
+        image = Image.open(BytesIO(raw))
+        image = ImageOps.exif_transpose(image)
+        image.thumbnail((4096, 4096), Image.Resampling.LANCZOS)
+        if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
+            rgba = image.convert("RGBA")
+            background = Image.new("RGB", rgba.size, "white")
+            background.paste(rgba, mask=rgba.getchannel("A"))
+            image = background
+        else:
+            image = image.convert("RGB")
+        quality = 90
+        while quality >= 45:
+            output = BytesIO()
+            image.save(output, format="JPEG", quality=quality, optimize=True, progressive=True)
+            data = output.getvalue()
+            if len(data) <= max_bytes:
+                return {"mime_type": "image/jpeg", "data": base64.b64encode(data).decode("ascii")}
+            quality -= 7
+        # If still large, reduce dimensions and retry once more.
+        image.thumbnail((2560, 2560), Image.Resampling.LANCZOS)
+        output = BytesIO()
+        image.save(output, format="JPEG", quality=55, optimize=True)
+        data = output.getvalue()
+        if len(data) <= max_bytes:
+            return {"mime_type": "image/jpeg", "data": base64.b64encode(data).decode("ascii")}
+    except Exception as exc:
+        app.logger.warning("Image normalization failed: %s", str(exc)[:140])
+    return None
 
 # Keep cookies out of reach of JavaScript, limit cross-site sending, and
 # mark them Secure over HTTPS. Render always serves the app over HTTPS, so
@@ -1370,7 +1406,7 @@ def academy_quiz_generate():
     provider = "practice-bank"
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = _gemini_model()
+    model = (os.getenv("GEMINI_VISION_MODEL", "gemini-3.8-flash").strip() if _has_vision_input else _gemini_model())
     if api_key:
         try:
             resp = requests.post(
@@ -2446,12 +2482,14 @@ def ai_assistant():
                 continue
             mime = str(image.get("mime_type") or image.get("mimeType") or "")
             data = str(image.get("data") or "")
-            if mime not in ("image/jpeg", "image/png", "image/webp") or not data or len(data) > 7_000_000:
+            if mime not in ("image/jpeg", "image/png", "image/webp") or not data or len(data) > 35_000_000:
                 continue
             try:
-                base64.b64decode(data, validate=True)
-                parts.append({"inline_data": {"mime_type": mime, "data": data}})
-                _has_vision_input = True
+                raw = base64.b64decode(data, validate=True)
+                prepared = _normalize_image_for_ai(raw, mime)
+                if prepared:
+                    parts.append({"inline_data": {"mime_type": prepared["mime_type"], "data": prepared["data"]}})
+                    _has_vision_input = True
             except Exception:
                 continue
         if not parts:
@@ -2508,6 +2546,17 @@ def ai_assistant():
                     "Do not request passwords, OTPs, API keys, wallet seed phrases or private keys. "
                     "If uncertain, say so and recommend checking primary documentation."
                 )}]
+            if _has_vision_input:
+                _sys_parts.append({"text": (
+                    "IMAGE ANALYSIS MODE: One or more actual image attachments are included in the latest user message. "
+                    "You MUST inspect those image pixels before answering. Do not guess from the user's wording, filename, "
+                    "conversation history, or assumptions. Describe only details visibly supported by the image. "
+                    "Separate direct observations from uncertain interpretations. If text is too small, blurred, cropped, "
+                    "or unreadable, say exactly that instead of inventing it. If multiple images are attached, identify "
+                    "them as Image 1, Image 2, etc. Answer the user's specific question about the attached image. "
+                    "If the image is not actually visible to you, say you cannot access it and do not fabricate a description. "
+                    "For screenshots, distinguish visible UI text from your interpretation; quote text only when legible."
+                )})
             if lesson_questions_block and persona == "tutor":
                 _sys_parts.append({"text": "Current lesson exercise and quiz questions (with correct answers and short explanations) for this tutor session:" + chr(10) + lesson_questions_block})
             if _user_mem_ctx:
@@ -2795,13 +2844,13 @@ def ai_image_generate():
         if not isinstance(image, dict):
             continue
         mime, data = str(image.get("mime_type") or ""), str(image.get("data") or "")
-        if mime not in ("image/jpeg", "image/png", "image/webp") or not data or len(data) > 7_000_000:
+        if mime not in ("image/jpeg", "image/png", "image/webp") or not data or len(data) > 35_000_000:
             continue
         try:
             raw = base64.b64decode(data, validate=True)
-            if len(raw) > 5 * 1024 * 1024:
-                continue
-            images.append({"mime_type": mime, "data": data})
+            prepared = _normalize_image_for_ai(raw, mime)
+            if prepared:
+                images.append(prepared)
         except Exception:
             continue
     generated, note = _generate_image_result(prompt, images)
@@ -2978,11 +3027,47 @@ def _send_whatsapp_message(to, text):
         return False
 
 
+def _generate_cloudflare_image_result(prompt, reference_images=None):
+    """Fallback image generation through Cloudflare Workers AI's free daily allocation."""
+    account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    token = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+    if not account_id or not token:
+        return None, "No image provider is configured. Add GEMINI_API_KEY or CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in Render."
+    if reference_images:
+        return None, "The Cloudflare free image fallback currently supports creating images from text, not editing uploaded reference images. Configure Gemini for image editing."
+    model = os.getenv("CLOUDFLARE_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell").strip()
+    try:
+        response = requests.post(
+            f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}",
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+            json={"prompt": str(prompt)[:2000], "steps": 4}, timeout=(10, 120))
+        if not response.ok:
+            try:
+                detail = str((response.json().get("errors") or [{}])[0].get("message") or "")
+            except Exception:
+                detail = ""
+            app.logger.warning("Cloudflare image provider HTTP %s: %s", response.status_code, detail[:180])
+            if response.status_code == 429:
+                return None, "Cloudflare's free daily AI allowance or rate limit has been reached. Try again after the allowance resets."
+            return None, "Cloudflare image generation failed. Check the account ID, Workers AI token permissions, model access and Render logs."
+        payload = response.json()
+        result = payload.get("result") or {}
+        encoded = result.get("image") if isinstance(result, dict) else None
+        if not encoded and isinstance(result, str):
+            encoded = result
+        if not encoded:
+            return None, "Cloudflare returned no image. Check the selected Workers AI model and account quota."
+        return [{"mime_type": "image/jpeg", "data": encoded}], "Image generated using Cloudflare Workers AI."
+    except Exception as exc:
+        app.logger.warning("Cloudflare image generation failed: %s", str(exc)[:180])
+        return None, "Could not reach Cloudflare image generation. Please try again shortly."
+
+
 def _generate_image_result(prompt, reference_images=None):
-    """Single Gemini image pipeline shared by Dashboard, Tutor and messaging adapters."""
+    """Gemini-first image pipeline with Cloudflare Workers AI text-to-image fallback."""
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
-        return None, "Image generation requires GEMINI_API_KEY in Render Environment."
+        return _generate_cloudflare_image_result(prompt, reference_images)
     model = os.getenv("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image").strip()
     parts = [{"text": "Generate or edit the image as requested. Prompt: " + str(prompt)[:1800]}]
     for image in (reference_images or [])[:4]:
@@ -2990,13 +3075,13 @@ def _generate_image_result(prompt, reference_images=None):
             continue
         mime = str(image.get("mime_type") or "")
         data = str(image.get("data") or "")
-        if mime not in ("image/jpeg", "image/png", "image/webp") or not data or len(data) > 7_000_000:
+        if mime not in ("image/jpeg", "image/png", "image/webp") or not data or len(data) > 35_000_000:
             continue
         try:
             raw = base64.b64decode(data, validate=True)
-            if len(raw) > 5 * 1024 * 1024:
-                continue
-            parts.append({"inline_data": {"mime_type": mime, "data": data}})
+            prepared = _normalize_image_for_ai(raw, mime)
+            if prepared:
+                parts.append({"inline_data": {"mime_type": prepared["mime_type"], "data": prepared["data"]}})
         except Exception:
             continue
     try:
@@ -3013,10 +3098,10 @@ def _generate_image_result(prompt, reference_images=None):
                 provider_message = ""
             app.logger.warning("Gemini image provider returned HTTP %s: %s", response.status_code, provider_message[:180])
             if response.status_code in (401, 403):
-                return None, "Gemini rejected the API key or image-model access. Check GEMINI_API_KEY and GEMINI_IMAGE_MODEL in Render."
+                return _generate_cloudflare_image_result(prompt, reference_images)
             if response.status_code == 429:
-                return None, "Gemini image-generation quota or rate limit reached. Check your Google AI billing and quota."
-            return None, "Gemini image generation failed. Check the configured image model and Render logs."
+                return _generate_cloudflare_image_result(prompt, reference_images)
+            return _generate_cloudflare_image_result(prompt, reference_images)
         payload = response.json()
         candidates = payload.get("candidates") or []
         text_parts, images = [], []
@@ -3032,14 +3117,14 @@ def _generate_image_result(prompt, reference_images=None):
             block_reason = ((payload.get("promptFeedback") or {}).get("blockReason") or "")
             if block_reason:
                 return None, "The image request was blocked by the provider's safety filter. Try a different description."
-            return None, "The image model returned no image. Check model access/quota or try a more specific prompt."
+            return _generate_cloudflare_image_result(prompt, reference_images)
         return images, "\n".join(text_parts).strip() or "Your image is ready."
     except requests.RequestException as exc:
         app.logger.warning("Gemini image generation request failed: %s", str(exc)[:180])
-        return None, "Could not reach Gemini image generation. Please try again shortly."
+        return _generate_cloudflare_image_result(prompt, reference_images)
     except Exception as exc:
         app.logger.warning("Gemini image generation failed: %s", str(exc)[:180])
-        return None, "Image generation failed unexpectedly. Check the Render application logs."
+        return _generate_cloudflare_image_result(prompt, reference_images)
 
 
 def _image_generation_intent(user_text):
@@ -3454,8 +3539,8 @@ def _telegram_download_image(file_id):
         media = requests.get(f"https://api.telegram.org/file/bot{token}/{path}", timeout=20)
         media.raise_for_status()
         mime = media.headers.get("Content-Type", "image/jpeg").split(";")[0].lower()
-        if mime not in ("image/jpeg", "image/png", "image/webp") or len(media.content) > 5 * 1024 * 1024: return None
-        return {"mime_type": mime, "data": base64.b64encode(media.content).decode("ascii")}
+        if mime not in ("image/jpeg", "image/png", "image/webp") or len(media.content) > 20 * 1024 * 1024: return None
+        return _normalize_image_for_ai(media.content, mime)
     except Exception as exc:
         app.logger.warning("Telegram image download failed: %s", str(exc)[:160])
         return None
@@ -3473,8 +3558,8 @@ def _whatsapp_download_image(media_id):
         media = requests.get(media_url, headers={"Authorization": "Bearer " + token}, timeout=20)
         media.raise_for_status()
         mime = media.headers.get("Content-Type", "image/jpeg").split(";")[0].lower()
-        if mime not in ("image/jpeg", "image/png", "image/webp") or len(media.content) > 5 * 1024 * 1024: return None
-        return {"mime_type": mime, "data": base64.b64encode(media.content).decode("ascii")}
+        if mime not in ("image/jpeg", "image/png", "image/webp") or len(media.content) > 20 * 1024 * 1024: return None
+        return _normalize_image_for_ai(media.content, mime)
     except Exception as exc:
         app.logger.warning("WhatsApp image download failed: %s", str(exc)[:160])
         return None
@@ -3522,7 +3607,7 @@ def telegram_webhook():
     if photos:
         image = _telegram_download_image(photos[-1].get("file_id"))
         if not image:
-            _send_telegram_message(chat_id, "I couldn't read that image. Please send a JPG, PNG or WEBP image under 5 MB.")
+            _send_telegram_message(chat_id, "I couldn't read that image. Please send a JPG, PNG or WEBP image up to 20 MB.")
             return jsonify(ok=True)
     event_id = str(chat_id) + ":" + str(message.get("message_id"))
     result = _process_messaging_event("telegram", chat_id, event_id, text_in, [image] if image else None)
@@ -3565,7 +3650,7 @@ def whatsapp_webhook():
                 if msg_type == "image":
                     image = _whatsapp_download_image((message.get("image") or {}).get("id"))
                     if not image:
-                        _send_whatsapp_message(sender, "I couldn't read that image. Please send a JPG, PNG or WEBP image under 5 MB.")
+                        _send_whatsapp_message(sender, "I couldn't read that image. Please send a JPG, PNG or WEBP image up to 20 MB.")
                         continue
                     result = _process_messaging_event("whatsapp", sender, message.get("id"), text_in, [image])
                     _deliver_messaging_result(result,

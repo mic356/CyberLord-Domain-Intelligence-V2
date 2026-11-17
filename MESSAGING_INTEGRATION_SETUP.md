@@ -122,3 +122,8 @@ WhatsApp and Telegram users no longer need `/image` for ordinary image requests.
 ## Generated files and videos in messaging channels
 
 The shared AI response can also return generated document files and short MP4 videos. Telegram delivers files with `sendDocument` and videos with `sendVideo`; WhatsApp uploads the media first and then sends it as a document or video message. Provider file-size limits, supported MIME types, account permissions and messaging-window rules still apply. Video generation requires the optional Google Cloud Vertex AI credentials described in `AI_SETUP.md`.
+
+
+## Large image reading update
+
+CyberLord accepts JPG, PNG and WEBP image uploads up to 25 MB each in the web chat. The browser resizes/re-encodes each image before sending it to the AI, and the server validates and normalizes incoming images. Up to four images can be attached in one message. Messaging platforms still enforce their own media download limits, so WhatsApp and Telegram availability depends on the provider and Bot API limits.

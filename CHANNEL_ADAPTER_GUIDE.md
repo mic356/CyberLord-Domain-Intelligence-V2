@@ -65,3 +65,8 @@ histories. `/reset` clears the active persona's shared history for a linked acco
 Image capabilities require `GEMINI_API_KEY` and a Gemini image model available to
 the configured account. Provider file-size, message-window, media-format, quota,
 and pricing restrictions still apply.
+
+
+## Large image reading update
+
+CyberLord accepts JPG, PNG and WEBP image uploads up to 25 MB each in the web chat. The browser resizes/re-encodes each image before sending it to the AI, and the server validates and normalizes incoming images. Up to four images can be attached in one message. Messaging platforms still enforce their own media download limits, so WhatsApp and Telegram availability depends on the provider and Bot API limits.

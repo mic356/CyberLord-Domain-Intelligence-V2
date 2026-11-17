@@ -23,3 +23,13 @@ Keep `GEMINI_API_KEY` and `GEMINI_IMAGE_MODEL` in Render Environment. The image 
 - Image prompt normalization checks: passed.
 - Full Flask integration tests could not run in this workspace because the `phonenumbers` package is not installed. It is listed in `requirements.txt`; run the test after dependencies are installed.
 - Live Gemini, Telegram and WhatsApp calls were not made because provider credentials are not available in this workspace.
+
+
+## Image accuracy and provider fallback update
+
+- Selects `GEMINI_VISION_MODEL` (default `gemini-3.8-flash`) for requests with actual image attachments.
+- Adds strict visual-grounding instructions: inspect the supplied pixels, distinguish observations from uncertain interpretations, and do not invent unreadable text or unseen objects.
+- Normalizes each attached image to at most 2.5 MB before including it in the Gemini request, reducing the risk of exceeding inline multimodal request limits while retaining up to four images.
+- Returns a clear vision-provider error instead of silently falling back to a text-only model when Gemini vision fails.
+- Adds Cloudflare Workers AI FLUX.1 schnell as a text-to-image fallback when Gemini image generation is unavailable. It uses a limited daily free allocation; it is not unlimited. Reference-image editing still requires Gemini.
+- Combines Wikimedia and Openverse image search results instead of returning early when Wikimedia alone fills the result list.
