@@ -41,19 +41,21 @@ CYBERLORD_MULTIPART_PART_BYTES = 16 * 1024 * 1024
 
 
 def _large_upload_s3():
-    """Return an S3-compatible client for Cloudflare R2; credentials remain server-side."""
-    account = os.getenv("R2_ACCOUNT_ID", "").strip()
-    access = os.getenv("R2_ACCESS_KEY_ID", "").strip()
-    secret = os.getenv("R2_SECRET_ACCESS_KEY", "").strip()
-    if not all((account, access, secret, os.getenv("R2_BUCKET_NAME", "").strip())):
+    """Return an S3-compatible Backblaze B2 client; credentials remain server-side."""
+    endpoint = os.getenv("B2_ENDPOINT_URL", "").strip().rstrip("/")
+    access = os.getenv("B2_KEY_ID", "").strip()
+    secret = os.getenv("B2_APPLICATION_KEY", "").strip()
+    region = os.getenv("B2_REGION", "us-west-004").strip()
+    if not all((endpoint, access, secret, os.getenv("B2_BUCKET_NAME", "").strip())):
         return None
     try:
         import boto3
         from botocore.config import Config
         return boto3.client(
-            "s3", endpoint_url=f"https://{account}.r2.cloudflarestorage.com",
+            "s3", endpoint_url=endpoint,
             aws_access_key_id=access, aws_secret_access_key=secret,
-            region_name="auto", config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            region_name=region,
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
     except Exception as exc:
         app.logger.warning("Large upload storage is unavailable: %s", str(exc)[:160])
@@ -61,7 +63,7 @@ def _large_upload_s3():
 
 
 def _large_upload_bucket():
-    return os.getenv("R2_BUCKET_NAME", "").strip()
+    return os.getenv("B2_BUCKET_NAME", "").strip()
 
 
 def _large_upload_allowed(filename, mime):
@@ -4417,7 +4419,7 @@ def large_upload_initiate():
         return jsonify(error="Office and text documents are limited to 50 MB. Video, audio, PDF and image files may use the configured 2 GB limit where provider limits permit."), 400
     s3 = _large_upload_s3()
     if not s3:
-        return jsonify(error="Large uploads are not configured yet. Add the Cloudflare R2 environment variables in Render."), 503
+        return jsonify(error="Large uploads are not configured yet. Add the Backblaze B2 environment variables in Render."), 503
     key = f"private-user-uploads/{current_user.id}/{secrets.token_urlsafe(24)}-{re.sub(r'[^A-Za-z0-9._-]', '_', filename)}"
     try:
         result = s3.create_multipart_upload(Bucket=_large_upload_bucket(), Key=key, ContentType=mime,
@@ -4425,8 +4427,8 @@ def large_upload_initiate():
         return jsonify(ok=True, key=key, upload_id=result["UploadId"], part_size=CYBERLORD_MULTIPART_PART_BYTES,
                        max_bytes=CYBERLORD_LARGE_FILE_MAX_BYTES)
     except Exception as exc:
-        app.logger.warning("R2 multipart initiation failed: %s", str(exc)[:160])
-        return jsonify(error="Could not start the secure upload. Check R2 bucket permissions."), 503
+        app.logger.warning("B2 multipart initiation failed: %s", str(exc)[:160])
+        return jsonify(error="Could not start the secure upload. Check Backblaze B2 bucket permissions."), 503
 
 
 @app.route("/api/large-upload/sign-part", methods=["POST"])
@@ -4445,7 +4447,7 @@ def large_upload_sign_part():
             "UploadId": upload_id, "PartNumber": part}, ExpiresIn=3600)
         return jsonify(ok=True, url=url)
     except Exception as exc:
-        app.logger.warning("R2 part signing failed: %s", str(exc)[:160])
+        app.logger.warning("B2 part signing failed: %s", str(exc)[:160])
         return jsonify(error="Could not prepare this upload part."), 503
 
 
@@ -4492,12 +4494,12 @@ def large_upload_complete():
             return jsonify(error="The completed file exceeds the configured limit."), 400
         return jsonify(ok=True, key=key, size=head.get("ContentLength", 0))
     except Exception as exc:
-        app.logger.warning("R2 multipart completion failed: %s", str(exc)[:160])
+        app.logger.warning("B2 multipart completion failed: %s", str(exc)[:160])
         return jsonify(error="Upload could not be completed. Please retry the upload."), 400
 
 
-def _gemini_upload_r2_file(key, owner_id):
-    """Stream a private R2 object into Gemini's resumable Files API without buffering it in RAM."""
+def _gemini_upload_b2_file(key, owner_id):
+    """Stream a private B2 object into Gemini's resumable Files API without buffering it in RAM."""
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     s3 = _large_upload_s3()
     if not api_key or not s3: return None, "Gemini or large-file storage is not configured."
@@ -4575,8 +4577,8 @@ def large_upload_analyse():
             if not analysis:
                 return jsonify(error=analysis_error or "The document could not be analysed."), 503
             return jsonify(ok=True, filename=parsed["filename"], analysis=analysis, size=size,
-                           truncated=parsed["truncated"], note="Document text was extracted from your private upload and the temporary R2 object is deleted after processing.")
-        info, error = _gemini_upload_r2_file(key, current_user.id)
+                           truncated=parsed["truncated"], note="Document text was extracted from your private upload and the temporary B2 object is deleted after processing.")
+        info, error = _gemini_upload_b2_file(key, current_user.id)
         if error: return jsonify(error=error), 503
         analysis = _analyse_gemini_file(question, info)
         # Delete the temporary Gemini file after the response has been generated.
@@ -4733,7 +4735,7 @@ def super_mode_readiness():
     return jsonify(ok=True, capabilities={
         "large_resumable_uploads": bool(_large_upload_s3() and os.getenv("GEMINI_API_KEY")),
         "large_upload_max_bytes": CYBERLORD_LARGE_FILE_MAX_BYTES,
-        "large_upload_storage": "Cloudflare R2" if _large_upload_s3() else "Not configured",
+        "large_upload_storage": "Backblaze B2" if _large_upload_s3() else "Not configured",
         "gemini_reasoning_and_document_analysis": bool(os.getenv("GEMINI_API_KEY")),
         "groq_fallback": bool(os.getenv("GROQ_API_KEY")),
         "youtube_search": bool(os.getenv("YOUTUBE_API_KEY")),

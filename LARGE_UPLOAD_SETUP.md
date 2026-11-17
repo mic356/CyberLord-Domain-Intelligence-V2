@@ -1,70 +1,71 @@
 # CyberLord large-file uploads (up to 2 GB per file)
 
-This upgrade adds a separate, authenticated multipart uploader. Large file bytes go from the browser directly to a private Cloudflare R2 bucket; Flask receives only small control requests. The server streams the stored object to the Gemini Files API for analysis and deletes the R2 object afterwards. It does not make every existing chat attachment endpoint 2 GB: the normal dashboard/tutor image and messaging endpoints keep their provider/platform-specific limits.
+This upgrade uses a separate, authenticated multipart uploader. Large file bytes go directly from the browser to a **private Backblaze B2 bucket** using its S3-compatible API; Flask receives only small control requests. The server streams the stored object to the Gemini Files API for analysis and deletes the temporary B2 object afterwards. This does not make every existing chat attachment endpoint 2 GB: dashboard/tutor image and messaging endpoints keep their provider/platform-specific limits.
 
-## 1. Create a private Cloudflare R2 bucket
+## 1. Create a private Backblaze B2 bucket
 
-1. In Cloudflare Dashboard, open **R2 Object Storage** and create a bucket (for example `cyberlord-private-uploads`).
-2. Keep the bucket private. Do not enable public access or publish a custom domain for this bucket.
-3. Create an R2 API token with **Object Read & Write** permission scoped only to this bucket. Copy the Access Key ID and Secret Access Key once.
-4. Copy your Cloudflare account ID.
-5. In the bucket settings, add a CORS policy. Replace `https://cyberlord.name.ng` with the exact website origin users open (add the Render domain too if users access it directly):
+1. Sign in to the [Backblaze B2 Console](https://www.backblaze.com/sign-in).
+2. Open **Buckets** and create a bucket named `cyberlord-private-uploads` (or another unique name).
+3. Set bucket access to **Private**. Do not create a public bucket or public download URL.
+4. Note the bucket's region (for example `us-west-004`). The S3 endpoint must match that region, in the form `https://s3.<region>.backblazeb2.com`.
+5. Open **Application Keys** and create a key restricted to this bucket. Give it the permissions required for listing, reading, writing and deleting files. Copy the Key ID and Application Key immediately; the secret is not shown again.
+
+## 2. Configure bucket CORS for browser multipart uploads
+
+Use the Backblaze B2 bucket CORS configuration/API to allow only the origins your users actually use. Include both your custom domain and Render domain if both are used. Example policy:
 
 ```json
 [
   {
-    "AllowedOrigins": ["https://cyberlord.name.ng", "https://cyberlord-domain-intelligence.onrender.com"],
-    "AllowedMethods": ["PUT", "GET", "HEAD"],
-    "AllowedHeaders": ["*"],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 3600
+    "corsRuleName": "cyberlord-browser-multipart",
+    "allowedOrigins": ["https://cyberlord.name.ng", "https://cyberlord-domain-intelligence.onrender.com"],
+    "allowedOperations": ["s3_put", "s3_get", "s3_head"],
+    "allowedHeaders": ["*"],
+    "exposeHeaders": ["ETag"],
+    "maxAgeSeconds": 3600
   }
 ]
 ```
 
-The browser must be allowed to read the `ETag` response header for each multipart part. Keep origins limited to your actual site domains.
+If the Backblaze console/API presents a different CORS schema, use its documented schema for S3-compatible bucket CORS. The essential requirement is that browser `PUT` requests are allowed and the `ETag` response header is exposed to JavaScript. Restrict origins to your real website origins.
 
-## 2. Add Render environment variables
+## 3. Add environment variables to the existing Render web service
 
-In the existing Render web service, open **Environment** and add:
+Open the existing CyberLord web service in Render → **Environment** and add:
 
-- `R2_ACCOUNT_ID` = your Cloudflare account ID
-- `R2_ACCESS_KEY_ID` = the R2 Access Key ID
-- `R2_SECRET_ACCESS_KEY` = the R2 Secret Access Key
-- `R2_BUCKET_NAME` = your private bucket name
+- `B2_ENDPOINT_URL` = `https://s3.<your-region>.backblazeb2.com` (replace the region with the bucket's actual region)
+- `B2_REGION` = your bucket region, for example `us-west-004`
+- `B2_KEY_ID` = the Backblaze Key ID
+- `B2_APPLICATION_KEY` = the Backblaze Application Key
+- `B2_BUCKET_NAME` = `cyberlord-private-uploads` (or your actual bucket name)
 - `CYBERLORD_LARGE_FILE_MAX_BYTES` = `2147483648`
 
-Keep the existing `GEMINI_API_KEY`. Do not put any of these secret values in GitHub, HTML, JavaScript, or this ZIP. Save changes and let the existing Render service redeploy.
+Keep the existing `GEMINI_API_KEY`. Never put credentials in GitHub, HTML, JavaScript, screenshots or this ZIP. Save changes and let the existing Render service redeploy.
 
-## 3. Supported large-file analysis formats
+## 4. Supported large-file analysis formats and limits
 
-The large uploader accepts MP4, MOV, WEBM, MPEG, PDF, JPG, JPEG, PNG, WEBP, MP3, WAV, M4A, OGG, DOCX, XLSX, PPTX, TXT, MD and CSV. Video, audio, PDF and image files can use the provider-supported 2 GB path, subject to Gemini's current per-file, project storage, model, duration and quota restrictions. Office and text documents are extracted server-side and are limited to 50 MB for safe parsing; extracted text is sent to Gemini. WhatsApp and Telegram retain their own platform download/media limits.
+The dedicated uploader accepts MP4, MOV, WEBM, MPEG, PDF, JPG, JPEG, PNG, WEBP, MP3, WAV, M4A, OGG, DOCX, XLSX, PPTX, TXT, MD and CSV. Video, audio, PDF and image files can use the configured up-to-2-GB upload path only where Gemini's current file, duration, model, project-storage and quota limits permit. Office and text documents are extracted server-side and capped at 50 MB for safe parsing. WhatsApp and Telegram retain their own platform download/media limits.
 
-Google's Gemini Files API currently documents a 2 GB per-file limit on the free tier, but account/project total storage and model-specific limits also apply. This is not unlimited storage or guaranteed 2 GB processing for every model/file type. Check Google's current API limits before increasing the cap.
+This is not unlimited storage or guaranteed 2-GB processing for every file. Storage capacity, request quotas, network timeouts and AI-provider restrictions still apply. Monitor Backblaze and Gemini usage.
 
-## 4. Recommended bucket lifecycle
+## 5. Incomplete upload cleanup
 
-Configure an R2 lifecycle rule to abort incomplete multipart uploads after 1 day. This clears abandoned multipart parts if a browser closes or loses connection before completion. The application deletes the completed R2 object after processing. Keep the bucket private and use a bucket-scoped token.
+Configure a B2 lifecycle rule to remove incomplete multipart uploads after an appropriate short period (for example one day), if supported by your bucket/account configuration. The application deletes completed temporary B2 objects after analysis. Keep the bucket private and use a bucket-restricted application key.
 
-## 5. Deploy through the existing GitHub repository
+## 6. Deploy through the existing GitHub repository
 
-Upload the changed files from the ZIP into the existing repository and same branch, replacing matching files:
+Upload the changed files from this ZIP into the existing repository and same branch, replacing matching files:
 
 - `app.py`
-- `requirements.txt`
 - `templates/super_mode.html`
-- `super_mode.py`
-- `user_memory.py`
-- `artificial_brain.py`
-- `test_artificial_brain.py`
-- `test_super_mode.py`
+- `README.md`
 - `LARGE_UPLOAD_SETUP.md`
 
-Do not delete unrelated repository files. Render should deploy from the existing service and branch. After deployment, set the environment variables above, then open Super Mode and try a small test file first before attempting a very large upload.
+`requirements.txt` already includes `boto3`, which is used for the B2 S3-compatible API. Do not delete unrelated repository files. Render should deploy from the existing service and branch. After deployment, set the environment variables above, then test with a small file before attempting a very large upload.
 
-## Notes / limitations
+## Notes and limitations
 
-- Upload is multipart and shows progress. The browser stores the session in local storage and can query completed R2 parts after a reload. To resume, reselect the exact same file in the same browser. A session can still expire or be removed by storage lifecycle rules.
-- The 2 GB ceiling applies to this dedicated large uploader, not every existing form, bot or channel. Office and text documents are capped at 50 MB.
-- Gemini may reject a file even when R2 accepts it. A provider's file size, duration, model and quota limits always win.
-- Large uploads may consume R2 storage/operations and Gemini quota. Monitor usage and billing in the provider dashboards.
+- Upload uses multipart parts and displays progress. The browser saves the upload session locally and can query completed parts after reload; to resume, reselect the exact same file in the same browser. A session can still expire or be removed.
+- The 2-GB ceiling applies to this dedicated Super Mode uploader, not every existing form, bot or channel. Office and text documents are capped at 50 MB.
+- Gemini may reject a file even when B2 accepts it. Provider file-size, duration, model and quota limits always take priority.
+- Large uploads can consume storage and operation allowances and Gemini quota. Check current pricing and account limits before using heavily.

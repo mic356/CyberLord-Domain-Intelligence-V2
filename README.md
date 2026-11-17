@@ -152,6 +152,6 @@ Bank transfer forms accept optional JPG/PNG/WEBP/PDF evidence up to 5 MB. Receip
 
 CyberLord now includes a shared artificial-brain orchestration module (`artificial_brain.py`) used by the Dashboard AI, Tutor and linked messaging flow through the common AI endpoint. It classifies task capability signals, retrieves relevant account-approved memory, adds a private answer self-check instruction, and keeps persona boundaries. Users can add private approved knowledge from Super Mode. This is retrieval-based memory and orchestration, not foundation-model retraining or autonomous self-modification.
 
-The Super Mode large uploader uses private Cloudflare R2 multipart uploads, upload progress, and same-browser resume by reselecting the same file. Video/audio/PDF/image uploads are capped at up to 2 GB where Gemini and account limits permit. Office/text documents are extracted server-side and capped at 50 MB. See `LARGE_UPLOAD_SETUP.md` for R2 setup and limitations.
+The Super Mode large uploader uses private Backblaze B2 multipart uploads, upload progress, and same-browser resume by reselecting the same file. Video/audio/PDF/image uploads are capped at up to 2 GB where Gemini and account limits permit. Office/text documents are extracted server-side and capped at 50 MB. See `LARGE_UPLOAD_SETUP.md` for Backblaze B2 setup and limitations.
 
 See `ARTIFICIAL_BRAIN_GUIDE.md` for the brain architecture, private knowledge controls and limitations.
