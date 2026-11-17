@@ -192,7 +192,28 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     });
     if(data.file_generation_note) bubble(data.file_generation_note,"bot");
     if(data.video_generation_note) bubble(data.video_generation_note,"bot");
+    if(data.video_generation_job_id) watchAgnesVideo(data.video_generation_job_id,target);
   };
+  async function watchAgnesVideo(jobId,target){
+    const status=bubble("Agnes: video request queued…","bot");
+    for(let attempt=0;attempt<360;attempt++){
+      try{
+        const response=await fetch("/api/agnes-video/"+encodeURIComponent(jobId));
+        const job=await response.json();
+        if(!response.ok)throw new Error(job.error||"Could not read video status.");
+        status.textContent=(job.message||"Agnes is processing your video…")+" ("+(job.progress||0)+"%)";
+        if(job.status==="completed"){
+          const wrap=document.createElement("div"),video=document.createElement("video");
+          video.controls=true;video.preload="metadata";video.src=job.preview_url;video.style.width="100%";video.style.maxWidth="560px";video.style.borderRadius="12px";
+          const link=document.createElement("a");link.href=job.download_url;link.download="cyberlord-generated-video.mp4";link.textContent="Download video";link.className="cl-ai-image-download";
+          wrap.appendChild(video);wrap.appendChild(link);target.appendChild(wrap);status.textContent="Your video is ready.";scroll();return;
+        }
+        if(job.status==="failed"){status.textContent="Video generation failed: "+(job.error||"Please try again.");return;}
+      }catch(error){status.textContent=error.message||"Unable to check video progress.";return;}
+      await new Promise(resolve=>setTimeout(resolve,2000));
+    }
+    status.textContent="Video generation is taking longer than expected. You can send the request again later.";
+  }
   const toggle=(show)=>{
     panel.hidden=!show;open.setAttribute("aria-expanded",String(show));
     if(show)input.focus();
@@ -299,6 +320,24 @@ document.querySelectorAll(".tool-card").forEach(card=>{
       (data.generated_files||[]).forEach(file=>{const a=document.createElement("a");a.href="data:"+(file.mime_type||"application/octet-stream")+";base64,"+file.data;a.download=file.filename||"cyberlord-file";a.textContent="⬇ Download "+(file.filename||"file");a.className="cl-ai-image-download";target.appendChild(a);});
       (data.generated_videos||[]).forEach(video=>{const wrap=document.createElement("div"),el=document.createElement("video"),src="data:"+(video.mime_type||"video/mp4")+";base64,"+video.data;el.controls=true;el.preload="metadata";el.src=src;el.style.width="100%";el.style.maxWidth="560px";el.style.borderRadius="12px";const a=document.createElement("a");a.href=src;a.download=video.filename||"cyberlord-video.mp4";a.textContent="Download video";a.className="cl-ai-image-download";wrap.appendChild(el);wrap.appendChild(a);target.appendChild(wrap);});
       if(data.file_generation_note)add(data.file_generation_note,"bot");if(data.video_generation_note)add(data.video_generation_note,"bot");
+      if(data.video_generation_job_id)watchTutorAgnesVideo(data.video_generation_job_id,target);
+    }
+    async function watchTutorAgnesVideo(jobId,target){
+      const status=add("Agnes: video request queued…","bot");
+      for(let attempt=0;attempt<360;attempt++){
+        try{
+          const response=await fetch("/api/agnes-video/"+encodeURIComponent(jobId));const job=await response.json();
+          if(!response.ok)throw new Error(job.error||"Could not read video status.");
+          status.textContent=(job.message||"Agnes is processing your video…")+" ("+(job.progress||0)+"%)";
+          if(job.status==="completed"){
+            const wrap=document.createElement("div"),video=document.createElement("video");video.controls=true;video.preload="metadata";video.src=job.preview_url;video.style.width="100%";video.style.maxWidth="560px";video.style.borderRadius="12px";
+            const link=document.createElement("a");link.href=job.download_url;link.download="cyberlord-generated-video.mp4";link.textContent="Download video";link.className="cl-ai-image-download";wrap.appendChild(video);wrap.appendChild(link);target.appendChild(wrap);status.textContent="Your video is ready.";return;
+          }
+          if(job.status==="failed"){status.textContent="Video generation failed: "+(job.error||"Please try again.");return;}
+        }catch(error){status.textContent=error.message||"Unable to check video progress.";return;}
+        await new Promise(resolve=>setTimeout(resolve,2000));
+      }
+      status.textContent="Video generation is taking longer than expected.";
     }
     function readSelected(files){
       return Promise.all(Array.from(files||[]).slice(0,4).map(file=>{

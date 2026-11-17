@@ -2856,6 +2856,47 @@ def ai_assistant():
 
 
 
+@app.route("/api/agnes-video/<job_id>", methods=["GET"])
+@login_required
+def agnes_video_status(job_id):
+    from agnes_video import get_job
+    job = get_job(job_id, owner_id=str(current_user.id))
+    if not job:
+        return jsonify(error="Video job not found or access denied."), 404
+    if job.get("status") == "completed":
+        job["preview_url"] = url_for("agnes_video_preview", job_id=job_id)
+        job["download_url"] = url_for("agnes_video_download", job_id=job_id)
+    return jsonify(job)
+
+
+@app.route("/api/agnes-video/<job_id>/preview", methods=["GET"])
+@login_required
+def agnes_video_preview(job_id):
+    from agnes_video import video_bytes
+    from flask import Response
+    job = __import__("agnes_video").get_job(job_id, owner_id=str(current_user.id))
+    media = video_bytes(job_id) if job else None
+    if not media:
+        return jsonify(error="Video is not ready."), 404
+    raw, mime, filename = media
+    return Response(raw, mimetype=mime, headers={"Content-Disposition": "inline; filename=\"%s\"" % filename,
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@app.route("/api/agnes-video/<job_id>/download", methods=["GET"])
+@login_required
+def agnes_video_download(job_id):
+    from agnes_video import video_bytes
+    from flask import Response
+    job = __import__("agnes_video").get_job(job_id, owner_id=str(current_user.id))
+    media = video_bytes(job_id) if job else None
+    if not media:
+        return jsonify(error="Video is not ready."), 404
+    raw, mime, filename = media
+    return Response(raw, mimetype=mime, headers={"Content-Disposition": "attachment; filename=\"%s\"" % filename,
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+
+
 @app.route("/account/messaging", methods=["GET", "POST"])
 @login_required
 def messaging_account_settings():
@@ -3377,56 +3418,38 @@ def _video_generation_intent(user_text):
     text = str(user_text or "").lower()
     if re.search(r"\b(how (?:do|can|should) i|how to|explain how|steps? to|teach me how)\b", text):
         return False
-    return bool(re.search(r"\b(make|create|generate|produce|render|turn .* into|animate)\b.{0,100}\b(video|movie|clip|animation|trailer)\b|\b(video|movie|clip|animation)\b.{0,70}\b(generate|create|make|produce)\b", text, re.I | re.S))
+    patterns = (
+        r"\b(make|create|generate|produce|render|turn .* into|animate)\b.{0,100}\b(video|movie|clip|animation|trailer)\b",
+        r"\b(video|movie|clip|animation)\b.{0,70}\b(generate|create|make|produce)\b",
+        r"\banimate\b.{0,60}\b(this|that|the|attached|uploaded)?\s*(image|picture|photo)\b",
+        r"\b(make|create|generate)\b.{0,80}\b(video|clip)\b.{0,80}\b(from|using|with)\b.{0,40}\b(image|picture|photo)\b",
+    )
+    return any(re.search(pattern, text, re.I | re.S) for pattern in patterns)
 
 
-def _generate_video_from_answer(user_text, assistant_reply):
-    """Optional Google Cloud Gemini Omni video generation (requires Vertex AI credentials)."""
-    if not _video_generation_intent(user_text): return None, None
-    project = os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
-    raw_credentials = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON", "").strip()
-    if not project or not raw_credentials:
-        return None, "Video generation is ready to connect, but it needs Google Cloud Vertex AI setup: GOOGLE_CLOUD_PROJECT and GOOGLE_APPLICATION_CREDENTIALS_JSON in Render. Your text answer is ready; no video was generated yet."
+def _generate_video_from_answer(user_text, assistant_reply, reference_images=None, owner_id=None):
+    """Queue an Agnes Video 2.5 Flash job; media generation stays provider-neutral."""
+    image_attached = next((item for item in (reference_images or []) if isinstance(item, dict) and item.get("data")), None)
+    image_animation_request = bool(image_attached and re.search(r"\b(animate|make|create|generate|turn|bring)\b", str(user_text or ""), re.I)
+                                   and not re.search(r"\b(how to|how do i|teach me how|explain how)\b", str(user_text or ""), re.I))
+    if not (_video_generation_intent(user_text) or image_animation_request):
+        return None, None
+    if not os.getenv("AGNES_API_KEY", "").strip():
+        return None, "Video generation is not configured yet. Add AGNES_API_KEY in Render Environment."
     try:
-        from google.oauth2 import service_account
-        from google.auth.transport.requests import Request as GoogleAuthRequest
-        info = json.loads(raw_credentials)
-        credentials = service_account.Credentials.from_service_account_info(
-            info, scopes=["https://www.googleapis.com/auth/cloud-platform"])
-        credentials.refresh(GoogleAuthRequest())
-        model = os.getenv("GEMINI_VIDEO_MODEL", "gemini-omni-1.2-flash").strip()
-        duration = max(3, min(15, _env_int("GEMINI_VIDEO_DURATION_SECONDS", 5)))
-        prompt = ("Create a coherent, polished short video based on this request. "
-                  "Use the assistant answer as the factual source; translate it into clear visual scenes. "
-                  "Do not display long blocks of text. USER REQUEST: " + str(user_text)[:1000] +
-                  "\nASSISTANT ANSWER: " + str(assistant_reply)[:3000])
-        url = f"https://aiplatform.googleapis.com/v1beta1/projects/{project}/locations/global/interactions"
-        response = requests.post(url, headers={"Authorization": "Bearer " + credentials.token,
-            "Content-Type": "application/json"}, json={"model": model, "store": False,
-            "input": [{"type": "text", "text": prompt}],
-            "response_format": [{"type": "video", "delivery": "inline",
-                "aspect_ratio": "16:9", "resolution": "720p", "duration": f"{duration}s"}],
-            "generation_config": {"video_config": {"task": "text_to_video"}}}, timeout=(20, 240))
-        if not response.ok:
-            try: detail = (response.json().get("error") or {}).get("message", "")
-            except Exception: detail = ""
-            app.logger.warning("Gemini video provider HTTP %s: %s", response.status_code, detail[:220])
-            return None, "Video generation failed at Google Cloud. Check Vertex AI access, billing, model availability and Render logs."
-        payload = response.json(); video = None
-        for step in payload.get("steps", []) or []:
-            for part in step.get("content", []) or []:
-                if part.get("type") == "video" and part.get("data"):
-                    video = {"mime_type": part.get("mime_type", "video/mp4"), "data": part["data"]}; break
-            if video: break
-        if not video:
-            return None, "Google Cloud completed the request but returned no inline video. Check the video model response and delivery configuration."
-        video["filename"] = "cyberlord-generated-video.mp4"
-        return video, None
-    except ImportError:
-        return None, "Video generation needs google-auth. It is included in this upgrade; redeploy the latest requirements.txt."
+        from agnes_video import start_video_job
+        prompt = (
+            "Create a coherent, polished short video based on this request. "
+            "Use the assistant answer as factual context, translate it into clear visual scenes, "
+            "and avoid long blocks of on-screen text. USER REQUEST: " + str(user_text)[:1200] +
+            "\nASSISTANT ANSWER: " + str(assistant_reply)[:3000]
+        )
+        image = image_attached
+        job_id = start_video_job(prompt, owner_id=owner_id, image=image)
+        return {"job_id": job_id, "status": "queued"}, None
     except Exception as exc:
-        app.logger.warning("CyberLord video generation failed: %s", str(exc)[:200])
-        return None, "Video generation could not be completed. Check Google Cloud credentials and Render logs."
+        app.logger.warning("Agnes video job could not be queued: %s", str(exc)[:180])
+        return None, "CyberLord could not start the Agnes video job. Please try again shortly."
 
 
 def _with_generated_images(response_payload, user_text, assistant_reply, reference_images=None):
@@ -3443,10 +3466,14 @@ def _with_generated_images(response_payload, user_text, assistant_reply, referen
         response_payload["file_generation"] = "complete"
     elif file_note:
         response_payload["file_generation_note"] = file_note
-    generated_video, video_note = _generate_video_from_answer(user_text, assistant_reply)
+    generated_video, video_note = _generate_video_from_answer(
+        user_text, assistant_reply, reference_images,
+        owner_id=(str(current_user.id) if current_user.is_authenticated else None),
+    )
     if generated_video:
-        response_payload["generated_videos"] = [generated_video]
-        response_payload["video_generation"] = "complete"
+        response_payload["video_generation_job_id"] = generated_video["job_id"]
+        response_payload["video_generation"] = "queued"
+        response_payload["video_generation_note"] = "Your video request has been sent to Agnes. I'll send the finished video here when it's ready."
     elif video_note:
         response_payload["video_generation_note"] = video_note
     return response_payload
@@ -3598,6 +3625,27 @@ def _process_messaging_event(channel, external_id, event_id, text_in="", images=
     generated = ai_result.get("generated_images") or []
     generated_files = ai_result.get("generated_files") or []
     generated_videos = ai_result.get("generated_videos") or []
+    video_job_id = ai_result.get("video_generation_job_id")
+    if video_job_id and channel in ("telegram", "whatsapp"):
+        def _deliver_when_ready():
+            try:
+                from agnes_video import wait_for_job, video_bytes
+                completed = wait_for_job(video_job_id)
+                media = video_bytes(video_job_id) if completed and completed.get("status") == "completed" else None
+                if media:
+                    raw, mime, filename = media
+                    item = {"data": base64.b64encode(raw).decode("ascii"), "mime_type": mime, "filename": filename}
+                    if channel == "telegram":
+                        _send_telegram_file(external_id, item, "Your CyberLord video is ready.", True)
+                    else:
+                        _send_whatsapp_file(external_id, item, "Your CyberLord video is ready.", True)
+                else:
+                    error = (completed or {}).get("error") or "Agnes could not complete the video request."
+                    sender = _send_telegram_message if channel == "telegram" else _send_whatsapp_message
+                    sender(external_id, "CyberLord video generation failed: " + str(error)[:250])
+            except Exception as exc:
+                app.logger.warning("Messaging video delivery failed: %s", str(exc)[:160])
+        threading.Thread(target=_deliver_when_ready, daemon=True, name="cyberlord-video-delivery").start()
     notes = [ai_result.get(k) for k in ("image_generation_note", "file_generation_note", "video_generation_note") if ai_result.get(k)]
     if notes:
         reply = str(reply) + "\n\n" + "\n".join(str(note) for note in notes)
