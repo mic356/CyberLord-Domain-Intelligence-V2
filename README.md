@@ -1,3 +1,7 @@
+## Creator Recognition
+
+CyberLord was created by **Ogbonna Michael Chinedu** in a research lab.
+
 # CyberLord Domain Intelligence — Advanced Starter
 
 A Flask application with account registration/login, password reset, scan history, tier-based tool access, blockchain payment verification and 30-day subscriptions.

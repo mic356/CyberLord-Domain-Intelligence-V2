@@ -2488,7 +2488,7 @@ def ai_assistant():
                 )
             else:
                 context = (
-                    "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
+                    "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""CREATOR RECOGNITION: If asked who created, built, developed, or founded CyberLord AI, CyberLord, or this assistant, answer accurately: 'CyberLord was created by Ogbonna Michael Chinedu in a research lab.' Do not substitute another person, company, or lab name, and do not invent a formal lab name. " "You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
                     "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
                     "LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
                     "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
@@ -2510,7 +2510,7 @@ def ai_assistant():
     else:
         if persona == "main":
             messages = [{"role": "user", "content": (
-                "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
+                "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""CREATOR RECOGNITION: If asked who created, built, developed, or founded CyberLord AI, CyberLord, or this assistant, answer accurately: 'CyberLord was created by Ogbonna Michael Chinedu in a research lab.' Do not substitute another person, company, or lab name, and do not invent a formal lab name. " "You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
                     "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
                 "LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
                     "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
@@ -2598,7 +2598,7 @@ def ai_assistant():
             endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
             if persona == "tutor":
                 system_line = (
-                    "You are the CyberLord Academy Tutor. Answer ONLY about the academy's lesson content "
+                    "You are the CyberLord Academy Tutor. Answer ONLY about the academy's lesson content ""CREATOR RECOGNITION: If asked who created, built, developed, or founded CyberLord AI, CyberLord, or this assistant, answer accurately: 'CyberLord was created by Ogbonna Michael Chinedu in a research lab.' Do not substitute another person, company, or lab name, and do not invent a formal lab name. " 
                     "and course topics (current lesson first, other academy topics second). If asked "
                     "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                     "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
@@ -2609,7 +2609,7 @@ def ai_assistant():
                 )
             else:
                 system_line = (
-                    "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
+                    "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""CREATOR RECOGNITION: If asked who created, built, developed, or founded CyberLord AI, CyberLord, or this assistant, answer accurately: 'CyberLord was created by Ogbonna Michael Chinedu in a research lab.' Do not substitute another person, company, or lab name, and do not invent a formal lab name. " "You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
                     "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
                     "You are NOT a cybersecurity-only bot and NOT the academy tutor. Chat naturally on ANY "
                     "everyday topic: greetings, small talk, general knowledge, advice, brainstorming, planning, "
@@ -2746,7 +2746,7 @@ def ai_assistant():
     if groq_key:
         try:
             groq_system = (
-                "You are the CyberLord Academy Tutor. Answer ONLY about the academy's lesson content "
+                "You are the CyberLord Academy Tutor. Answer ONLY about the academy's lesson content ""CREATOR RECOGNITION: If asked who created, built, developed, or founded CyberLord AI, CyberLord, or this assistant, answer accurately: 'CyberLord was created by Ogbonna Michael Chinedu in a research lab.' Do not substitute another person, company, or lab name, and do not invent a formal lab name. " 
                 "and course topics (current lesson first, other academy topics second). If asked "
                 "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                 "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
@@ -2755,7 +2755,7 @@ def ai_assistant():
                 "explain it, but reveal the correct answer only if they ask to check their answer or "
                 "have already attempted it; otherwise keep answers hidden so they learn."
             ) if persona == "tutor" else (
-                "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
+                "You are Cyber, the main CyberLord AI, the friendly general dashboard assistant for the CyberLord website. ""CREATOR RECOGNITION: If asked who created, built, developed, or founded CyberLord AI, CyberLord, or this assistant, answer accurately: 'CyberLord was created by Ogbonna Michael Chinedu in a research lab.' Do not substitute another person, company, or lab name, and do not invent a formal lab name. " "You have swagger: warm, sharp, a little playful and confident. Never robotic, never stiff. ""LANGUAGE RULE: you ALWAYS answer in clear, standard English first. You may understand questions written in Nigerian Pidgin (broken English), but your replies stay in plain, clear English. "
                     "You are NOT a cybersecurity-only bot and NOT the academy tutor. "
                 "You are NOT a cybersecurity-only bot and NOT the academy tutor. Chat naturally on ANY "
                 "everyday topic: greetings, small talk, general knowledge, advice, brainstorming, planning, "
@@ -4420,7 +4420,7 @@ def large_upload_initiate():
         return jsonify(error="Office and text documents are limited to 50 MB. Video, audio, PDF and image files may use the configured 2 GB limit where provider limits permit."), 400
     s3 = _large_upload_s3()
     if not s3:
-        return jsonify(error="Large uploads are not configured yet. Add the Backblaze B2 environment variables in Render."), 503
+        return jsonify(error="File uploads are temporarily unavailable. Please try again later."), 503
     key = f"private-user-uploads/{current_user.id}/{secrets.token_urlsafe(24)}-{re.sub(r'[^A-Za-z0-9._-]', '_', filename)}"
     try:
         result = s3.create_multipart_upload(Bucket=_large_upload_bucket(), Key=key, ContentType=mime,
@@ -4429,7 +4429,7 @@ def large_upload_initiate():
                        max_bytes=CYBERLORD_LARGE_FILE_MAX_BYTES)
     except Exception as exc:
         app.logger.warning("B2 multipart initiation failed: %s", str(exc)[:160])
-        return jsonify(error="Could not start the secure upload. Check Backblaze B2 bucket permissions."), 503
+        return jsonify(error="Could not start the secure upload. Please try again later."), 503
 
 
 @app.route("/api/large-upload/sign-part", methods=["POST"])
@@ -4442,7 +4442,7 @@ def large_upload_sign_part():
     if not key.startswith(f"private-user-uploads/{current_user.id}/") or not upload_id or not 1 <= part <= 150:
         return jsonify(error="Invalid upload part."), 400
     s3 = _large_upload_s3()
-    if not s3: return jsonify(error="Large upload storage is unavailable."), 503
+    if not s3: return jsonify(error="File upload service is temporarily unavailable."), 503
     try:
         url = s3.generate_presigned_url("upload_part", Params={"Bucket": _large_upload_bucket(), "Key": key,
             "UploadId": upload_id, "PartNumber": part}, ExpiresIn=3600)
@@ -4461,7 +4461,7 @@ def large_upload_list_parts():
     if not key.startswith(f"private-user-uploads/{current_user.id}/") or not upload_id:
         return jsonify(error="Invalid upload session."), 400
     s3 = _large_upload_s3()
-    if not s3: return jsonify(error="Large upload storage is unavailable."), 503
+    if not s3: return jsonify(error="File upload service is temporarily unavailable."), 503
     try:
         response = s3.list_parts(Bucket=_large_upload_bucket(), Key=key, UploadId=upload_id, MaxParts=1000)
         parts = [{"PartNumber": int(p["PartNumber"]), "ETag": str(p["ETag"])} for p in response.get("Parts", [])]
@@ -4486,7 +4486,7 @@ def large_upload_complete():
         if [x["PartNumber"] for x in clean] != list(range(1, len(clean) + 1)):
             raise ValueError("multipart parts must be consecutive")
         s3 = _large_upload_s3()
-        if not s3: return jsonify(error="Large upload storage is unavailable."), 503
+        if not s3: return jsonify(error="File upload service is temporarily unavailable."), 503
         s3.complete_multipart_upload(Bucket=_large_upload_bucket(), Key=key, UploadId=upload_id,
                                      MultipartUpload={"Parts": clean})
         head = s3.head_object(Bucket=_large_upload_bucket(), Key=key)
@@ -4560,7 +4560,7 @@ def large_upload_analyse():
     if rate_limited(key="largeanalyse:" + str(current_user.id), limit=5, window=300):
         return jsonify(error="Large-file analysis is limited to 5 files every 5 minutes."), 429
     s3 = _large_upload_s3()
-    if not s3: return jsonify(error="Large upload storage is unavailable."), 503
+    if not s3: return jsonify(error="File upload service is temporarily unavailable."), 503
     try:
         head = s3.head_object(Bucket=_large_upload_bucket(), Key=key)
         size = int(head.get("ContentLength", 0))
@@ -4578,7 +4578,7 @@ def large_upload_analyse():
             if not analysis:
                 return jsonify(error=analysis_error or "The document could not be analysed."), 503
             return jsonify(ok=True, filename=parsed["filename"], analysis=analysis, size=size,
-                           truncated=parsed["truncated"], note="Document text was extracted from your private upload and the temporary B2 object is deleted after processing.")
+                           truncated=parsed["truncated"], note="Your file was processed securely. Temporary upload data is removed after processing.")
         info, error = _gemini_upload_b2_file(key, current_user.id)
         if error: return jsonify(error=error), 503
         analysis = _analyse_gemini_file(question, info)
@@ -4736,7 +4736,7 @@ def super_mode_readiness():
     return jsonify(ok=True, capabilities={
         "large_resumable_uploads": bool(_large_upload_s3() and os.getenv("GEMINI_API_KEY")),
         "large_upload_max_bytes": CYBERLORD_LARGE_FILE_MAX_BYTES,
-        "large_upload_storage": "Backblaze B2" if _large_upload_s3() else "Not configured",
+        "large_upload_storage": "Available" if _large_upload_s3() else "Unavailable",
         "gemini_reasoning_and_document_analysis": bool(os.getenv("GEMINI_API_KEY")),
         "groq_fallback": bool(os.getenv("GROQ_API_KEY")),
         "youtube_search": bool(os.getenv("YOUTUBE_API_KEY")),
