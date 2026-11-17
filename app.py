@@ -4312,7 +4312,8 @@ def code_lab_run():
 @app.route("/super-mode")
 @login_required
 def super_mode():
-    return render_template("super_mode.html")
+    # Legacy URL: all capabilities now live in the normal CyberLord AI chat.
+    return redirect(url_for("dashboard"))
 
 
 def _super_mode_gemini(prompt, content, timeout=35):

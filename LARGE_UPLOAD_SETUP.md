@@ -1,6 +1,6 @@
 # CyberLord large-file uploads (up to 2 GB per file)
 
-This upgrade uses a separate, authenticated multipart uploader. Large file bytes go directly from the browser to a **private Backblaze B2 bucket** using its S3-compatible API; Flask receives only small control requests. The server streams the stored object to the Gemini Files API for analysis and deletes the temporary B2 object afterwards. This does not make every existing chat attachment endpoint 2 GB: dashboard/tutor image and messaging endpoints keep their provider/platform-specific limits.
+The unified Dashboard AI attachment flow uses an authenticated multipart uploader. Large file bytes go directly from the browser to a **private Backblaze B2 bucket** using its S3-compatible API; Flask receives only small control requests. The server streams the stored object to the Gemini Files API for analysis and deletes the temporary B2 object afterwards. This does not make every existing chat attachment endpoint 2 GB: dashboard/tutor image and messaging endpoints keep their provider/platform-specific limits.
 
 ## 1. Create a private Backblaze B2 bucket
 
@@ -57,7 +57,10 @@ Configure a B2 lifecycle rule to remove incomplete multipart uploads after an ap
 Upload the changed files from this ZIP into the existing repository and same branch, replacing matching files:
 
 - `app.py`
-- `templates/super_mode.html`
+- `templates/base.html`
+- `templates/dashboard.html`
+- `static/app.js`
+- `UNIFIED_AI_CHAT_UPDATE.md`
 - `README.md`
 - `LARGE_UPLOAD_SETUP.md`
 
@@ -65,7 +68,7 @@ Upload the changed files from this ZIP into the existing repository and same bra
 
 ## Notes and limitations
 
-- Upload uses multipart parts and displays progress. The browser saves the upload session locally and can query completed parts after reload; to resume, reselect the exact same file in the same browser. A session can still expire or be removed.
-- The 2-GB ceiling applies to this dedicated Super Mode uploader, not every existing form, bot or channel. Office and text documents are capped at 50 MB.
+- Upload uses multipart parts and displays progress. This dashboard attachment implementation uploads in one active browser session. If a network failure interrupts it, start the attachment again; resumable browser-session recovery is not currently wired into the dashboard chat.
+- The 2-GB ceiling applies to the unified Dashboard AI large-file attachment path, not every existing form, bot or channel. Office and text documents are capped at 50 MB.
 - Gemini may reject a file even when B2 accepts it. Provider file-size, duration, model and quota limits always take priority.
 - Large uploads can consume storage and operation allowances and Gemini quota. Check current pricing and account limits before using heavily.

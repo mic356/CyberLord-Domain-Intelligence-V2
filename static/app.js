@@ -205,16 +205,39 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   document.querySelectorAll("[data-ai-guide]").forEach(btn=>{
     btn.addEventListener("click",()=>{toggle(true);send(btn.dataset.aiGuide||btn.textContent);});
   });
-  async function send(text, images){
-    text=(text||"").trim(); images=images||[];
-    if(!text && !images.length)return;
-    if(!text)text="Please analyse the attached picture and explain what you can see.";
+  async function cyberLordJSON(url, body){const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw new Error(d.error||"Request failed.");return d;}
+  function cyberLordPutPart(url, blob){return new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open("PUT",url);x.onload=()=>{if(x.status>=200&&x.status<300){const etag=x.getResponseHeader("ETag");etag?resolve(etag):reject(new Error("Storage did not return an upload receipt. Check B2 CORS exposes ETag."));}else reject(new Error("File upload failed (HTTP "+x.status+")."));};x.onerror=()=>reject(new Error("Upload interrupted. Check your connection and try again."));x.send(blob);});}
+  async function cyberLordLargeFile(file, question){
+    const ext=(file.name.split(".").pop()||"").toLowerCase();const mime=file.type||({docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",pptx:"application/vnd.openxmlformats-officedocument.presentationml.presentation",txt:"text/plain",md:"text/markdown",csv:"text/csv"}[ext]||"application/octet-stream");
+    const init=await cyberLordJSON("/api/large-upload/initiate",{filename:file.name,mime_type:mime,size:file.size});const parts=[];const count=Math.ceil(file.size/init.part_size);
+    for(let i=0;i<count;i++){const signed=await cyberLordJSON("/api/large-upload/sign-part",{key:init.key,upload_id:init.upload_id,part_number:i+1});parts.push({PartNumber:i+1,ETag:await cyberLordPutPart(signed.url,file.slice(i*init.part_size,Math.min(file.size,(i+1)*init.part_size)))});}
+    await cyberLordJSON("/api/large-upload/complete",{key:init.key,upload_id:init.upload_id,parts});return cyberLordJSON("/api/large-upload/analyse",{key:init.key,question:question||"Analyse this file carefully. Explain its important contents and limitations."});
+  }
+  async function cyberLordAttachment(file, question){
+    const ext=(file.name.split(".").pop()||"").toLowerCase();
+    if(file.type.startsWith("image/")){const image=await cyberLordPrepareImage(file);return {image};}
+    if(file.type.startsWith("audio/") || ["mp3","wav","m4a","ogg"].includes(ext)){
+      if(file.size>25*1024*1024)return cyberLordLargeFile(file,question||"Transcribe and analyse this audio.");
+      const fd=new FormData();fd.append("audio",file,file.name);const r=await fetch("/api/super-mode/transcribe-audio",{method:"POST",body:fd});const d=await r.json();if(!r.ok)throw new Error(d.error||"Audio transcription failed.");return {text:"Voice note transcription ("+file.name+"):\n"+d.transcript};
+    }
+    if(["mp4","mov","webm","mpeg","mpg"].includes(ext)||file.size>20*1024*1024)return cyberLordLargeFile(file,question||"Analyse this video or file carefully and summarise the important content.");
+    const fd=new FormData();fd.append("document",file,file.name);fd.append("question",question||"Read and analyse this file. Summarise its important contents.");const r=await fetch("/api/super-mode/analyse-document",{method:"POST",body:fd});const d=await r.json();if(!r.ok)throw new Error(d.error||"Document analysis failed.");return {text:"File analysis ("+file.name+"):\n"+(d.analysis||d.text||"")};
+  }
+  async function send(text, images, files){
+    text=(text||"").trim(); images=images||[]; files=files||[];
+    if(!text && !images.length && !files.length)return;
+    if(!text)text=images.length?"Please analyse the attached picture and explain what you can see.":"Please analyse the attached file.";
     bubble(text,"user");history.push({role:"user",content:text,images:images});
     const pending=bubble("Searching CyberLord knowledge…","bot");
     const startTyping=()=>{const typing=document.createElement("span");typing.className="cl-ai-typing";typing.innerHTML="<span></span><span></span><span></span>";pending.textContent="";pending.appendChild(typing);};startTyping();
     await new Promise(resolve=>setTimeout(resolve,600));
     const submit=form.querySelector("button");submit.disabled=true;
     try{
+      if(files.length){
+        for(const file of files){pending.textContent="Reading "+file.name+"…";const result=await cyberLordAttachment(file,text);if(result.image){images.push(result.image);}else if(result.text){text+="\n\n"+result.text;history[history.length-1].content=text;}else if(result.analysis){text+="\n\nFile analysis ("+file.name+"):\n"+result.analysis;history[history.length-1].content=text;}}
+      }
+      const ytMatch=/\b(youtube|youtube video|video on youtube)\b/i.test(text);
+      if(ytMatch){try{pending.textContent="Researching YouTube…";const yt=await cyberLordJSON("/api/super-mode/youtube",{query:text});pending.remove();const answer=yt.summary||((yt.items||[]).map(v=>v.title+" — "+v.channel+"\n"+v.url).join("\n\n"))||yt.message||"No YouTube results were returned.";bubble(answer,"bot");history.push({role:"assistant",content:answer});return;}catch(ytErr){bubble("YouTube research: "+ytErr.message,"bot");return;}}
       const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({persona:"main",messages:history.slice(-12)})});
       const data=await res.json();
       pending.remove();
@@ -239,18 +262,10 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   }
   const imageInput=document.getElementById("cl-ai-image");
   const attachBtn=document.getElementById("cl-ai-attach");
-  let selectedImages=[];
-  function readImages(files){
-    return Promise.all(Array.from(files||[]).slice(0,4).map(file=>{
-      return cyberLordPrepareImage(file);
-    }));
-  }
+  let selectedFiles=[];
   if(attachBtn&&imageInput)attachBtn.addEventListener("click",()=>imageInput.click());
-  if(imageInput)imageInput.addEventListener("change",async()=>{
-    try{selectedImages=await readImages(imageInput.files);attachBtn.textContent="📎 "+selectedImages.length;}
-    catch(err){alert(err.message);selectedImages=[];}imageInput.value="";
-  });
-  form.addEventListener("submit",e=>{e.preventDefault();const value=input.value;input.value="";const imgs=selectedImages;selectedImages=[];if(attachBtn)attachBtn.textContent="📎";send(value,imgs);});
+  if(imageInput)imageInput.addEventListener("change",()=>{selectedFiles=Array.from(imageInput.files||[]).slice(0,4);attachBtn.textContent=selectedFiles.length?"📎 "+selectedFiles.length:"📎";imageInput.value="";});
+  form.addEventListener("submit",e=>{e.preventDefault();const value=input.value;input.value="";const files=selectedFiles;selectedFiles=[];if(attachBtn)attachBtn.textContent="📎";send(value,[],files);});
   const launchQuestion=new URLSearchParams(window.location.search).get("ask");
   if(launchQuestion){toggle(true);send(launchQuestion);window.history.replaceState({},document.title,window.location.pathname+window.location.hash);}
 })();
