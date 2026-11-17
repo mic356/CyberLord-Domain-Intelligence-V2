@@ -12,7 +12,7 @@
 <p><a class="tutor-full-link" href="{{ url_for('tutor', lesson=lesson.slug) }}">Open full tutor →</a></p>
 <p class="muted">Stuck on this lesson? Ask here. The tutor only answers about this lesson.</p>
 <div class="tutor-messages" aria-live="polite"></div>
-<form class="tutor-form"><input type="text" placeholder="Ask about {{ lesson.title }}…" aria-label="Ask the tutor"><button class="btn primary" type="submit">Send</button><button type="button" class="btn voice-toggle" data-voice-toggle aria-pressed="false" aria-label="Listen to the tutor reply" title="Listen to the reply">🔈</button><button type="button" class="btn mic-btn" data-mic-btn aria-label="Press and hold to talk" title="Press and hold to talk — release to send">🎙</button></form><div class="tutor-lock" id="tutor-lock" hidden>
+<form class="tutor-form"><input type="text" placeholder="Ask about {{ lesson.title }}…" aria-label="Ask the tutor"><input type="file" class="tutor-image-input" accept="image/png,image/jpeg,image/webp" multiple hidden><button type="button" class="btn tutor-image-attach">📎 Image</button><button type="button" class="btn tutor-image-generate">🎨 Create</button><button class="btn primary" type="submit">Send</button><button type="button" class="btn voice-toggle" data-voice-toggle aria-pressed="false" aria-label="Listen to the tutor reply" title="Listen to the reply">🔈</button><button type="button" class="btn mic-btn" data-mic-btn aria-label="Press and hold to talk" title="Press and hold to talk — release to send">🎙</button></form><div class="tutor-lock" id="tutor-lock" hidden>
 <h3>Free tutor limit reached</h3>
 <p>Unlock Tutor Pro (₦6,300 / 30 days, 4.50 USDT) to keep asking the tutor.</p>
 <a class="btn primary" href="{{ url_for('dashboard') }}#plans">Unlock Tutor Pro</a>

@@ -173,9 +173,11 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   document.querySelectorAll("[data-ai-guide]").forEach(btn=>{
     btn.addEventListener("click",()=>{toggle(true);send(btn.dataset.aiGuide||btn.textContent);});
   });
-  async function send(text){
-    text=(text||"").trim();if(!text)return;
-    bubble(text,"user");history.push({role:"user",content:text});
+  async function send(text, images){
+    text=(text||"").trim(); images=images||[];
+    if(!text && !images.length)return;
+    if(!text)text="Please analyse the attached picture and explain what you can see.";
+    bubble(text,"user");history.push({role:"user",content:text,images:images});
     const pending=bubble("Searching CyberLord knowledge…","bot");
     const startTyping=()=>{const typing=document.createElement("span");typing.className="cl-ai-typing";typing.innerHTML="<span></span><span></span><span></span>";pending.textContent="";pending.appendChild(typing);};startTyping();
     await new Promise(resolve=>setTimeout(resolve,600));
@@ -198,7 +200,34 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     }catch(err){pending.textContent=err.message||"Something went wrong. Please try again.";}
     finally{submit.disabled=false;scroll();}
   }
-  form.addEventListener("submit",e=>{e.preventDefault();const value=input.value;input.value="";send(value);});
+  const imageInput=document.getElementById("cl-ai-image");
+  const attachBtn=document.getElementById("cl-ai-attach");
+  const generateBtn=document.getElementById("cl-ai-generate");
+  let selectedImages=[];
+  function readImages(files){
+    return Promise.all(Array.from(files||[]).slice(0,4).map(file=>{
+      if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>5*1024*1024)throw new Error("Use JPG, PNG or WEBP images under 5 MB each.");
+      return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({mime_type:file.type,data:String(reader.result).split(",")[1]});reader.onerror=reject;reader.readAsDataURL(file);});
+    }));
+  }
+  if(attachBtn&&imageInput)attachBtn.addEventListener("click",()=>imageInput.click());
+  if(imageInput)imageInput.addEventListener("change",async()=>{
+    try{selectedImages=await readImages(imageInput.files);attachBtn.textContent="📎 "+selectedImages.length;}
+    catch(err){alert(err.message);selectedImages=[];}imageInput.value="";
+  });
+  if(generateBtn)generateBtn.addEventListener("click",async()=>{
+    const prompt=input.value.trim();if(!prompt){input.focus();return;}
+    generateBtn.disabled=true;const pending=bubble("Generating image…","bot");
+    try{
+      const res=await fetch("/api/ai-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:prompt,images:selectedImages})});
+      const data=await res.json();if(!res.ok)throw new Error(data.error||"Image generation failed.");
+      pending.textContent=data.text||"Your image is ready.";
+      (data.images||[]).forEach(im=>{const wrap=document.createElement("div");const src="data:"+(im.mime_type||"image/png")+";base64,"+im.data;const el=document.createElement("img");el.alt="Generated image";el.src=src;el.style.maxWidth="100%";el.style.borderRadius="12px";const dl=document.createElement("a");dl.href=src;dl.download="cyberlord-generated-image.png";dl.textContent="Download image";dl.className="cl-ai-image-download";wrap.appendChild(el);wrap.appendChild(dl);messagesEl.appendChild(wrap);});
+      input.value="";selectedImages=[];if(attachBtn)attachBtn.textContent="📎";
+    }catch(err){pending.textContent=err.message;}
+    finally{generateBtn.disabled=false;scroll();}
+  });
+  form.addEventListener("submit",e=>{e.preventDefault();const value=input.value;input.value="";const imgs=selectedImages;selectedImages=[];if(attachBtn)attachBtn.textContent="📎";send(value,imgs);});
   const launchQuestion=new URLSearchParams(window.location.search).get("ask");
   if(launchQuestion){toggle(true);send(launchQuestion);window.history.replaceState({},document.title,window.location.pathname+window.location.hash);}
 })();
@@ -209,7 +238,11 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     const card=form.closest(".tutor-card"); if(!card) return;
     const slug=card.dataset.lesson||"";
     const box=card.querySelector(".tutor-messages");
-    const input=form.querySelector("input");
+    const input=form.querySelector('input[type="text"]');
+    const imageInput=form.querySelector(".tutor-image-input");
+    const attachBtn=form.querySelector(".tutor-image-attach");
+    const generateBtn=form.querySelector(".tutor-image-generate");
+    let selectedImages=[];
     function add(text,role){
       // Reuse the live voice bubble so a spoken question already shown
       // as text before sending is not added twice.
@@ -225,13 +258,36 @@ document.querySelectorAll(".tool-card").forEach(card=>{
       box.appendChild(el); box.scrollTop=box.scrollHeight;
       return el;
     }
+    function readSelected(files){
+      return Promise.all(Array.from(files||[]).slice(0,4).map(file=>{
+        if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>5*1024*1024)throw new Error("Use JPG, PNG or WEBP images under 5 MB each.");
+        return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({mime_type:file.type,data:String(reader.result).split(",")[1]});reader.onerror=reject;reader.readAsDataURL(file);});
+      }));
+    }
+    if(attachBtn&&imageInput){
+      attachBtn.addEventListener("click",()=>imageInput.click());
+      imageInput.addEventListener("change",async()=>{try{selectedImages=await readSelected(imageInput.files);attachBtn.textContent="📎 "+selectedImages.length;}catch(err){alert(err.message);selectedImages=[];}imageInput.value="";});
+    }
+    if(generateBtn)generateBtn.addEventListener("click",async()=>{
+      const prompt=(input.value||"").trim();if(!prompt){input.focus();return;}
+      generateBtn.disabled=true;const pending=add("Generating image…","bot");
+      try{
+        const res=await fetch("/api/ai-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,images:selectedImages})});
+        const data=await res.json();if(!res.ok)throw new Error(data.error||"Image generation failed.");
+        pending.textContent=data.text||"Your image is ready.";
+        (data.images||[]).forEach(im=>{const wrap=document.createElement("div");const src="data:"+(im.mime_type||"image/png")+";base64,"+im.data;const pic=document.createElement("img");pic.alt="Generated image";pic.src=src;pic.style.maxWidth="100%";const dl=document.createElement("a");dl.href=src;dl.download="cyberlord-generated-image.png";dl.textContent="Download image";dl.className="cl-ai-image-download";wrap.appendChild(pic);wrap.appendChild(dl);box.appendChild(wrap);});
+        input.value="";selectedImages=[];if(attachBtn)attachBtn.textContent="📎 Image";
+      }catch(err){pending.textContent=err.message;}finally{generateBtn.disabled=false;box.scrollTop=box.scrollHeight;}
+    });
     form.addEventListener("submit",async e=>{
       e.preventDefault();
-      const text=(input.value||"").trim(); if(!text) return;
+      let text=(input.value||"").trim();const images=selectedImages;selectedImages=[];if(attachBtn)attachBtn.textContent="📎 Image";
+      if(!text&&!images.length) return;
+      if(!text)text="Please analyse the attached picture and explain what you can see.";
       add(text,"user"); input.value="";
       const pending=add("Thinking…","bot");
       try{
-        const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({persona:"tutor",lesson_slug:slug,messages:[{role:"user",content:text}]})});
+        const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({persona:"tutor",lesson_slug:slug,messages:[{role:"user",content:text,images:images}]})});
         const data=await res.json();
         pending.remove();
         if(!res.ok){

@@ -358,3 +358,5 @@ html[data-theme="dark"] .review-card p,html[data-theme="dark"] .review-form h3,h
 html[data-theme="dark"] .review-form input,html[data-theme="dark"] .review-form select,html[data-theme="dark"] .review-form textarea{background:#0f172a;border-color:#1e3a5f;color:#e7ecf5}
 html[data-theme="dark"] .reviews-average{color:#2dd4bf}
 @media(max-width:800px){.review-grid{grid-template-columns:1fr}}
+
+.cl-ai-image-download{display:inline-block;margin:8px 0 12px;padding:7px 11px;border-radius:8px;background:#1d7779;color:#fff;text-decoration:none;font-size:12px;font-weight:600}.cl-ai-image-download:hover{filter:brightness(1.12)}
