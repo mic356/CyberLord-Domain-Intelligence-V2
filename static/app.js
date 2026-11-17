@@ -1,3 +1,18 @@
+async function cyberLordPrepareImage(file){
+  if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>25*1024*1024)throw new Error("Use JPG, PNG or WEBP images up to 25 MB each.");
+  let bitmap;try{bitmap=await createImageBitmap(file);}catch(e){throw new Error("This image could not be opened. Try JPG, PNG or WEBP.");}
+  try{
+    let scale=Math.min(1,4096/Math.max(bitmap.width,bitmap.height));
+    const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+    const ctx=canvas.getContext("2d");ctx.fillStyle="#ffffff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+    let quality=0.9, blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",quality));
+    while(blob&&blob.size>4500000&&quality>0.5){quality-=0.08;blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",quality));}
+    if(!blob||blob.size>4500000)throw new Error("This image is too large to optimize. Try a smaller image.");
+    const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(",")[1]);reader.onerror=reject;reader.readAsDataURL(blob);});
+    return {mime_type:"image/jpeg",data};
+  }finally{bitmap.close();}
+}
+
 document.querySelectorAll(".scan-form").forEach(form=>{
  form.addEventListener("submit",async e=>{
   e.preventDefault(); const button=form.querySelector("button"), card=form.closest(".tool-card"), out=card.querySelector(".result");
@@ -227,8 +242,7 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   let selectedImages=[];
   function readImages(files){
     return Promise.all(Array.from(files||[]).slice(0,4).map(file=>{
-      if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>5*1024*1024)throw new Error("Use JPG, PNG or WEBP images under 5 MB each.");
-      return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({mime_type:file.type,data:String(reader.result).split(",")[1]});reader.onerror=reject;reader.readAsDataURL(file);});
+      return cyberLordPrepareImage(file);
     }));
   }
   if(attachBtn&&imageInput)attachBtn.addEventListener("click",()=>imageInput.click());
@@ -273,8 +287,7 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     }
     function readSelected(files){
       return Promise.all(Array.from(files||[]).slice(0,4).map(file=>{
-        if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>5*1024*1024)throw new Error("Use JPG, PNG or WEBP images under 5 MB each.");
-        return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({mime_type:file.type,data:String(reader.result).split(",")[1]});reader.onerror=reject;reader.readAsDataURL(file);});
+        return cyberLordPrepareImage(file);
       }));
     }
     if(attachBtn&&imageInput){
