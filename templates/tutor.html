@@ -18,7 +18,6 @@
     <input type="text" id="chat-input" placeholder="Ask any cybersecurity question…" aria-label="Type your question" autocomplete="off">
     <input type="file" id="tutor-image" accept="image/png,image/jpeg,image/webp" multiple hidden>
     <button type="button" class="btn" id="tutor-attach" title="Attach an image">📎 Image</button>
-    <button type="button" class="btn" id="tutor-generate" title="Generate or edit an image">🎨 Create</button>
     <button class="btn primary" type="submit">Ask</button>
     <button type="button" class="btn voice-toggle" data-voice-toggle aria-pressed="false" aria-label="Listen to the tutor reply" title="Listen to the reply">🔈</button>
     <button type="button" class="btn mic-btn" data-mic-btn aria-label="Press and hold to talk" title="Press and hold to talk — release to send">🎙</button>
@@ -73,6 +72,21 @@
     img.src = "data:" + (data.mime_type || "image/png") + ";base64," + data.data;
     img.style.maxWidth = "100%"; img.style.borderRadius = "12px"; img.style.display = "block";
     thread.appendChild(img); scroll();
+  }
+
+  function renderGeneratedMedia(data){
+    (data.generated_files || []).forEach(function(file){
+      var a=document.createElement("a");a.href="data:"+(file.mime_type||"application/octet-stream")+";base64,"+file.data;
+      a.download=file.filename||"cyberlord-file";a.textContent="⬇ Download "+(file.filename||"file");a.className="cl-ai-image-download";thread.appendChild(a);
+    });
+    (data.generated_videos || []).forEach(function(video){
+      var wrap=document.createElement("div"),el=document.createElement("video"),src="data:"+(video.mime_type||"video/mp4")+";base64,"+video.data;
+      el.controls=true;el.preload="metadata";el.src=src;el.style.width="100%";el.style.maxWidth="560px";el.style.borderRadius="12px";
+      var a=document.createElement("a");a.href=src;a.download=video.filename||"cyberlord-video.mp4";a.textContent="Download video";a.className="cl-ai-image-download";
+      wrap.appendChild(el);wrap.appendChild(a);thread.appendChild(wrap);
+    });
+    if(data.file_generation_note) add(data.file_generation_note,"bot");
+    if(data.video_generation_note) add(data.video_generation_note,"bot");
   }
 
   function save(){
@@ -134,9 +148,11 @@
         });
         thread.appendChild(grid);
       }
+      if(data.image_generation_note) add(data.image_generation_note, "bot");
       if(Array.isArray(data.generated_images)){
         data.generated_images.forEach(function(im){ showImage(im, "Generated image"); });
       }
+      renderGeneratedMedia(data);
       history.push({role:"assistant", content:data.reply});
       save();
     }catch(err){
@@ -147,7 +163,6 @@
 
   var imageInput = document.getElementById("tutor-image");
   var attachBtn = document.getElementById("tutor-attach");
-  var generateBtn = document.getElementById("tutor-generate");
   var selectedImages = [];
   function readImages(files){
     return Promise.all(Array.from(files || []).slice(0,4).map(function(file){
@@ -163,24 +178,6 @@
   if(imageInput) imageInput.addEventListener("change",async function(){
     try{selectedImages=await readImages(imageInput.files);attachBtn.textContent="📎 "+selectedImages.length+" attached";}
     catch(err){alert(err.message);selectedImages=[];} imageInput.value="";
-  });
-  if(generateBtn) generateBtn.addEventListener("click",async function(){
-    var prompt=input.value.trim(); if(!prompt){input.focus();return;}
-    generateBtn.disabled=true; var pending=add("Generating image…","bot");
-    try{
-      var res=await fetch("/api/ai-image",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({prompt:prompt,images:selectedImages})});
-      var data=await res.json(); if(!res.ok) throw new Error(data.error||"Image generation failed.");
-      pending.textContent=data.text||"Your image is ready.";
-      (data.images||[]).forEach(function(im){
-        var wrap=document.createElement("div"), src="data:"+(im.mime_type||"image/png")+";base64,"+im.data;
-        var pic=document.createElement("img");pic.className="cl-ai-generated-image";pic.alt="Generated image";pic.src=src;pic.style.maxWidth="100%";pic.style.borderRadius="12px";
-        var dl=document.createElement("a");dl.href=src;dl.download="cyberlord-generated-image.png";dl.textContent="Download image";dl.className="cl-ai-image-download";
-        wrap.appendChild(pic);wrap.appendChild(dl);thread.appendChild(wrap);
-      });
-      input.value=""; selectedImages=[]; if(attachBtn)attachBtn.textContent="📎 Image";
-    }catch(err){pending.textContent=err.message;}
-    finally{generateBtn.disabled=false;scroll();}
   });
   form.addEventListener("submit", function(e){
     e.preventDefault();
