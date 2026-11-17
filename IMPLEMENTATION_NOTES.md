@@ -30,3 +30,12 @@ This update modifies the existing Flask application; it is not a replacement web
 - Telegram and WhatsApp now route text, image analysis and image generation/edit requests through the same normalized event processor and shared delivery contract.
 - Linked messaging channels share history by CyberLord account and persona. Dashboard AI and Tutor histories remain separate; unlinked chats remain isolated by provider chat ID.
 - Added `CHANNEL_ADAPTER_GUIDE.md` describing the contract for adding future providers without creating another AI engine. A future provider still needs its own authenticated webhook/media adapter and provider credentials.
+
+
+## Artificial Brain integration
+
+- Added `artificial_brain.py`: task-capability classification, relevant saved-memory retrieval, persona-aware orchestration instructions and conservative answer-quality flags.
+- The authenticated `/api/ai-assistant` route injects the shared brain context, so Dashboard, Tutor and linked WhatsApp/Telegram use the same orchestration path.
+- Added `/api/brain/teach` and a Super Mode form for explicit, private, per-account knowledge notes. This is retrieval learning only; it does not train Gemini model weights.
+- Added multipart `list-parts` support and local-browser upload-session recovery after reload (same file must be selected again).
+- Added large Office/text extraction up to 50 MB; Gemini-supported image/PDF/audio/video continue through the configured provider path up to the configured 2 GB ceiling where permitted.

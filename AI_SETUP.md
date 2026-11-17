@@ -199,3 +199,11 @@ a self-hosted open-source route, Wan2.1 provides text-to-video and image-to-vide
 models, but it requires a compatible GPU and local/hosted GPU infrastructure; it
 will not run on an ordinary Render web service without a separate GPU worker.
 Do not advertise stock-video search or YouTube playback as AI video generation.
+
+## Super Mode workspace (new)
+
+Open **Super Mode** from the signed-in navigation. It adds document analysis for text-based PDF, DOCX, XLSX, PPTX, CSV, Markdown and TXT files (8 MB max), YouTube public video search and available transcript summarization, browser-recorded voice-note transcription, a task-planning agent with approval gates, and a provider-readiness panel.
+
+Add `YOUTUBE_API_KEY` in Render Environment to enable public YouTube search. YouTube transcript summarization also requires `GEMINI_API_KEY` and the `youtube-transcript-api` dependency. Voice-note transcription requires `GEMINI_API_KEY`, microphone permission and HTTPS; optionally set `GEMINI_AUDIO_MODEL` to a model that supports audio input. `pypdf` is used for text-based PDF extraction. Scanned/image-only PDFs are not supported by this extraction path yet.
+
+The agent currently plans tasks but does not execute them. Existing browser voice input and click-to-speak replies remain in Dashboard AI and Tutor. Existing image, file, optional video generation, user memory, Academy training, messaging adapters and monitoring code paths are preserved. See `SUPER_MODE_SETUP.md` for details and limits.

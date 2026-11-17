@@ -1,4 +1,4 @@
-import os, re, json, hmac, hashlib, secrets, socket, ssl, ipaddress, subprocess, shutil, time, threading, base64, csv
+import os, re, json, hmac, hashlib, secrets, socket, ssl, ipaddress, subprocess, shutil, time, threading, base64, csv, wave
 
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
@@ -30,7 +30,56 @@ from academy_questions import ACADEMY_LESSONS, ACADEMY_COURSES, get_course_for_l
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "CHANGE-ME-TO-A-LONG-RANDOM-SECRET")
-app.config["MAX_CONTENT_LENGTH"] = 30 * 1024 * 1024  # supports four optimized image attachments
+# Large media bypasses Flask request-body limits through direct multipart object-storage uploads.
+# Ordinary chat/image endpoints retain a conservative request cap.
+app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("CYBERLORD_WEB_REQUEST_MAX_BYTES", str(30 * 1024 * 1024)))
+CYBERLORD_LARGE_FILE_MAX_BYTES = min(
+    max(int(os.getenv("CYBERLORD_LARGE_FILE_MAX_BYTES", str(2 * 1024 * 1024 * 1024))), 5 * 1024 * 1024),
+    2 * 1024 * 1024 * 1024,
+)
+CYBERLORD_MULTIPART_PART_BYTES = 16 * 1024 * 1024
+
+
+def _large_upload_s3():
+    """Return an S3-compatible client for Cloudflare R2; credentials remain server-side."""
+    account = os.getenv("R2_ACCOUNT_ID", "").strip()
+    access = os.getenv("R2_ACCESS_KEY_ID", "").strip()
+    secret = os.getenv("R2_SECRET_ACCESS_KEY", "").strip()
+    if not all((account, access, secret, os.getenv("R2_BUCKET_NAME", "").strip())):
+        return None
+    try:
+        import boto3
+        from botocore.config import Config
+        return boto3.client(
+            "s3", endpoint_url=f"https://{account}.r2.cloudflarestorage.com",
+            aws_access_key_id=access, aws_secret_access_key=secret,
+            region_name="auto", config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        )
+    except Exception as exc:
+        app.logger.warning("Large upload storage is unavailable: %s", str(exc)[:160])
+        return None
+
+
+def _large_upload_bucket():
+    return os.getenv("R2_BUCKET_NAME", "").strip()
+
+
+def _large_upload_allowed(filename, mime):
+    ext = os.path.splitext(filename or "")[1].lower()
+    allowed = {
+        ".mp4": {"video/mp4"}, ".mov": {"video/quicktime"}, ".webm": {"video/webm"},
+        ".mpeg": {"video/mpeg"}, ".mpg": {"video/mpeg"}, ".pdf": {"application/pdf"},
+        ".jpg": {"image/jpeg"}, ".jpeg": {"image/jpeg"}, ".png": {"image/png"}, ".webp": {"image/webp"},
+        ".mp3": {"audio/mpeg"}, ".wav": {"audio/wav", "audio/x-wav"},
+        ".m4a": {"audio/mp4", "audio/x-m4a"}, ".ogg": {"audio/ogg"},
+        ".docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+        ".xlsx": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+        ".pptx": {"application/vnd.openxmlformats-officedocument.presentationml.presentation"},
+        ".txt": {"text/plain"}, ".md": {"text/markdown", "text/plain"},
+        ".csv": {"text/csv", "application/vnd.ms-excel", "text/plain"},
+    }
+    return ext in allowed and mime in allowed[ext]
+
 
 
 def _normalize_image_for_ai(raw, mime_type=None, max_bytes=2_500_000):
@@ -2245,14 +2294,20 @@ def _memory_store():
     from user_memory import get_store
     return get_store()
 
-def _user_memory_context(priority_note=None):
-    """Short system-context block for the logged-in user, or '' for anon."""
+def _user_memory_context(priority_note=None, query=""):
+    """Short, query-relevant system context for the logged-in user, or empty for anon."""
     if not current_user or not current_user.is_authenticated:
         return ""
     try:
-        summary = _memory_store().context_summary(str(current_user.id), current_user.email)
+        from artificial_brain import retrieve_relevant_memories
+        rows = _memory_store().load(str(current_user.id), limit=20)
+        selected = retrieve_relevant_memories(rows, query or priority_note or "", limit=6)
+        summary = "; ".join(str(row.get("summary") or "") for row in selected if row.get("summary"))
     except Exception:
-        return ""
+        try:
+            summary = _memory_store().context_summary(str(current_user.id), current_user.email)
+        except Exception:
+            return ""
     if not summary:
         return ""
     from user_memory import compose_system_context
@@ -2270,6 +2325,29 @@ def _maybe_persist_remember(text):
         return "Got it, I will remember: %s. Welcome back anytime and I will carry on from here." % fact
     except Exception:
         return None
+
+@app.route("/api/brain/teach", methods=["POST"])
+@login_required
+def artificial_brain_teach():
+    """Save user-approved private knowledge for this account; this is retrieval learning, not model-weight training."""
+    if rate_limited(key="brainteach:" + str(current_user.id), limit=8, window=300):
+        return jsonify(error="Brain training is limited to 8 notes every 5 minutes."), 429
+    body = request.get_json(silent=True) or {}
+    note = str(body.get("note") or "").strip()
+    topic = str(body.get("topic") or "User-approved knowledge").strip()[:100]
+    if len(note) < 12:
+        return jsonify(error="Add a little more detail (at least 12 characters)."), 400
+    if len(note) > 1800:
+        return jsonify(error="Each knowledge note is limited to 1,800 characters. Split longer material into smaller notes."), 400
+    try:
+        saved = _memory_store().save(str(current_user.id), current_user.email, "knowledge", note, topic=topic, persona="shared")
+        if not saved:
+            return jsonify(error="CyberLord could not save this note. Check the database connection and try again."), 503
+        return jsonify(ok=True, message="Saved to your private CyberLord knowledge memory. It can be retrieved in Dashboard AI, Tutor and linked messaging chats.", scope="private_account_memory", model_retrained=False)
+    except Exception as exc:
+        app.logger.warning("Artificial brain knowledge save failed: %s", str(exc)[:140])
+        return jsonify(error="The knowledge note could not be saved."), 503
+
 
 def _gemini_model():
     # Valid stable Gemini names per Google docs 14 Nov 2026.
@@ -2334,7 +2412,7 @@ def ai_assistant():
         if _persona_for_remember not in ("tutor", "main"):
             _persona_for_remember = "tutor" if (body.get("lesson_slug") or body.get("lesson")) else "main"
         return jsonify(reply=_remember_reply, mode="user-memory", persona=_persona_for_remember, live_sources=[])
-    _user_mem_ctx = _user_memory_context()
+    _user_mem_ctx = _user_memory_context(query=fallback_latest)
     lesson_slug = body.get("lesson_slug") or body.get("lesson") or ""
     # Persona flag: "tutor" = academy tutor surfaces (lesson panels + /tutor
     # page, always carry a lesson_slug); "main" = dashboard assistant, broad.
@@ -2457,6 +2535,16 @@ def ai_assistant():
             )}] + messages
     if not isinstance(messages, list):
         return jsonify(error="Invalid conversation format."), 400
+
+    # One shared artificial-brain orchestration layer for Dashboard, Tutor and
+    # linked WhatsApp/Telegram messages (they call this same endpoint).
+    try:
+        from artificial_brain import build_brain_instruction
+        _brain_memory_rows = _memory_store().load(str(current_user.id), limit=20) if current_user.is_authenticated else []
+        _brain_instruction = build_brain_instruction(fallback_latest, persona=persona, memory_rows=_brain_memory_rows)
+        messages = [{"role": "user", "content": _brain_instruction}] + messages
+    except Exception as _brain_exc:
+        app.logger.warning("Artificial brain orchestration fallback: %s", str(_brain_exc)[:120])
 
     # Keep a short, bounded history and accept only plain-text user/assistant turns.
     contents = []
@@ -3546,6 +3634,36 @@ def _telegram_download_image(file_id):
         return None
 
 
+def _telegram_download_audio(file_id):
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token or not file_id: return None
+    try:
+        meta = requests.get(f"https://api.telegram.org/bot{token}/getFile", params={"file_id": file_id}, timeout=12); meta.raise_for_status()
+        path = (meta.json().get("result") or {}).get("file_path")
+        if not path: return None
+        media = requests.get(f"https://api.telegram.org/file/bot{token}/{path}", timeout=30); media.raise_for_status()
+        mime = media.headers.get("Content-Type", "audio/ogg").split(";")[0].lower()
+        if len(media.content) > 15 * 1024 * 1024: return None
+        return media.content, mime
+    except Exception as exc:
+        app.logger.warning("Telegram audio download failed: %s", str(exc)[:150]); return None
+
+
+def _whatsapp_download_audio(media_id):
+    token = os.getenv("WHATSAPP_ACCESS_TOKEN", "").strip(); version = os.getenv("WHATSAPP_API_VERSION", "v26.0").strip()
+    if not token or not media_id: return None
+    try:
+        meta = requests.get(f"https://graph.facebook.com/{version}/{media_id}", headers={"Authorization": "Bearer " + token}, timeout=12); meta.raise_for_status()
+        media_url = meta.json().get("url")
+        if not media_url: return None
+        media = requests.get(media_url, headers={"Authorization": "Bearer " + token}, timeout=30); media.raise_for_status()
+        mime = media.headers.get("Content-Type", "audio/ogg").split(";")[0].lower()
+        if len(media.content) > 15 * 1024 * 1024: return None
+        return media.content, mime
+    except Exception as exc:
+        app.logger.warning("WhatsApp audio download failed: %s", str(exc)[:150]); return None
+
+
 def _whatsapp_download_image(media_id):
     token = os.getenv("WHATSAPP_ACCESS_TOKEN", "").strip()
     version = os.getenv("WHATSAPP_API_VERSION", "v26.0").strip()
@@ -3604,6 +3722,21 @@ def telegram_webhook():
     if not chat_id:
         return jsonify(ok=True, ignored=True)
     image = None
+    voice = message.get("voice") or message.get("audio")
+    if voice:
+        downloaded = _telegram_download_audio(voice.get("file_id"))
+        if not downloaded:
+            _send_telegram_message(chat_id, "I could not download that voice note. Please try a shorter OGG, MP3 or M4A recording.")
+            return jsonify(ok=True)
+        raw_audio, audio_mime = downloaded
+        try:
+            transcript = _gemini_transcribe_audio_bytes(raw_audio, audio_mime)
+        except Exception as exc:
+            app.logger.warning("Telegram voice transcription failed: %s", str(exc)[:150]); transcript = None
+        if not transcript:
+            _send_telegram_message(chat_id, "I could not transcribe that voice note. Please try again or send text.")
+            return jsonify(ok=True)
+        text_in = (text_in + "\n" + transcript).strip()
     if photos:
         image = _telegram_download_image(photos[-1].get("file_id"))
         if not image:
@@ -3647,7 +3780,26 @@ def whatsapp_webhook():
                            (message.get("image") or {}).get("caption") or "")
                 if not sender:
                     continue
-                if msg_type == "image":
+                if msg_type == "audio":
+                    downloaded = _whatsapp_download_audio((message.get("audio") or {}).get("id"))
+                    if not downloaded:
+                        _send_whatsapp_message(sender, "I could not download that voice note. Please try a shorter supported audio recording.")
+                        continue
+                    raw_audio, audio_mime = downloaded
+                    try:
+                        transcript = _gemini_transcribe_audio_bytes(raw_audio, audio_mime)
+                    except Exception as exc:
+                        app.logger.warning("WhatsApp voice transcription failed: %s", str(exc)[:150]); transcript = None
+                    if not transcript:
+                        _send_whatsapp_message(sender, "I could not transcribe that voice note. Please try again or send text.")
+                        continue
+                    result = _process_messaging_event("whatsapp", sender, message.get("id"), transcript)
+                    _deliver_messaging_result(result,
+                        lambda text: _send_whatsapp_message(sender, text),
+                        lambda img, caption: _send_whatsapp_photo(sender, img, caption),
+                        lambda item, caption: _send_whatsapp_file(sender, item, caption, False),
+                        lambda item, caption: _send_whatsapp_file(sender, item, caption, True))
+                elif msg_type == "image":
                     image = _whatsapp_download_image((message.get("image") or {}).get("id"))
                     if not image:
                         _send_whatsapp_message(sender, "I couldn't read that image. Please send a JPG, PNG or WEBP image up to 20 MB.")
@@ -4153,6 +4305,456 @@ def code_lab_run():
         return jsonify(ok=False, error="Paste some Python code first."), 400
     out, err, timed_out = run_sandboxed_code(source)
     return jsonify(ok=True, output=out, stderr=err, timed_out=timed_out)
+
+
+@app.route("/super-mode")
+@login_required
+def super_mode():
+    return render_template("super_mode.html")
+
+
+def _super_mode_gemini(prompt, content, timeout=35):
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key:
+        return None, "AI document analysis needs GEMINI_API_KEY configured in Render Environment."
+    model = _gemini_model()
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {"system_instruction": {"parts": [{"text": "You are CyberLord Super Mode. Analyse only the supplied content. Do not invent missing facts. Quote or identify the relevant section when possible. State uncertainty clearly."}]},
+               "contents": [{"role": "user", "parts": [{"text": (prompt + "\n\nSOURCE CONTENT:\n" + content)[:36000]}]}],
+               "generationConfig": {"temperature": 0.2}}
+    try:
+        response = requests.post(endpoint, params={"key": key}, json=payload, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+        answer = "".join(part.get("text", "") for part in data.get("candidates", [{}])[0].get("content", {}).get("parts", []) if isinstance(part, dict))
+        return (answer.strip() or None), (None if answer.strip() else "The AI provider returned no analysis.")
+    except Exception as exc:
+        app.logger.warning("Super Mode Gemini request failed: %s", str(exc)[:180])
+        return None, "AI analysis is temporarily unavailable. Check Gemini access, quota and Render logs."
+
+
+def _super_mode_gemini_media(prompt, raw, mime, timeout=90):
+    """Analyse an uploaded PDF/video using Gemini's multimodal inline input."""
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key:
+        return None, "This feature needs GEMINI_API_KEY configured in Render."
+    if not raw or len(raw) > 20 * 1024 * 1024:
+        return None, "Media uploads must be under 20 MB."
+    model = _gemini_model()
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {"system_instruction": {"parts": [{"text": "You are CyberLord. Describe only what is supported by the supplied media. For OCR, preserve exact wording and mark uncertain characters. For video, distinguish visible events from inference and do not invent timestamps."}]},
+               "contents": [{"role": "user", "parts": [{"text": prompt}, {"inline_data": {"mime_type": mime, "data": base64.b64encode(raw).decode("ascii")}}]},],
+               "generationConfig": {"temperature": 0.1}}
+    try:
+        response = requests.post(endpoint, params={"key": key}, json=payload, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+        answer = "".join(part.get("text", "") for part in data.get("candidates", [{}])[0].get("content", {}).get("parts", []) if isinstance(part, dict)).strip()
+        return (answer or None), (None if answer else "The AI provider returned no media analysis.")
+    except Exception as exc:
+        app.logger.warning("Super Mode media analysis failed: %s", str(exc)[:180])
+        return None, "Media analysis failed. Check Gemini model access, quota and Render logs."
+
+
+def _gemini_transcribe_audio_bytes(raw, mime):
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key: return None
+    model = os.getenv("GEMINI_AUDIO_MODEL", _gemini_model()).strip()
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {"contents": [{"role": "user", "parts": [
+        {"text": "Transcribe this audio accurately in its original language. Return only spoken words. Mark unclear speech rather than guessing."},
+        {"inline_data": {"mime_type": mime, "data": base64.b64encode(raw).decode("ascii")}}
+    ]}], "generationConfig": {"temperature": 0.1}}
+    response = requests.post(endpoint, params={"key": key}, json=payload, timeout=60)
+    response.raise_for_status()
+    data = response.json()
+    result = "".join(x.get("text", "") for x in data.get("candidates", [{}])[0].get("content", {}).get("parts", []) if isinstance(x, dict)).strip()
+    return result or None
+
+
+def _gemini_speech_bytes(text):
+    """Generate spoken reply audio where the configured Gemini model supports TTS."""
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key: return None
+    model = os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts").strip()
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {"contents": [{"parts": [{"text": "Speak clearly and naturally: " + str(text or "")[:3500]}]}],
+               "generationConfig": {"responseModalities": ["AUDIO"], "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": os.getenv("GEMINI_TTS_VOICE", "Kore")}}}}}
+    try:
+        r = requests.post(endpoint, params={"key": key}, json=payload, timeout=60); r.raise_for_status()
+        parts = r.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        for part in parts:
+            inline = part.get("inlineData") or part.get("inline_data") or {}
+            if inline.get("data"):
+                mime = inline.get("mimeType") or inline.get("mime_type") or "audio/L16;rate=24000"
+                raw = base64.b64decode(inline["data"])
+                if "L16" in mime or "pcm" in mime.lower():
+                    wav_out = BytesIO()
+                    with wave.open(wav_out, "wb") as wav_file:
+                        wav_file.setnchannels(1); wav_file.setsampwidth(2); wav_file.setframerate(24000); wav_file.writeframes(raw)
+                    raw = wav_out.getvalue(); mime = "audio/wav"
+                return {"data": base64.b64encode(raw).decode("ascii"), "mime_type": mime}
+    except Exception as exc:
+        app.logger.warning("Gemini speech generation unavailable: %s", str(exc)[:160])
+    return None
+
+
+@app.route("/api/large-upload/initiate", methods=["POST"])
+@login_required
+def large_upload_initiate():
+    body = request.get_json(silent=True) or {}
+    filename = os.path.basename(str(body.get("filename") or "upload"))[:180]
+    mime = str(body.get("mime_type") or "application/octet-stream").split(";")[0].lower()
+    try:
+        size = int(body.get("size") or 0)
+    except (TypeError, ValueError):
+        size = 0
+    if size <= 0 or size > CYBERLORD_LARGE_FILE_MAX_BYTES:
+        return jsonify(error=f"File must be between 1 byte and {CYBERLORD_LARGE_FILE_MAX_BYTES // (1024**3)} GB."), 400
+    if not _large_upload_allowed(filename, mime):
+        return jsonify(error="Supported files: MP4, MOV, WEBM, MPEG, PDF, JPG, PNG, WEBP, MP3, WAV, M4A, OGG, DOCX, XLSX, PPTX, TXT, MD and CSV."), 400
+    if os.path.splitext(filename)[1].lower() in {".docx", ".xlsx", ".pptx", ".txt", ".md", ".csv"} and size > 50 * 1024 * 1024:
+        return jsonify(error="Office and text documents are limited to 50 MB. Video, audio, PDF and image files may use the configured 2 GB limit where provider limits permit."), 400
+    s3 = _large_upload_s3()
+    if not s3:
+        return jsonify(error="Large uploads are not configured yet. Add the Cloudflare R2 environment variables in Render."), 503
+    key = f"private-user-uploads/{current_user.id}/{secrets.token_urlsafe(24)}-{re.sub(r'[^A-Za-z0-9._-]', '_', filename)}"
+    try:
+        result = s3.create_multipart_upload(Bucket=_large_upload_bucket(), Key=key, ContentType=mime,
+                                            Metadata={"owner": str(current_user.id), "original-size": str(size)})
+        return jsonify(ok=True, key=key, upload_id=result["UploadId"], part_size=CYBERLORD_MULTIPART_PART_BYTES,
+                       max_bytes=CYBERLORD_LARGE_FILE_MAX_BYTES)
+    except Exception as exc:
+        app.logger.warning("R2 multipart initiation failed: %s", str(exc)[:160])
+        return jsonify(error="Could not start the secure upload. Check R2 bucket permissions."), 503
+
+
+@app.route("/api/large-upload/sign-part", methods=["POST"])
+@login_required
+def large_upload_sign_part():
+    body = request.get_json(silent=True) or {}
+    key, upload_id = str(body.get("key") or ""), str(body.get("upload_id") or "")
+    try: part = int(body.get("part_number"))
+    except (TypeError, ValueError): part = 0
+    if not key.startswith(f"private-user-uploads/{current_user.id}/") or not upload_id or not 1 <= part <= 150:
+        return jsonify(error="Invalid upload part."), 400
+    s3 = _large_upload_s3()
+    if not s3: return jsonify(error="Large upload storage is unavailable."), 503
+    try:
+        url = s3.generate_presigned_url("upload_part", Params={"Bucket": _large_upload_bucket(), "Key": key,
+            "UploadId": upload_id, "PartNumber": part}, ExpiresIn=3600)
+        return jsonify(ok=True, url=url)
+    except Exception as exc:
+        app.logger.warning("R2 part signing failed: %s", str(exc)[:160])
+        return jsonify(error="Could not prepare this upload part."), 503
+
+
+@app.route("/api/large-upload/list-parts", methods=["POST"])
+@login_required
+def large_upload_list_parts():
+    """Return completed part receipts so the browser can resume after reload."""
+    body = request.get_json(silent=True) or {}
+    key, upload_id = str(body.get("key") or ""), str(body.get("upload_id") or "")
+    if not key.startswith(f"private-user-uploads/{current_user.id}/") or not upload_id:
+        return jsonify(error="Invalid upload session."), 400
+    s3 = _large_upload_s3()
+    if not s3: return jsonify(error="Large upload storage is unavailable."), 503
+    try:
+        response = s3.list_parts(Bucket=_large_upload_bucket(), Key=key, UploadId=upload_id, MaxParts=1000)
+        parts = [{"PartNumber": int(p["PartNumber"]), "ETag": str(p["ETag"])} for p in response.get("Parts", [])]
+        return jsonify(ok=True, parts=parts)
+    except Exception as exc:
+        app.logger.warning("Multipart resume lookup failed: %s", str(exc)[:140])
+        return jsonify(error="This upload session cannot be resumed. Start a new upload."), 404
+
+
+@app.route("/api/large-upload/complete", methods=["POST"])
+@login_required
+def large_upload_complete():
+    body = request.get_json(silent=True) or {}
+    key, upload_id = str(body.get("key") or ""), str(body.get("upload_id") or "")
+    parts = body.get("parts") or []
+    if not key.startswith(f"private-user-uploads/{current_user.id}/") or not upload_id or not isinstance(parts, list) or not parts:
+        return jsonify(error="Invalid multipart completion request."), 400
+    try:
+        clean = [{"PartNumber": int(x["PartNumber"]), "ETag": str(x["ETag"])} for x in parts]
+        if len(clean) > 150 or any(not x["ETag"] for x in clean): raise ValueError("invalid parts")
+        clean.sort(key=lambda x: x["PartNumber"])
+        if [x["PartNumber"] for x in clean] != list(range(1, len(clean) + 1)):
+            raise ValueError("multipart parts must be consecutive")
+        s3 = _large_upload_s3()
+        if not s3: return jsonify(error="Large upload storage is unavailable."), 503
+        s3.complete_multipart_upload(Bucket=_large_upload_bucket(), Key=key, UploadId=upload_id,
+                                     MultipartUpload={"Parts": clean})
+        head = s3.head_object(Bucket=_large_upload_bucket(), Key=key)
+        if int(head.get("ContentLength", 0)) > CYBERLORD_LARGE_FILE_MAX_BYTES:
+            s3.delete_object(Bucket=_large_upload_bucket(), Key=key)
+            return jsonify(error="The completed file exceeds the configured limit."), 400
+        return jsonify(ok=True, key=key, size=head.get("ContentLength", 0))
+    except Exception as exc:
+        app.logger.warning("R2 multipart completion failed: %s", str(exc)[:160])
+        return jsonify(error="Upload could not be completed. Please retry the upload."), 400
+
+
+def _gemini_upload_r2_file(key, owner_id):
+    """Stream a private R2 object into Gemini's resumable Files API without buffering it in RAM."""
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    s3 = _large_upload_s3()
+    if not api_key or not s3: return None, "Gemini or large-file storage is not configured."
+    if not key.startswith(f"private-user-uploads/{owner_id}/"): return None, "This upload does not belong to your account."
+    try:
+        obj = s3.get_object(Bucket=_large_upload_bucket(), Key=key)
+        size = int(obj["ContentLength"])
+        mime = obj.get("ContentType", "application/octet-stream")
+        if size <= 0 or size > CYBERLORD_LARGE_FILE_MAX_BYTES: return None, "The file exceeds the configured upload limit."
+        start = requests.post("https://generativelanguage.googleapis.com/upload/v1beta/files",
+            params={"key": api_key}, headers={"X-Goog-Upload-Protocol": "resumable", "X-Goog-Upload-Command": "start",
+                     "X-Goog-Upload-Header-Content-Length": str(size), "X-Goog-Upload-Header-Content-Type": mime,
+                     "Content-Type": "application/json"}, json={"file": {"display_name": "CyberLord private upload"}}, timeout=45)
+        start.raise_for_status()
+        upload_url = start.headers.get("X-Goog-Upload-URL")
+        if not upload_url: return None, "Gemini did not return a resumable upload URL."
+        body = obj["Body"]
+        def chunks():
+            while True:
+                chunk = body.read(8 * 1024 * 1024)
+                if not chunk: break
+                yield chunk
+        uploaded = requests.post(upload_url, headers={"X-Goog-Upload-Offset": "0", "X-Goog-Upload-Command": "upload, finalize",
+            "Content-Length": str(size)}, data=chunks(), timeout=(60, 3600))
+        uploaded.raise_for_status()
+        file_data = uploaded.json().get("file", {})
+        uri = file_data.get("uri")
+        if not uri: return None, "Gemini did not confirm the uploaded file."
+        return {"uri": uri, "mime_type": mime, "name": file_data.get("name")}, None
+    except Exception as exc:
+        app.logger.warning("Gemini large-file transfer failed: %s", str(exc)[:180])
+        return None, "The file reached storage, but Gemini could not process it. Check Gemini file limits, quota and Render logs."
+
+
+def _analyse_gemini_file(question, file_info):
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    model = _gemini_model()
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {"system_instruction": {"parts": [{"text": "You are CyberLord. Analyse only the supplied file. Distinguish visible evidence from inference, do not invent facts, and state when content is unclear or too large to inspect fully."}]},
+        "contents": [{"role": "user", "parts": [{"text": question}, {"file_data": {"mime_type": file_info["mime_type"], "file_uri": file_info["uri"]}}]}],
+        "generationConfig": {"temperature": 0.1}}
+    response = requests.post(endpoint, params={"key": key}, json=payload, timeout=300)
+    response.raise_for_status()
+    data = response.json()
+    answer = "".join(part.get("text", "") for part in data.get("candidates", [{}])[0].get("content", {}).get("parts", []) if isinstance(part, dict)).strip()
+    return answer or None
+
+
+@app.route("/api/large-upload/analyse", methods=["POST"])
+@login_required
+def large_upload_analyse():
+    body = request.get_json(silent=True) or {}
+    key = str(body.get("key") or "")
+    question = str(body.get("question") or "Analyse this file carefully and summarise its important content.")[:1200]
+    if not key.startswith(f"private-user-uploads/{current_user.id}/"):
+        return jsonify(error="This upload does not belong to your account."), 403
+    if rate_limited(key="largeanalyse:" + str(current_user.id), limit=5, window=300):
+        return jsonify(error="Large-file analysis is limited to 5 files every 5 minutes."), 429
+    s3 = _large_upload_s3()
+    if not s3: return jsonify(error="Large upload storage is unavailable."), 503
+    try:
+        head = s3.head_object(Bucket=_large_upload_bucket(), Key=key)
+        size = int(head.get("ContentLength", 0))
+        mime = head.get("ContentType", "application/octet-stream")
+        if size > CYBERLORD_LARGE_FILE_MAX_BYTES: return jsonify(error="This file exceeds the configured limit."), 400
+        extension = os.path.splitext(key)[1].lower()
+        office_or_text = {".docx", ".xlsx", ".pptx", ".txt", ".md", ".csv"}
+        if extension in office_or_text:
+            if size > 50 * 1024 * 1024:
+                return jsonify(error="Office and text documents are limited to 50 MB for safe text extraction. Video, audio, images and PDF can use the provider-supported 2 GB route."), 400
+            raw_document = s3.get_object(Bucket=_large_upload_bucket(), Key=key)["Body"].read(50 * 1024 * 1024 + 1)
+            from super_mode import extract_document
+            parsed = extract_document(key.rsplit("-", 1)[-1], raw_document)
+            analysis, analysis_error = _super_mode_gemini(question, "Filename: " + parsed["filename"] + "\n" + parsed["text"], timeout=90)
+            if not analysis:
+                return jsonify(error=analysis_error or "The document could not be analysed."), 503
+            return jsonify(ok=True, filename=parsed["filename"], analysis=analysis, size=size,
+                           truncated=parsed["truncated"], note="Document text was extracted from your private upload and the temporary R2 object is deleted after processing.")
+        info, error = _gemini_upload_r2_file(key, current_user.id)
+        if error: return jsonify(error=error), 503
+        analysis = _analyse_gemini_file(question, info)
+        # Delete the temporary Gemini file after the response has been generated.
+        try:
+            if info.get("name"):
+                requests.delete(f"https://generativelanguage.googleapis.com/v1beta/{info['name']}",
+                                params={"key": os.getenv("GEMINI_API_KEY", "").strip()}, timeout=20)
+        except Exception:
+            app.logger.info("Gemini temporary file cleanup will rely on provider retention.")
+        return jsonify(ok=True, filename=key.rsplit("-", 1)[-1][:120], analysis=analysis or "The model returned no analysis.",
+                       size=size, note="The temporary CyberLord storage object is deleted after processing. Gemini temporary files are deleted when supported; otherwise Google's retention policy applies.")
+    except Exception as exc:
+        app.logger.warning("Large-file analysis failed: %s", str(exc)[:180])
+        return jsonify(error="The file was uploaded, but analysis failed. Check Gemini support for this file type and provider quota."), 503
+    finally:
+        try: s3.delete_object(Bucket=_large_upload_bucket(), Key=key)
+        except Exception: pass
+
+
+@app.route("/api/super-mode/analyse-document", methods=["POST"])
+@login_required
+def super_mode_analyse_document():
+    if rate_limited(key="superdoc:" + client_ip() + ":" + str(current_user.id), limit=8, window=300):
+        return jsonify(error="Document analysis is limited to 8 requests every 5 minutes. Please wait and try again."), 429
+    uploaded = request.files.get("document")
+    if not uploaded:
+        return jsonify(error="Choose a document first."), 400
+    raw = uploaded.read(8 * 1024 * 1024 + 1)
+    try:
+        from super_mode import extract_document
+        parsed = extract_document(uploaded.filename, raw)
+    except ValueError as exc:
+        if uploaded.filename.lower().endswith(".pdf") and "no extractable text" in str(exc).lower():
+            question = str(request.form.get("question") or "Read this scanned PDF using OCR. Transcribe important text and explain the document.")[:1200]
+            analysis, error = _super_mode_gemini_media(question, raw, "application/pdf")
+            if not analysis: return jsonify(error=error or str(exc)), 503
+            return jsonify(ok=True, filename=uploaded.filename[:120], analysis=analysis, ocr=True,
+                           note="OCR was performed by the multimodal AI. Verify critical numbers and names against the original scan.")
+        return jsonify(error=str(exc)), 400
+    except Exception as exc:
+        app.logger.warning("Super Mode document parse failed: %s", str(exc)[:160])
+        return jsonify(error="This document could not be read. Check that it is a valid, unencrypted file."), 400
+    question = str(request.form.get("question") or "Summarise this document, explain its important points, and identify anything that needs attention.")[:1200]
+    analysis, error = _super_mode_gemini(question, "Filename: " + parsed["filename"] + "\n" + parsed["text"])
+    if not analysis:
+        return jsonify(error=error, filename=parsed["filename"], extracted_text=parsed["text"][:8000], truncated=parsed["truncated"]), 503
+    return jsonify(ok=True, filename=parsed["filename"], analysis=analysis, truncated=parsed["truncated"],
+                   note="Document text was processed for this request and was not saved as a public file.")
+
+
+@app.route("/api/super-mode/youtube", methods=["POST"])
+@login_required
+def super_mode_youtube():
+    body = request.get_json(silent=True) or {}
+    query = str(body.get("query") or "").strip()[:180]
+    if not query:
+        return jsonify(error="Enter a YouTube search or video URL."), 400
+    try:
+        from super_mode import youtube_video_id, youtube_search, youtube_transcript
+        if youtube_video_id(query):
+            transcript = youtube_transcript(query)
+            summary, error = _super_mode_gemini("Summarise this YouTube transcript. Give the main ideas, useful timestamps only if present, and important limitations.", transcript["transcript"])
+            if not summary:
+                return jsonify(error=error, transcript=transcript["transcript"][:9000], url=transcript["url"]), 503
+            return jsonify(ok=True, url=transcript["url"], summary=summary, transcript_truncated=transcript["truncated"])
+        result = youtube_search(query)
+        if not result.get("configured"):
+            return jsonify(error=result.get("message"), setup_required=True), 503
+        return jsonify(ok=True, **result)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except requests.RequestException as exc:
+        app.logger.warning("YouTube API request failed: %s", str(exc)[:160])
+        return jsonify(error="YouTube search is temporarily unavailable. Check the API key, quota and Google Cloud API settings."), 503
+    except Exception as exc:
+        app.logger.warning("Super Mode YouTube failed: %s", str(exc)[:160])
+        return jsonify(error="YouTube research could not be completed."), 503
+
+
+@app.route("/api/super-mode/transcribe-audio", methods=["POST"])
+@login_required
+def super_mode_transcribe_audio():
+    audio = request.files.get("audio")
+    if not audio:
+        return jsonify(error="Record or choose an audio note first."), 400
+    raw = audio.read(15 * 1024 * 1024 + 1)
+    if not raw or len(raw) > 15 * 1024 * 1024:
+        return jsonify(error="Audio notes must be under 15 MB."), 400
+    mime = (audio.mimetype or "audio/webm").split(";")[0].lower()
+    allowed = {"audio/webm", "audio/ogg", "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/mp4", "audio/aac", "audio/flac"}
+    if mime not in allowed:
+        return jsonify(error="Use a WEBM, OGG, MP3, WAV, MP4-audio, AAC or FLAC recording."), 400
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key:
+        return jsonify(error="Voice-note transcription needs GEMINI_API_KEY configured in Render."), 503
+    try:
+        model = os.getenv("GEMINI_AUDIO_MODEL", _gemini_model()).strip()
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        payload = {"contents": [{"role": "user", "parts": [
+            {"text": "Transcribe this audio accurately in its original language. Return only the words spoken. If speech is unclear, mark the unclear section rather than guessing."},
+            {"inline_data": {"mime_type": mime, "data": base64.b64encode(raw).decode("ascii")}}
+        ]}], "generationConfig": {"temperature": 0.1}}
+        response = requests.post(endpoint, params={"key": key}, json=payload, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        transcript = "".join(part.get("text", "") for part in data.get("candidates", [{}])[0].get("content", {}).get("parts", []) if isinstance(part, dict)).strip()
+        if not transcript:
+            return jsonify(error="The audio provider returned no transcript."), 503
+        return jsonify(ok=True, transcript=transcript[:12000])
+    except Exception as exc:
+        app.logger.warning("Super Mode audio transcription failed: %s", str(exc)[:180])
+        return jsonify(error="The voice note could not be transcribed. Check the audio format, Gemini model access and quota."), 503
+
+
+@app.route("/api/super-mode/analyse-video", methods=["POST"])
+@login_required
+def super_mode_analyse_video():
+    uploaded = request.files.get("video")
+    if not uploaded: return jsonify(error="Choose an MP4, MOV or WEBM video first."), 400
+    raw = uploaded.read(20 * 1024 * 1024 + 1)
+    if not raw or len(raw) > 20 * 1024 * 1024: return jsonify(error="For files larger than 20 MB, use the resumable large-file uploader in Super Mode."), 400
+    mime = (uploaded.mimetype or "").split(";")[0].lower()
+    allowed = {"video/mp4", "video/quicktime", "video/webm", "video/mpeg"}
+    if mime not in allowed: return jsonify(error="Use MP4, MOV or WEBM video."), 400
+    question = str(request.form.get("question") or "Describe the video in sequence, identify key events, visible text and important details. Do not invent timestamps.")[:1200]
+    answer, error = _super_mode_gemini_media(question, raw, mime, timeout=120)
+    if not answer: return jsonify(error=error), 503
+    return jsonify(ok=True, analysis=answer, filename=uploaded.filename[:120], note="Video was analysed inline. Long videos may exceed provider limits; use a shorter clip if needed.")
+
+
+@app.route("/api/super-mode/speak", methods=["POST"])
+@login_required
+def super_mode_speak():
+    body = request.get_json(silent=True) or {}
+    audio = _gemini_speech_bytes(str(body.get("text") or "")[:3500])
+    if not audio: return jsonify(error="Speech generation is unavailable. Configure a Gemini TTS model with audio output access."), 503
+    return jsonify(ok=True, audio=audio["data"], mime_type=audio["mime_type"])
+
+
+@app.route("/api/super-mode/agent-plan", methods=["POST"])
+@login_required
+def super_mode_agent_plan():
+    body = request.get_json(silent=True) or {}
+    try:
+        from super_mode import build_agent_plan
+        return jsonify(ok=True, plan=build_agent_plan(body.get("goal")))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.route("/api/super-mode/readiness")
+@login_required
+def super_mode_readiness():
+    return jsonify(ok=True, capabilities={
+        "large_resumable_uploads": bool(_large_upload_s3() and os.getenv("GEMINI_API_KEY")),
+        "large_upload_max_bytes": CYBERLORD_LARGE_FILE_MAX_BYTES,
+        "large_upload_storage": "Cloudflare R2" if _large_upload_s3() else "Not configured",
+        "gemini_reasoning_and_document_analysis": bool(os.getenv("GEMINI_API_KEY")),
+        "groq_fallback": bool(os.getenv("GROQ_API_KEY")),
+        "youtube_search": bool(os.getenv("YOUTUBE_API_KEY")),
+        "video_generation": bool(os.getenv("GOOGLE_CLOUD_PROJECT") and os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")),
+        "cloudflare_image_fallback": bool(os.getenv("CLOUDFLARE_ACCOUNT_ID") and os.getenv("CLOUDFLARE_API_TOKEN")),
+        "browser_voice_input": True,
+        "browser_voice_playback": True,
+        "scanned_pdf_ocr": bool(os.getenv("GEMINI_API_KEY")),
+        "uploaded_video_analysis": bool(os.getenv("GEMINI_API_KEY")),
+        "generated_audio_replies": bool(os.getenv("GEMINI_API_KEY")),
+        "telegram_voice_note_input": bool(os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("GEMINI_API_KEY")),
+        "whatsapp_voice_note_input": bool(os.getenv("WHATSAPP_ACCESS_TOKEN") and os.getenv("GEMINI_API_KEY")),
+        "persistent_user_memory": True,
+        "artificial_brain_orchestration": True,
+        "private_user_approved_knowledge": True,
+        "resumable_multipart_uploads": True,
+        "large_office_document_uploads": True,
+        "academy_training": True,
+        "shared_messaging_engine": True,
+        "monitoring_worker": True
+    }, note="Readiness indicates configuration or existing code paths only. It does not guarantee provider quota, successful delivery or live service availability.")
 
 
 @app.route("/health")

@@ -146,3 +146,12 @@ Set `GEMINI_API_KEY` under the Render service's Environment settings. Do not pla
 The existing Telegram and WhatsApp adapters now support signed-in website account linking at `/account/messaging`. Generate an eight-digit code, then send `/link CODE` in the relevant chat. Codes are hashed in the database, expire after 10 minutes, are single-use, and link using the platform chat identifier. Linked Academy Tutor conversations share the website account's Tutor Pro expiry and 10-question daily free quota. Messaging history, persona selection and duplicate webhook event IDs are database-backed.
 
 Bank transfer forms accept optional JPG/PNG/WEBP/PDF evidence up to 5 MB. Receipts are stored in SQL and visible to an authenticated admin. Bank payments still require manual confirmation and approval; receipt upload alone never activates a subscription. USDT TRC20/BEP20 verification remains unchanged. See `MESSAGING_INTEGRATION_SETUP.md` for Meta WhatsApp configuration requirements.
+
+
+## Artificial Brain and large uploads
+
+CyberLord now includes a shared artificial-brain orchestration module (`artificial_brain.py`) used by the Dashboard AI, Tutor and linked messaging flow through the common AI endpoint. It classifies task capability signals, retrieves relevant account-approved memory, adds a private answer self-check instruction, and keeps persona boundaries. Users can add private approved knowledge from Super Mode. This is retrieval-based memory and orchestration, not foundation-model retraining or autonomous self-modification.
+
+The Super Mode large uploader uses private Cloudflare R2 multipart uploads, upload progress, and same-browser resume by reselecting the same file. Video/audio/PDF/image uploads are capped at up to 2 GB where Gemini and account limits permit. Office/text documents are extracted server-side and capped at 50 MB. See `LARGE_UPLOAD_SETUP.md` for R2 setup and limitations.
+
+See `ARTIFICIAL_BRAIN_GUIDE.md` for the brain architecture, private knowledge controls and limitations.
