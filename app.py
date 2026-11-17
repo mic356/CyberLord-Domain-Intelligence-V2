@@ -1,4 +1,4 @@
-import os, re, json, hmac, hashlib, secrets, socket, ssl, ipaddress, subprocess, shutil, time, threading
+import os, re, json, hmac, hashlib, secrets, socket, ssl, ipaddress, subprocess, shutil, time, threading, base64
 
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
@@ -29,7 +29,7 @@ from academy_questions import ACADEMY_LESSONS, ACADEMY_COURSES, get_course_for_l
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "CHANGE-ME-TO-A-LONG-RANDOM-SECRET")
-app.config["MAX_CONTENT_LENGTH"] = 6 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 30 * 1024 * 1024
 
 # Keep cookies out of reach of JavaScript, limit cross-site sending, and
 # mark them Secure over HTTPS. Render always serves the app over HTTPS, so
@@ -2303,6 +2303,18 @@ def ai_assistant():
     # cyber -> hard tutor-redirect, never search; site -> unchanged behaviour;
     # live -> Gemini google_search grounding.
     _live_guard = _main_live_guard(fallback_latest) if persona == "main" else None
+    _tutor_image_search = persona == "tutor" and _main_live_guard(fallback_latest) == "images"
+    _tutor_web_search = persona == "tutor" and any(term in (fallback_latest or "").lower() for term in (
+        "search the web", "search online", "find online", "latest", "current", "recent",
+        "official documentation", "sources", "look up", "research online"))
+    if _tutor_image_search:
+        try:
+            from cyberlord_ai import fetch_images as _tutor_fetch_images
+            _found_images = _tutor_fetch_images(fallback_latest, limit=4)
+            return jsonify(reply="Here are some relevant pictures I found for your lesson.", mode="images", persona=persona,
+                           images=_found_images, live_sources=["Wikimedia Commons"] if _found_images else [])
+        except Exception as _img_exc:
+            app.logger.warning("Tutor image search failed: %s", str(_img_exc)[:160])
     if persona == "main" and _live_guard == "cyber":
         return jsonify(reply="That is one for the tutor, head to the Academy tutor and they will walk you through it. The Academy covers Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, and Career Path & Certifications, so pick the course that matches your question and the tutor will help step by step.", mode="tutor-redirect", persona=persona, live_sources=[])
     if persona == "main":
@@ -2406,12 +2418,14 @@ def ai_assistant():
 
     # Keep a short, bounded history and accept only plain-text user/assistant turns.
     contents = []
+    _has_vision_input = False
     for item in messages[-12:]:
-        if not isinstance(item, dict) or not isinstance(item.get("content"), str):
+        if not isinstance(item, dict):
             continue
-        content = item["content"].strip()[:1800]
-        if not content:
+        content = item.get("content", "")
+        if not isinstance(content, str):
             continue
+        content = content.strip()[:1800]
         role = item.get("role")
         if role == "user":
             gemini_role = "user"
@@ -2419,11 +2433,27 @@ def ai_assistant():
             gemini_role = "model"
         else:
             continue
-        # Gemini expects alternating user/model turns. Drop duplicate consecutive roles.
-        if contents and contents[-1]["role"] == gemini_role:
+        parts = [{"text": content}] if content else []
+        attached_images = item.get("images", []) if isinstance(item.get("images"), list) else []
+        for image in attached_images[:4]:
+            if not isinstance(image, dict):
+                continue
+            mime = str(image.get("mime_type") or image.get("mimeType") or "")
+            data = str(image.get("data") or "")
+            if mime not in ("image/jpeg", "image/png", "image/webp") or not data or len(data) > 7_000_000:
+                continue
+            try:
+                base64.b64decode(data, validate=True)
+                parts.append({"inline_data": {"mime_type": mime, "data": data}})
+                _has_vision_input = True
+            except Exception:
+                continue
+        if not parts:
+            continue
+        if contents and contents[-1]["role"] == gemini_role and not attached_images:
             contents[-1]["parts"][0]["text"] += "\n\n" + content
         else:
-            contents.append({"role": gemini_role, "parts": [{"text": content}]})
+            contents.append({"role": gemini_role, "parts": parts})
     if not contents or contents[-1]["role"] != "user":
         return jsonify(error="Please enter a question."), 400
 
@@ -2483,7 +2513,7 @@ def ai_assistant():
             }
             # Gemini Google Search grounding for main persona live questions only.
             # Docs: REST generateContent uses tools=[{"google_search":{}}] (generateContent API). JS/Vertex uses googleSearch camelCase. Old code used googleSearch for weather/news, which the REST generateContent API rejects with 400, so grounded calls failed while plain calls (no tools) succeeded. Use google_search for all live guards. If a grounded request is rejected, retry once without tools before falling back to Groq/built-in, so chat still answers.
-            if _live_guard in ("live", "weather", "news"):
+            if _live_guard in ("live", "weather", "news") or _tutor_web_search:
                 payload["tools"] = [{"google_search": {}}]
             # Gemini can take longer than a short web-request timeout and may
             # return temporary 429/5xx capacity errors. Retry only transient
@@ -2531,7 +2561,7 @@ def ai_assistant():
                         _images.append({"url": _u, "thumb": _u, "title": (_ch.get("web") or {}).get("title", "")})
             except Exception:
                 pass
-            _ls = ["Google Search grounding"] if _live_guard in ("live", "weather", "news") else "Gemini response; verify important security findings against primary sources"
+            _ls = ["Google Search grounding"] if (_live_guard in ("live", "weather", "news") or _tutor_web_search) else "Gemini response; verify important security findings against primary sources"
             return jsonify(reply=reply, mode="gemini", model=model, persona=persona, live_sources=_ls, images=_images[:4])
         except Exception as exc:
             # If grounding was attached and the API rejected it, retry once plain (no tools) so only the search fails, not the whole chat.
@@ -2550,6 +2580,9 @@ def ai_assistant():
                 except Exception:
                     pass
             app.logger.warning("Gemini API unavailable; trying next provider: %s", str(exc)[:240])
+
+    if _has_vision_input:
+        return jsonify(error="Image understanding requires Gemini vision. Add GEMINI_API_KEY in Render Environment and try again."), 503
 
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
     groq_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b").strip() or "openai/gpt-oss-20b"
@@ -2720,6 +2753,55 @@ def _consume_messaging_link_code(channel, external_id, code):
 _MESSAGING_HISTORY_LOCK = threading.Lock()
 
 
+@app.route("/api/ai-image", methods=["POST"])
+@login_required
+def ai_image_generate():
+    body = request.get_json(silent=True) or {}
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt or len(prompt) > 1800:
+        return jsonify(error="Enter an image description (up to 1,800 characters)."), 400
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return jsonify(error="Image generation is not configured. Add GEMINI_API_KEY in Render Environment."), 503
+    model = os.getenv("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image").strip()
+    parts = [{"text": "Create the requested image. If reference images are attached, edit or use them as instructed. Prompt: " + prompt}]
+    for image in (body.get("images") or [])[:2]:
+        if not isinstance(image, dict):
+            continue
+        mime, data = str(image.get("mime_type") or ""), str(image.get("data") or "")
+        if mime not in ("image/jpeg", "image/png", "image/webp") or not data or len(data) > 7_000_000:
+            continue
+        try:
+            base64.b64decode(data, validate=True)
+            parts.append({"inline_data": {"mime_type": mime, "data": data}})
+        except Exception:
+            continue
+    try:
+        response = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            json={"contents": [{"role": "user", "parts": parts}],
+                  "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}},
+            timeout=(10, 120))
+        response.raise_for_status()
+        candidates = response.json().get("candidates") or []
+        out_text, out_images = [], []
+        for part in ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []:
+            if part.get("text"):
+                out_text.append(part["text"])
+            inline = part.get("inlineData") or part.get("inline_data") or {}
+            if inline.get("data"):
+                mime = inline.get("mimeType") or inline.get("mime_type") or "image/png"
+                if mime in ("image/png", "image/jpeg", "image/webp"):
+                    out_images.append({"mime_type": mime, "data": inline["data"]})
+        if not out_images:
+            return jsonify(error="The image provider did not return an image. Check the image model or try another prompt."), 502
+        return jsonify(ok=True, text="\n".join(out_text).strip() or "Your image is ready.", images=out_images)
+    except requests.RequestException as exc:
+        app.logger.warning("Gemini image generation failed: %s", str(exc)[:220])
+        return jsonify(error="Image generation is temporarily unavailable. Check Gemini image model access in Render."), 502
+
+
 def _messaging_state(channel, external_id):
     row = MessagingState.query.filter_by(channel=channel, external_id=str(external_id)).first()
     if not row:
@@ -2746,9 +2828,20 @@ def _messaging_is_duplicate(channel, message_id):
         return True
 
 
-def _run_messaging_ai(channel, external_id, text, persona, user_id=None):
-    row, history = _messaging_state(channel, external_id)
-    messages = history + [{"role": "user", "content": text}]
+def _run_messaging_ai(channel, external_id, text, persona, user_id=None, images=None):
+    # Linked channels share one account-level history per persona. Unlinked
+    # chats remain isolated to their provider chat ID.
+    if user_id is not None:
+        history_channel = "account"
+        history_external_id = "%s:%s" % (user_id, persona or "main")
+    else:
+        history_channel = channel
+        history_external_id = external_id
+    row, history = _messaging_state(history_channel, history_external_id)
+    user_item = {"role": "user", "content": text}
+    if images:
+        user_item["images"] = images[:2]
+    messages = history + [user_item]
     payload = {"messages": messages[-12:], "persona": persona}
     if persona == "tutor" and not user_id:
         return "To use the Academy Tutor here, first sign in to CyberLord and link this chat. Visit Account → Messaging on the website, generate a one-time code, then send /link followed by that code here.", history
@@ -2764,7 +2857,8 @@ def _run_messaging_ai(channel, external_id, text, persona, user_id=None):
     if not result or not result.get("reply"):
         return (result or {}).get("error", "CyberLord AI is temporarily unavailable."), history
     updated = (messages + [{"role": "assistant", "content": str(result["reply"])}])[-12:]
-    row.history_json = json.dumps(updated)
+    persisted = [{k: v for k, v in item.items() if k != "images"} for item in updated]
+    row.history_json = json.dumps(persisted)
     row.updated_at = datetime.utcnow()
     db.session.commit()
     return str(result["reply"]), updated
@@ -2823,7 +2917,14 @@ def _handle_messaging_text(channel, external_id, event_id, text_in):
     if low in ("/start", "/help", "help"):
         return _messaging_command(clean, persona)[1]
     if low == "/reset":
-        row.history_json = "[]"; db.session.commit()
+        row.history_json = "[]"
+        if linked:
+            shared = MessagingState.query.filter_by(
+                channel="account", external_id="%s:%s" % (linked.user_id, persona or "main")
+            ).first()
+            if shared:
+                shared.history_json = "[]"
+        db.session.commit()
         return _messaging_command(clean, persona)[1]
     if persona == "tutor" and not linked:
         return "Tutor access requires a linked CyberLord account. Sign in at cyberlord.name.ng, open Account → Messaging, generate a code, then send /link 12345678 here."
@@ -2867,6 +2968,176 @@ def _send_whatsapp_message(to, text):
         return False
 
 
+def _generate_image_result(prompt, reference_images=None):
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return None, "Image generation requires GEMINI_API_KEY in Render Environment."
+    model = os.getenv("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image").strip()
+    parts = [{"text": "Generate or edit the image as requested. Prompt: " + str(prompt)[:1800]}]
+    for image in (reference_images or [])[:2]:
+        if isinstance(image, dict) and image.get("mime_type") in ("image/jpeg", "image/png", "image/webp"):
+            parts.append({"inline_data": {"mime_type": image["mime_type"], "data": image["data"]}})
+    try:
+        response = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            json={"contents": [{"role": "user", "parts": parts}],
+                  "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}},
+            timeout=(10, 120))
+        response.raise_for_status()
+        candidates = response.json().get("candidates") or []
+        text_parts, images = [], []
+        for part in ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []:
+            if part.get("text"): text_parts.append(part["text"])
+            inline = part.get("inlineData") or part.get("inline_data") or {}
+            if inline.get("data"):
+                mime = inline.get("mimeType") or inline.get("mime_type") or "image/png"
+                if mime in ("image/png", "image/jpeg", "image/webp"):
+                    images.append({"mime_type": mime, "data": inline["data"]})
+        return (images, "\\n".join(text_parts).strip() or "Your image is ready.") if images else (None, "The image model did not return an image.")
+    except Exception as exc:
+        app.logger.warning("Messaging image generation failed: %s", str(exc)[:180])
+        return None, "Image generation is temporarily unavailable. Please try again later."
+
+
+def _send_telegram_photo(chat_id, image, caption="Generated by CyberLord"):
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    try:
+        raw = base64.b64decode(image["data"])
+        response = requests.post(f"https://api.telegram.org/bot{token}/sendPhoto",
+            data={"chat_id": chat_id, "caption": caption[:900]},
+            files={"photo": ("cyberlord-image.png", raw, image.get("mime_type", "image/png"))}, timeout=45)
+        response.raise_for_status()
+        return True
+    except Exception as exc:
+        app.logger.warning("Telegram image send failed: %s", str(exc)[:160])
+        return False
+
+
+def _send_whatsapp_photo(to, image, caption="Generated by CyberLord"):
+    token = os.getenv("WHATSAPP_ACCESS_TOKEN", "").strip()
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+    version = os.getenv("WHATSAPP_API_VERSION", "v26.0").strip()
+    if not token or not phone_id: return False
+    try:
+        raw = base64.b64decode(image["data"])
+        upload = requests.post(f"https://graph.facebook.com/{version}/{phone_id}/media",
+            headers={"Authorization": "Bearer " + token},
+            data={"messaging_product": "whatsapp", "type": image.get("mime_type", "image/png")},
+            files={"file": ("cyberlord-image.png", raw, image.get("mime_type", "image/png"))}, timeout=45)
+        upload.raise_for_status()
+        media_id = upload.json().get("id")
+        if not media_id: return False
+        sent = requests.post(f"https://graph.facebook.com/{version}/{phone_id}/messages",
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+            json={"messaging_product":"whatsapp","to":str(to),"type":"image",
+                  "image":{"id":media_id,"caption":caption[:900]}}, timeout=20)
+        sent.raise_for_status()
+        return True
+    except Exception as exc:
+        app.logger.warning("WhatsApp image send failed: %s", str(exc)[:160])
+        return False
+
+
+def _image_generation_prompt(text):
+    clean = (text or "").strip()
+    match = re.match(r"(?is)^\s*(?:/image\s+|generate\s+(?:me\s+)?(?:an?\s+)?(?:image|picture)(?:\s+of)?\s+|create\s+(?:me\s+)?(?:an?\s+)?(?:image|picture)(?:\s+of)?\s+)(.+)$", clean)
+    return match.group(1).strip() if match else None
+
+
+def _process_messaging_event(channel, external_id, event_id, text_in="", images=None):
+    """Provider-neutral CyberLord message processor.
+
+    Platform webhooks should normalize provider payloads and call this function.
+    It owns de-duplication, persona/account routing, vision analysis and image
+    generation; provider adapters are responsible only for authentication,
+    downloading media and delivering the returned result.
+
+    Returns a dictionary with: duplicate, text, images, and generated.
+    Images use {mime_type, data} with base64-encoded bytes.
+    """
+    channel = re.sub(r"[^a-z0-9_-]", "", str(channel or "").lower())[:16]
+    external_id = str(external_id or "")[:180]
+    event_id = str(event_id or "")[:180]
+    clean = str(text_in or "").strip()[:1800]
+    attached = [img for img in (images or [])[:4]
+                if isinstance(img, dict)
+                and img.get("mime_type") in ("image/jpeg", "image/png", "image/webp")
+                and isinstance(img.get("data"), str)
+                and len(img.get("data", "")) <= 7_000_000]
+    if not channel or not external_id or not event_id:
+        return {"duplicate": False, "text": "This message could not be processed.", "images": [], "generated": False}
+    generation_prompt = _image_generation_prompt(clean)
+    if generation_prompt or attached:
+        if _messaging_is_duplicate(channel, event_id):
+            return {"duplicate": True, "text": None, "images": [], "generated": False}
+
+    if generation_prompt:
+        generated, note = _generate_image_result(generation_prompt, attached)
+        return {"duplicate": False, "text": note, "images": generated or [], "generated": bool(generated)}
+
+    if attached:
+        row, _history = _messaging_state(channel, external_id)
+        linked = _messaging_account(channel, external_id)
+        question = clean or "Please analyse this picture and explain what you can see."
+        reply, _ = _run_messaging_ai(channel, external_id, question, row.persona,
+                                    linked.user_id if linked else None, attached)
+        return {"duplicate": False, "text": reply, "images": [], "generated": False}
+
+    reply = _handle_messaging_text(channel, external_id, event_id, clean)
+    return {"duplicate": reply is None, "text": reply, "images": [], "generated": False}
+
+
+def _deliver_messaging_result(result, send_text, send_image):
+    """Deliver a provider-neutral result through provider-specific callbacks."""
+    if not isinstance(result, dict) or result.get("duplicate"):
+        return False
+    delivered = False
+    if result.get("text"):
+        delivered = bool(send_text(result["text"])) or delivered
+    for generated_image in result.get("images") or []:
+        delivered = bool(send_image(generated_image, result.get("text") or "Generated by CyberLord")) or delivered
+    return delivered
+
+
+def _telegram_download_image(file_id):
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token or not file_id:
+        return None
+    try:
+        meta = requests.get(f"https://api.telegram.org/bot{token}/getFile", params={"file_id": file_id}, timeout=12)
+        meta.raise_for_status()
+        path = (meta.json().get("result") or {}).get("file_path")
+        if not path: return None
+        media = requests.get(f"https://api.telegram.org/file/bot{token}/{path}", timeout=20)
+        media.raise_for_status()
+        mime = media.headers.get("Content-Type", "image/jpeg").split(";")[0].lower()
+        if mime not in ("image/jpeg", "image/png", "image/webp") or len(media.content) > 5 * 1024 * 1024: return None
+        return {"mime_type": mime, "data": base64.b64encode(media.content).decode("ascii")}
+    except Exception as exc:
+        app.logger.warning("Telegram image download failed: %s", str(exc)[:160])
+        return None
+
+
+def _whatsapp_download_image(media_id):
+    token = os.getenv("WHATSAPP_ACCESS_TOKEN", "").strip()
+    version = os.getenv("WHATSAPP_API_VERSION", "v26.0").strip()
+    if not token or not media_id: return None
+    try:
+        meta = requests.get(f"https://graph.facebook.com/{version}/{media_id}", headers={"Authorization": "Bearer " + token}, timeout=12)
+        meta.raise_for_status()
+        media_url = meta.json().get("url")
+        if not media_url: return None
+        media = requests.get(media_url, headers={"Authorization": "Bearer " + token}, timeout=20)
+        media.raise_for_status()
+        mime = media.headers.get("Content-Type", "image/jpeg").split(";")[0].lower()
+        if mime not in ("image/jpeg", "image/png", "image/webp") or len(media.content) > 5 * 1024 * 1024: return None
+        return {"mime_type": mime, "data": base64.b64encode(media.content).decode("ascii")}
+    except Exception as exc:
+        app.logger.warning("WhatsApp image download failed: %s", str(exc)[:160])
+        return None
+
+
 @app.route("/webhooks/telegram", methods=["POST"])
 def telegram_webhook():
     expected = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
@@ -2877,12 +3148,21 @@ def telegram_webhook():
     message = update.get("message") or update.get("edited_message") or {}
     chat = message.get("chat") or {}
     chat_id = chat.get("id")
-    text_in = message.get("text")
-    if not chat_id or not isinstance(text_in, str) or not text_in.strip():
+    text_in = message.get("text") or message.get("caption") or ""
+    photos = message.get("photo") or []
+    if not chat_id:
         return jsonify(ok=True, ignored=True)
-    reply = _handle_messaging_text("telegram", chat_id, str(chat_id) + ":" + str(message.get("message_id")), text_in)
-    if reply is None: return jsonify(ok=True, duplicate=True)
-    _send_telegram_message(chat_id, reply)
+    image = None
+    if photos:
+        image = _telegram_download_image(photos[-1].get("file_id"))
+        if not image:
+            _send_telegram_message(chat_id, "I couldn't read that image. Please send a JPG, PNG or WEBP image under 5 MB.")
+            return jsonify(ok=True)
+    event_id = str(chat_id) + ":" + str(message.get("message_id"))
+    result = _process_messaging_event("telegram", chat_id, event_id, text_in, [image] if image else None)
+    _deliver_messaging_result(result,
+        lambda text: _send_telegram_message(chat_id, text),
+        lambda img, caption: _send_telegram_photo(chat_id, img, caption))
     return jsonify(ok=True)
 
 
@@ -2909,10 +3189,25 @@ def whatsapp_webhook():
             value = change.get("value") or {}
             for message in value.get("messages", []):
                 sender = message.get("from")
-                text_in = ((message.get("text") or {}).get("body") or "")
-                if not sender or not text_in.strip() or message.get("type") != "text": continue
-                reply = _handle_messaging_text("whatsapp", sender, message.get("id"), text_in)
-                if reply is not None: _send_whatsapp_message(sender, reply)
+                msg_type = message.get("type")
+                text_in = ((message.get("text") or {}).get("body") or
+                           (message.get("image") or {}).get("caption") or "")
+                if not sender:
+                    continue
+                if msg_type == "image":
+                    image = _whatsapp_download_image((message.get("image") or {}).get("id"))
+                    if not image:
+                        _send_whatsapp_message(sender, "I couldn't read that image. Please send a JPG, PNG or WEBP image under 5 MB.")
+                        continue
+                    result = _process_messaging_event("whatsapp", sender, message.get("id"), text_in, [image])
+                    _deliver_messaging_result(result,
+                        lambda text: _send_whatsapp_message(sender, text),
+                        lambda img, caption: _send_whatsapp_photo(sender, img, caption))
+                elif msg_type == "text" and text_in.strip():
+                    result = _process_messaging_event("whatsapp", sender, message.get("id"), text_in)
+                    _deliver_messaging_result(result,
+                        lambda text: _send_whatsapp_message(sender, text),
+                        lambda img, caption: _send_whatsapp_photo(sender, img, caption))
     return jsonify(ok=True)
 
 

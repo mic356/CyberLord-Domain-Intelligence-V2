@@ -75,3 +75,23 @@ The OPay and Union Bank payment forms accept an optional JPG, PNG, WEBP or PDF r
 The WhatsApp Cloud API webhook is available at `https://cyberlord.name.ng/webhooks/whatsapp`. Configure the Meta app's webhook subscription for the `messages` field and set these Render environment variables: `WHATSAPP_VERIFY_TOKEN` (a random value you choose), `WHATSAPP_APP_SECRET` (Meta app secret, used to validate `X-Hub-Signature-256`), `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, and optionally `WHATSAPP_API_VERSION` (defaults to `v26.0`). The webhook rejects POST requests if `WHATSAPP_APP_SECRET` is absent. WhatsApp will not work until a Meta WhatsApp Business Cloud API number and credentials are configured and Meta verifies the callback.
 
 Keep all bot tokens and app secrets in Render Environment. Never put them in source code or share them in chat.
+
+
+## Incoming images and generated images
+
+Telegram and WhatsApp image messages are downloaded from the official platform
+media APIs and passed to the shared Gemini-powered AI. Supported image formats
+are JPG/JPEG, PNG and WEBP, up to 5 MB. A caption is used as the image question;
+without a caption, CyberLord asks the AI to analyse the picture. The bot can
+generate an image when the user sends `/image <description>`, `generate an
+image of <description>`, or `create an image of <description>`. To edit a
+reference picture, send it with one of those generation prompts as its caption.
+
+This requires `GEMINI_API_KEY` and `GEMINI_IMAGE_MODEL` (default
+`gemini-3.1-flash-image`) in addition to the channel credentials above. Generated
+images are sent back as actual media. Provider limits and charges apply.
+
+
+## Platform-neutral image and AI routing (updated)
+
+Telegram and WhatsApp now use the same provider-neutral event processor in `app.py` (`_process_messaging_event`) and the same delivery contract (`_deliver_messaging_result`). Linked Telegram and WhatsApp chats share history by website account and persona; Dashboard AI and Tutor histories remain separate. Future providers can use the same processor after a provider-specific authenticated webhook/media adapter is added. See `CHANNEL_ADAPTER_GUIDE.md`. A future provider is not active until its adapter, credentials, webhook and tests are configured.

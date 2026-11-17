@@ -89,3 +89,39 @@ a child process (`python -I -c`) with:
 
 This is an educational sandbox for practice, not a security boundary for
 untrusted code. Keep snippets small and keep the timeouts.
+
+
+## Image understanding, generation and web pictures
+
+The Dashboard AI, full-page Academy Tutor and lesson tutor panels now accept JPG,
+PNG and WEBP uploads (up to 5 MB per image, up to four images per message).
+When Gemini is configured, the images are sent to Gemini's multimodal model for
+visual analysis and OCR-style reading. Image bytes are processed for the request
+and are not written into the messaging conversation-history table.
+
+Image generation and reference-image editing use Gemini's image model:
+- `GEMINI_IMAGE_MODEL` (default: `gemini-3.1-flash-image`)
+- `GEMINI_API_KEY` (required)
+
+The 🎨 Create button generates a real image from the prompt in the chat input.
+Attach a reference image first to request an edit. Generated images are returned
+to the chat as image data; they are not stored permanently by this feature.
+
+The Dashboard AI and Tutor can also retrieve relevant public pictures through
+the existing Wikimedia Commons image lookup. The Tutor can use Google Search
+grounding when a learner asks for current information, official documentation,
+or online research.
+
+### Messaging image support
+
+Telegram and WhatsApp Cloud API webhook adapters can accept image messages,
+download supported media from the platform, and pass it to the same Gemini
+vision-capable AI endpoint. A message beginning with `/image`, `generate an
+image of`, or `create an image of` requests image generation; an attached image
+can be included as a reference for editing. Generated pictures are sent back
+using Telegram `sendPhoto` or WhatsApp Cloud API media upload/send.
+
+These features require a working Gemini API key with access to the configured
+vision/image models. Image generation and vision calls consume provider quota
+and may incur charges according to the current Google AI account terms. No
+provider key is exposed to browser JavaScript.
