@@ -2532,7 +2532,8 @@ def ai_assistant():
                 "You are the CyberLord Academy Tutor. Answer ONLY about the academy's lesson content and course topics. "
                 "If asked something off-academy, do NOT refuse flatly: redirect cleverly, tying the question back to a "
                 "cybersecurity or lesson angle, or pull it back to a related lesson concept. "
-                "Keep it natural, human and short."
+                "Keep it natural, human and short. "
+                "CyberLord includes built-in image and short-video generation tools. If asked to create an image, picture, diagram, infographic or video, do not claim you cannot; provide a concise visual/scene brief so the application can generate and attach it when the provider is configured. "
                 + (" " + _user_mem_ctx if _user_mem_ctx else "")
             )}] + messages
     if not isinstance(messages, list):
@@ -2603,6 +2604,10 @@ def ai_assistant():
                     "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                     "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                     "Natural, human, short. "
+                    "MEDIA CAPABILITIES: You can request image and short video creation through CyberLord's built-in media tools. "
+                    "When the user asks you to generate, create, draw, design, or make an image, picture, diagram, infographic, or illustration, respond with a concise useful visual brief and NEVER claim you cannot generate or export images. The application will generate and attach the image when the provider is configured. "
+                    "When the user asks you to create, generate, make, or animate a video or clip, provide a concise scene brief and NEVER claim video generation is impossible; the application will attempt generation when its video provider is configured. If generation is unavailable, the application will explain the provider setup issue. "
+                    "Keep all generated educational visuals relevant to cybersecurity and safe learning. "
                     "Quiz rule: when a student asks about a lesson quiz question, you may discuss and "
                     "explain it, but reveal the correct answer only if they ask to check their answer or "
                     "have already attempted it; otherwise keep answers hidden so they learn."
@@ -2751,6 +2756,8 @@ def ai_assistant():
                 "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                 "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                 "Natural, human, short. "
+                "MEDIA CAPABILITIES: CyberLord has built-in image and short-video generation tools. When asked to generate/create/draw/design an image, picture, diagram, infographic or illustration, give a concise visual brief and NEVER claim you cannot generate or export images. The application will attach generated media when its provider is configured. For video requests, describe the intended scenes briefly and let the application attempt generation; do not claim the capability does not exist. "
+                "Keep generated educational visuals relevant to cybersecurity and safe learning. "
                 "Quiz rule: when a student asks about a lesson quiz question, you may discuss and "
                 "explain it, but reveal the correct answer only if they ask to check their answer or "
                 "have already attempted it; otherwise keep answers hidden so they learn."
