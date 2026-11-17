@@ -95,3 +95,30 @@ images are sent back as actual media. Provider limits and charges apply.
 ## Platform-neutral image and AI routing (updated)
 
 Telegram and WhatsApp now use the same provider-neutral event processor in `app.py` (`_process_messaging_event`) and the same delivery contract (`_deliver_messaging_result`). Linked Telegram and WhatsApp chats share history by website account and persona; Dashboard AI and Tutor histories remain separate. Future providers can use the same processor after a provider-specific authenticated webhook/media adapter is added. See `CHANNEL_ADAPTER_GUIDE.md`. A future provider is not active until its adapter, credentials, webhook and tests are configured.
+
+
+## Image generation and Tutor image route (shared engine)
+
+Dashboard AI uses `/api/ai-image`; the full-page Tutor and Academy lesson Tutor use
+`/api/tutor-image`. Both authenticated website routes call the same `_generate_image_result`
+Gemini image pipeline. WhatsApp and Telegram call that same helper through
+`_process_messaging_event`, then send the generated image as native media. The Tutor
+route is not a separate model and does not change the Tutor's lesson-only persona.
+
+For image generation in messaging chats, send `/image <description>`, or start with
+`generate`, `create`, `draw`, `make`, or `design` followed by image, picture,
+illustration, logo, poster, or artwork. Attach a reference image and include the
+instruction in its caption to request an edit.
+
+For later providers, configure `CYBERLORD_CHANNEL_WEBHOOK_SECRET` and follow
+`CHANNEL_ADAPTER_GUIDE.md` for the signed `POST /api/channel/message` contract.
+
+
+## Natural image requests and multiple outputs
+
+WhatsApp and Telegram users no longer need `/image` for ordinary image requests. They can ask in natural language for a picture, diagram, infographic, logo, or multiple variations. When an image is requested, CyberLord first creates its AI answer and then uses that answer as source material for the generated image(s). Up to four images are generated per message. The separate Create/Edit button has been removed from the website chat composers; users use the normal message box and attachment button.
+
+
+## Generated files and videos in messaging channels
+
+The shared AI response can also return generated document files and short MP4 videos. Telegram delivers files with `sendDocument` and videos with `sendVideo`; WhatsApp uploads the media first and then sends it as a document or video message. Provider file-size limits, supported MIME types, account permissions and messaging-window rules still apply. Video generation requires the optional Google Cloud Vertex AI credentials described in `AI_SETUP.md`.

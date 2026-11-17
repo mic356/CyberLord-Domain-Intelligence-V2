@@ -39,6 +39,13 @@ def run():
         ok_again, _ = m._consume_messaging_link_code("telegram", "another-chat", code)
         assert not ok_again, "link code must be single use"
 
+        # All common image-generation command forms are normalized for every messaging adapter.
+        assert m._image_generation_prompt("/image a blue cyber shield") == "a blue cyber shield"
+        assert m._image_generation_prompt("generate an image of a laptop") == "a laptop"
+        assert m._image_generation_prompt("create a logo for CyberLord") == "CyberLord"
+        assert m._image_generation_prompt("draw an illustration of a secure network") == "a secure network"
+        assert m._image_generation_prompt("edit this image to use a dark background") == "use a dark background"
+
         # Persona, history and duplicate delivery records persist in SQL.
         state, history = m._messaging_state("telegram", "telegram-chat-991")
         state.persona = "tutor"

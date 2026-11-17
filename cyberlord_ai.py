@@ -580,6 +580,28 @@ def fetch_images(query, limit=4):
             out.append({"url": pg.get("fullurl", thumb), "thumb": thumb, "title": pg.get("title", subject)})
             if len(out) >= limit:
                 break
+        if len(out) >= limit:
+            return out[:limit]
+        # Broaden the search to Openverse when Wikipedia page thumbnails do not
+        # cover the requested subject. Results link to the original source.
+        try:
+            ov = requests.get("https://api.openverse.org/v1/images/",
+                params={"q": subject, "page_size": min(20, max(4, limit * 3)), "license_type": "all"},
+                timeout=10, headers={"User-Agent": "CyberLord-Assistant/1.0"})
+            if ov.ok:
+                results = (ov.json().get("results") or [])
+                for item in results:
+                    image_url = item.get("url") or item.get("thumbnail")
+                    thumb_url = item.get("thumbnail") or image_url
+                    if not image_url or not thumb_url or not str(image_url).startswith("http"):
+                        continue
+                    out.append({"url": item.get("foreign_landing_url") or image_url, "thumb": thumb_url,
+                        "title": item.get("title") or subject,
+                        "source": item.get("foreign_landing_url") or item.get("provider") or "Openverse",
+                        "license": item.get("license") or ""})
+                    if len(out) >= limit: break
+        except Exception:
+            pass
         return out[:limit]
     except Exception:
         return []

@@ -103,14 +103,15 @@ Image generation and reference-image editing use Gemini's image model:
 - `GEMINI_IMAGE_MODEL` (default: `gemini-3.1-flash-image`)
 - `GEMINI_API_KEY` (required)
 
-The 🎨 Create button generates a real image from the prompt in the chat input.
-Attach a reference image first to request an edit. Generated images are returned
-to the chat as image data; they are not stored permanently by this feature.
+Users request images and edits naturally in the normal chat input; there is no
+separate Generate/Edit button. Generated images are returned to the chat as image
+data and are not stored permanently by this feature.
 
-The Dashboard AI and Tutor can also retrieve relevant public pictures through
-the existing Wikimedia Commons image lookup. The Tutor can use Google Search
-grounding when a learner asks for current information, official documentation,
-or online research.
+The Dashboard AI and Tutor retrieve public pictures through Wikimedia and
+Openverse search. Search results can have different licenses and source terms;
+check the linked source before reusing an image commercially. The Tutor can use
+Google Search grounding when a learner asks for current information, official
+documentation, or online research.
 
 ### Messaging image support
 
@@ -125,3 +126,33 @@ These features require a working Gemini API key with access to the configured
 vision/image models. Image generation and vision calls consume provider quota
 and may incur charges according to the current Google AI account terms. No
 provider key is exposed to browser JavaScript.
+
+
+## Natural image creation from AI answers (latest update)
+
+The Dashboard AI, full-page Tutor, lesson Tutor, WhatsApp and Telegram no longer require a separate Create/Edit button. Users can ask naturally for an image, diagram, infographic or visual in the same message box. The assistant answers first, then the image-generation step uses the actual AI answer as source material for the requested visual. Requests for multiple images/variations are supported up to four images per message to control provider quota. A picture attachment is still analysed normally; it is used as an edit reference only when the user explicitly asks to change or transform it.
+
+Examples: “Explain the TCP handshake with a diagram”, “Turn your explanation into an infographic”, “Create four different logo concepts based on your answer”. Image generation still requires `GEMINI_API_KEY` and an enabled Gemini image model.
+
+
+## Smart media creation: images, videos and files
+
+CyberLord now routes ordinary natural-language requests through the same AI answer and then creates the requested media from that answer:
+
+- **Find images:** the assistant searches Wikipedia/Wikimedia thumbnails first and broadens to Openverse results when needed. The result cards link to the source; availability and reuse rights depend on each source's license.
+- **Create/edit images:** Gemini image generation is used for original images and edits. Requests for multiple variations are supported, with a per-message cap of four images.
+- **Create files:** the assistant can make downloadable PDF, Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`), CSV, Markdown and text files from its answer.
+- **Create videos:** short video generation uses Gemini Omni on Google Cloud Vertex AI. This is optional and requires a Google Cloud project with the Vertex AI API enabled, billing enabled, and a service account granted the **Vertex AI User** role.
+
+### Video generation environment variables
+
+Add these in Render → your service → Environment. Do not put service-account JSON in GitHub or in chat.
+
+- `GOOGLE_CLOUD_PROJECT` — your Google Cloud project ID.
+- `GOOGLE_APPLICATION_CREDENTIALS_JSON` — the complete service-account JSON key, stored as a secret environment variable.
+- `GEMINI_VIDEO_MODEL` — optional; defaults to `gemini-omni-1.2-flash`.
+- `GEMINI_VIDEO_DURATION_SECONDS` — optional; defaults to 5 seconds and is capped to 3–15 seconds.
+
+The implementation requests a 720p, 16:9 MP4. Video generation can take several minutes and may incur Google Cloud charges. Model access, regional availability, quotas, safety rules and billing still apply. Without the Google Cloud variables, CyberLord will answer normally and explain that video generation is not configured; it will not pretend a video was created.
+
+Document formats use the Python packages listed in `requirements.txt`. Redeploy after updating dependencies. Large video/file payloads can increase response size and request duration.
