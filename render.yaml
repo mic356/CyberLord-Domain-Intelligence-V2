@@ -15,6 +15,14 @@ services:
         sync: false
       - key: PAYSTACK_ENABLED
         value: "false"
+      - key: SQUAD_ENABLED
+        value: "false"
+      - key: SQUAD_ENV
+        value: sandbox
+      - key: SQUAD_SECRET_KEY
+        sync: false
+      - key: SQUAD_PUBLIC_KEY
+        sync: false
       - key: PAYMENT_ADMIN_TOKEN
         sync: false
       - key: TRONGRID_API_KEY
