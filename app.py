@@ -1836,17 +1836,44 @@ def squad_api_base():
 
 
 def squad_request(method, path, **kwargs):
+    """Call Squad without ever logging the merchant secret."""
     secret = os.getenv("SQUAD_SECRET_KEY", "").strip()
     if not secret:
-        raise RuntimeError("Squad is not configured. Add SQUAD_SECRET_KEY to the server environment.")
+        raise RuntimeError("Squad is not configured: SQUAD_SECRET_KEY is missing or empty.")
     headers = kwargs.pop("headers", {})
     headers.update({"Authorization": "Bearer " + secret, "Content-Type": "application/json"})
-    response = requests.request(method, squad_api_base() + path, headers=headers, timeout=20, **kwargs)
-    response.raise_for_status()
-    payload = response.json()
-    if not payload.get("success"):
-        raise RuntimeError(payload.get("message", "Squad request was not successful"))
-    return payload.get("data") or {}
+    url = squad_api_base() + path
+    try:
+        response = requests.request(method, url, headers=headers, timeout=30, **kwargs)
+    except requests.RequestException as exc:
+        app.logger.error("SQUAD_API_CONNECTION_ERROR method=%s path=%s error=%s", method, path, str(exc)[:500])
+        raise RuntimeError("Could not connect to Squad. Check Render outbound connectivity and try again.") from exc
+
+    if not response.ok:
+        # Squad's response body is useful for diagnosing 400/401 errors.
+        # It is truncated and the Authorization header is never logged.
+        body = (response.text or "")[:1200]
+        app.logger.error("SQUAD_API_HTTP_ERROR method=%s path=%s status=%s response=%s",
+                         method, path, response.status_code, body)
+        raise RuntimeError("Squad API returned HTTP %s: %s" %
+                           (response.status_code, body[:400] or "empty response"))
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        app.logger.error("SQUAD_API_INVALID_JSON path=%s status=%s body=%s",
+                         path, response.status_code, (response.text or "")[:500])
+        raise RuntimeError("Squad returned an unreadable response.") from exc
+
+    if payload.get("success") is False:
+        message = str(payload.get("message") or payload.get("error") or "Squad rejected the request")
+        app.logger.error("SQUAD_API_REJECTED path=%s message=%s", path, message[:800])
+        raise RuntimeError("Squad rejected the request: " + message[:400])
+
+    data = payload.get("data")
+    if isinstance(data, dict) and isinstance(data.get("data"), dict):
+        data = data["data"]
+    return data if isinstance(data, dict) else payload
 
 
 def squad_verify(reference, payment):
@@ -1892,15 +1919,22 @@ def payment_squad_initialize():
             "pass_charge": False,
             "metadata": {"user_id": current_user.id, "plan": plan}
         })
-        checkout_url = data.get("checkout_url") or data.get("payment_url") or data.get("authorization_url")
-        if not checkout_url or not checkout_url.startswith("https://"):
-            raise RuntimeError("Squad did not return a valid checkout URL.")
+        checkout_url = (
+            data.get("checkout_url") or data.get("payment_url") or
+            data.get("authorization_url") or data.get("checkoutUrl") or data.get("url")
+        )
+        if not isinstance(checkout_url, str) or not checkout_url.startswith("https://"):
+            app.logger.error("SQUAD_INIT_NO_CHECKOUT_URL reference=%s response_keys=%s",
+                             reference, sorted(data.keys()) if isinstance(data, dict) else type(data).__name__)
+            raise RuntimeError("Squad response did not contain a valid HTTPS checkout URL.")
+        app.logger.info("SQUAD_INIT_SUCCESS reference=%s plan=%s", reference, plan)
         return redirect(checkout_url, code=303)
-    except Exception:
+    except Exception as exc:
         payment.status = "failed"
         db.session.commit()
-        app.logger.exception("Squad checkout initialization failed")
-        flash("Could not start Squad checkout. Please try again later.", "error")
+        app.logger.exception("SQUAD_INIT_FAILED reference=%s plan=%s error=%s",
+                             reference, plan, str(exc)[:500])
+        flash("Squad checkout could not start: " + str(exc)[:250], "error")
         return redirect(url_for("dashboard") + "#plans")
 
 
