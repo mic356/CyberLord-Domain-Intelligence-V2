@@ -4,15 +4,15 @@ CyberLord was created by **Ogbonna Michael Chinedu** in a research lab.
 
 # CyberLord Domain Intelligence — Advanced Starter
 
-A Flask application with account registration/login, password reset, scan history, tier-based tool access, Squad payment gateway integration and 30-day subscriptions.
+A Flask application with account registration/login, password reset, scan history, tier-based tool access, blockchain payment verification and 30-day subscriptions.
 
 ## Customer care
 For account, subscription or payment assistance, contact [CyberLord Customer Care](mailto:michaelelvistito@gmail.com). Include your registered account email and payment reference; never send passwords, private keys or wallet recovery phrases.
 
 ## Plans
 - FREE: domain scan, subdomain intelligence, email DNS, DNS intelligence, technology fingerprint and IP intelligence.
-- PRO — ₦6,300: adds Phone Intelligence, Individual Email Review and Breach Exposure; 30 days.
-- PRO PLUS — ₦12,600: adds Attack Surface Map, CVE Intelligence, Compare Domains and Limited Port Scanner; 30 days.
+- PRO — ₦6,300 or 4.50 USDT: adds Phone Intelligence, Individual Email Review and Breach Exposure; 30 days.
+- PRO PLUS — ₦12,600 or 9.00 USDT: adds Attack Surface Map, CVE Intelligence, Compare Domains and Limited Port Scanner; 30 days.
 
 ## Local setup
 1. Install Python 3.11+.
@@ -30,25 +30,18 @@ Lesson content and exercise questions live in `academy_questions.py` (imported b
 Use the included `render.yaml`, or set:
 - Build: `pip install -r requirements.txt`
 - Start: `gunicorn app:app`
-- Environment: `SECRET_KEY`, `DATABASE_URL`, `SQUAD_SECRET_KEY`, `SQUAD_ENV=live`; optional `PAYMENT_ADMIN_TOKEN`, `RESEND_API_KEY`, `RESEND_FROM`, `KALI_WORKER_URL`, `KALI_WORKER_TOKEN` and `GEMINI_API_KEY` (with optional `GEMINI_MODEL`). See `AI_SETUP.md` for where to paste the Gemini key in Render (Environment > `GEMINI_API_KEY`); without it the tutor and AI answer from the built-in knowledge base.
+- Environment: `SECRET_KEY`, `DATABASE_URL`, `PAYMENT_ADMIN_TOKEN`, `PAYSTACK_ENABLED=false`; optional `TRONGRID_API_KEY`, `BSC_RPC_URL`, `RESEND_API_KEY`, `RESEND_FROM`, `KALI_WORKER_URL`, `KALI_WORKER_TOKEN` and `GEMINI_API_KEY` (with optional `GEMINI_MODEL`). See `AI_SETUP.md` for where to paste the Gemini key in Render (Environment > `GEMINI_API_KEY`); without it the tutor and AI answer from the built-in knowledge base.
 
 Set `DATABASE_URL` to your Neon PostgreSQL connection string. Never commit secrets or `.env`.
 
-## Squad payments
-
-Squad is the only customer-facing payment gateway. Configure `SQUAD_SECRET_KEY` with the secret key from your Squad merchant dashboard. Set `SQUAD_ENV=live` for production (default) or `SQUAD_ENV=sandbox` while testing. The app initializes checkout server-side, redirects customers to Squad, and verifies the transaction server-to-server before activating a subscription.
-
-Configure these URLs in the Squad dashboard:
-- Redirect/callback URL: `https://YOUR-DOMAIN/payment/squad/callback`
-- Webhook URL: `https://YOUR-DOMAIN/payment/squad/webhook`
-
-The webhook is treated only as a notification; the app re-queries Squad's transaction verification endpoint before granting access. Never put the Squad secret key in browser code or commit it to the repository. Use sandbox keys and test transactions before switching to live credentials. Squad merchant onboarding/KYC and live credentials are required before accepting real payments.
-
+## Paystack (temporarily disabled)
+Paystack code is retained but both initialization and webhook processing are disabled unless `PAYSTACK_ENABLED=true`. Keep it false until the merchant account is approved and live credentials have been configured. When re-enabled, configure the webhook URL as `https://YOUR-SERVICE.onrender.com/payment/webhook`.
 
 ## Password reset email
 Set `RESEND_API_KEY` and `RESEND_FROM` to a verified sender/domain in Resend. A Render `onrender.com` address is not a domain you own and cannot be used as a verified sender domain. Reset tokens expire after 30 minutes. Responses do not reveal whether an email address is registered.
 
-
+## Bybit
+The Bybit payment option is displayed in the dashboard as pending merchant integration. Do not collect payments through a personal Bybit transfer or unlock plans based on screenshots/manual claims. Implement merchant checkout only after obtaining approved merchant/API access and a verified callback flow.
 
 ## Important limitations
 ## Expanded defensive scanning
@@ -82,20 +75,20 @@ Users can download each of their own saved scan records from the dashboard as JS
 
 ## Subscription payments (current configuration)
 
-- PRO: NGN 6,300 for 30 days after verified Squad payment.
-- PRO PLUS: NGN 12,600 for 30 days after verified Squad payment.
-- TUTOR PRO: NGN 6,300 for 30 days after verified Squad payment.
-- FREE: NGN 0.
-- Squad checkout presents the enabled payment channels (card, bank, USSD and transfer). The server checks the transaction reference, exact amount, NGN currency and successful status with Squad before activation.
-- A browser redirect or webhook notification alone never activates a plan. Transaction verification is performed directly against Squad, and each payment reference is tied to one user and plan.
+- PRO: NGN 6,300 or 4.50 USDT; 30 days after verified payment.
+- PRO PLUS: NGN 12,600 or 9.00 USDT; 30 days after verified payment.
+- USDT networks: TRC20 and BEP20 only. The app checks the incoming transfer, destination wallet, supported USDT token contract, exact amount, and confirmation state before activation. A transaction hash can only be used once. A screenshot is never accepted as proof of a blockchain payment.
+- Bank transfer references are recorded as pending. An administrator must independently confirm receipt and approve using the protected `/admin/payments/<payment_id>/approve` endpoint. Set a strong `PAYMENT_ADMIN_TOKEN` environment variable; send it only in the Authorization Bearer header. Do not approve based on a receipt image alone. Bank account details are not configured in this package yet.
+- Paystack code is retained but disabled by default. Set `PAYSTACK_ENABLED=true` only after the merchant account is approved and live credentials are configured.
 
 ### Payment-related Render environment variables
 
-- `SQUAD_SECRET_KEY` (required; keep it private)
-- `SQUAD_ENV=live` (use `sandbox` only for testing)
-- `PAYMENT_ADMIN_TOKEN` (retained for administrator operations on legacy payment records)
+- `PAYSTACK_ENABLED=false` (leave false until approved)
+- `PAYMENT_ADMIN_TOKEN` (long random secret, required for manual bank approvals)
+- `TRONGRID_API_KEY` (optional, recommended for TRON API reliability)
+- `BSC_RPC_URL` (optional; defaults to a public BNB Smart Chain mainnet RPC)
 
-Back up the production database before deploying. Test the full checkout and callback flow with Squad sandbox credentials before enabling live payments.
+The app includes an additive startup database migration for the new subscription-expiry and payment-verification fields. Always back up the production database before deploying schema changes. Test a small payment first on the intended mainnet network; do not use testnet transfers for production activation.
 
 
 ## CyberLord Intelligence Assistant
@@ -118,8 +111,8 @@ CyberLord AI calls Google's Gemini API from the Flask backend when `GEMINI_API_K
 ## Clear monetization and monitoring status
 
 - FREE is the entry plan: core domain/DNS intelligence, Cyber Academy learning guides and the built-in CyberLord knowledge assistant.
-- PRO is NGN 6,300 for 30 days after independently verified Squad payment.
-- PRO PLUS is NGN 12,600 for 30 days after independently verified Squad payment.
+- PRO is NGN 6,300 or 4.50 USDT for 30 days after independently verified payment.
+- PRO PLUS is NGN 12,600 or 9.00 USDT for 30 days after independently verified payment.
 - Public pricing information explains that paid plans unlock additional tools; server-side tool access remains governed by the existing plan checks.
 - Individual/manual checks are available according to the user's plan. Continuous background monitoring with scheduled rechecks and notifications is a planned paid add-on, not an active feature in this release. Do not advertise it as currently available until a scheduler, persistent monitoring configuration, safe scan queue, and notification delivery have been implemented and tested.
 
@@ -142,7 +135,7 @@ The dashboard now links to three PRO PLUS passive investigation modules: Digital
 
 
 ## Private administrator payment dashboard
-The admin area is served by this same Flask application at `/admin`. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the existing Render service environment. The admin login is separate from customer authentication. Review Squad payment records; the customer subscription activates only after server-side verification. Customer payment forms show a successful submission notice without falsely claiming that funds have been received.
+The admin area is served by this same Flask application at `/admin`. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the existing Render service environment. The admin login is separate from customer authentication. Confirm bank/OPay funds independently before approving a pending request; approval activates the customer's 30-day plan. Customer payment forms show a successful submission notice without falsely claiming that funds have been received.
 
 ### CyberLord AI, Academy and Interaction Board
 
@@ -156,7 +149,7 @@ Set `GEMINI_API_KEY` under the Render service's Environment settings. Do not pla
 
 The existing Telegram and WhatsApp adapters now support signed-in website account linking at `/account/messaging`. Generate an eight-digit code, then send `/link CODE` in the relevant chat. Codes are hashed in the database, expire after 10 minutes, are single-use, and link using the platform chat identifier. Linked Academy Tutor conversations share the website account's Tutor Pro expiry and 10-question daily free quota. Messaging history, persona selection and duplicate webhook event IDs are database-backed.
 
-Squad is the sole customer-facing payment gateway. Legacy bank/USDT payment records may remain in an existing database, but those methods are no longer available in the customer checkout. See `MESSAGING_INTEGRATION_SETUP.md` for Meta WhatsApp configuration requirements.
+Bank transfer forms accept optional JPG/PNG/WEBP/PDF evidence up to 5 MB. Receipts are stored in SQL and visible to an authenticated admin. Bank payments still require manual confirmation and approval; receipt upload alone never activates a subscription. USDT TRC20/BEP20 verification remains unchanged. See `MESSAGING_INTEGRATION_SETUP.md` for Meta WhatsApp configuration requirements.
 
 
 ## Artificial Brain and large uploads

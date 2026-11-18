@@ -1,0 +1,18 @@
+CYBERLORD FULL PROJECT ZIP
+
+This archive contains the complete project tree from the CyberLord Domain Intelligence V2 ZIP you uploaded, with the Free-First Agnes queue-recovery patch merged into:
+- app.py
+- agnes_video.py
+- static/app.js
+
+GITHUB UPLOAD:
+1. Extract this ZIP. Open the CyberLord-Domain-Intelligence-V2-main folder.
+2. Upload the CONTENTS of that folder to the ROOT of your existing GitHub repository (not the outer folder itself).
+3. Allow matching files/folders to be replaced. Keep the folder structure exactly as shown.
+4. Do not upload any API keys or .env files. Keep AGNES_API_KEY only in Render Environment Variables.
+5. Commit the changes and wait for Render to deploy.
+
+IMPORTANT:
+- This is based on the project ZIP you supplied. If your live GitHub repository contains changes made after that ZIP was created, this archive may not include those newer changes. Download/backup your current repository before replacing the full project.
+- The patch does not add a paid video provider. Agnes remains the only configured video provider.
+- Free-first recovery waits/retries on explicit queue-full errors; it cannot guarantee Agnes capacity or a completed video.
