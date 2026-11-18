@@ -141,7 +141,7 @@ def _run_job(job_id: str, prompt: str, image: dict[str, str] | None) -> None:
         # Agnes can temporarily reject new jobs when its generation queue is full.
         # Retry only this explicit provider response; do not retry ambiguous network
         # failures because the provider may already have accepted those requests.
-        queue_retry_delays = (5, 15, 30)  # three retries after the initial submission
+        queue_retry_delays = (30, 60, 120, 240, 480, 600)  # six retries over about 25 minutes
         for retry_index in range(len(queue_retry_delays) + 1):
             response = requests.post(base + "/v1/videos", headers=headers, json=payload, timeout=(15, 90))
             try:
@@ -168,13 +168,13 @@ def _run_job(job_id: str, prompt: str, image: dict[str, str] | None) -> None:
                     job_id,
                     status="retrying",
                     progress=5,
-                    message="Building your video now. Agnes is busy, so CyberLord is retrying automatically (attempt %s of %s)…" % (next_attempt, len(queue_retry_delays) + 1),
+                    message="Building your video now. the free video service is busy, so CyberLord is retrying automatically (attempt %s of %s)…" % (next_attempt, len(queue_retry_delays) + 1),
                 )
                 time.sleep(delay)
                 continue
             detail = _error_text(created_json, response.text or "No error details returned.")
             if is_queue_full:
-                raise RuntimeError("Agnes video queue is still full after 3 retries. Please try again later.")
+                raise RuntimeError("Agnes video queue is still full after 6 retries. Your request could not be started; please retry later.")
             raise RuntimeError("Agnes rejected the request (HTTP %s): %s" % (response.status_code, detail[:250]))
         else:
             raise RuntimeError("Agnes could not accept the video request after automatic retries. Please try again later.")
@@ -183,7 +183,7 @@ def _run_job(job_id: str, prompt: str, image: dict[str, str] | None) -> None:
         if not video_id:
             raise RuntimeError("Agnes returned HTTP %s but no video_id/task ID. Check Render logs for the response summary." % response.status_code)
         _LOG.info("job=%s submitted successfully provider_task=%s", job_id[:8], str(video_id)[:80])
-        _set(job_id, status="processing", progress=15, provider_task_id=str(video_id), message="Agnes is generating your video…")
+        _set(job_id, status="processing", progress=15, provider_task_id=str(video_id), message="Building your video…")
 
         deadline = time.time() + int(os.getenv("AGNES_VIDEO_TIMEOUT_SECONDS", "720"))
         poll_delay = 3
@@ -218,14 +218,14 @@ def _run_job(job_id: str, prompt: str, image: dict[str, str] | None) -> None:
                 break
             with _LOCK:
                 old = _JOBS.get(job_id, {}).get("progress", 15)
-            _set(job_id, status="processing", progress=min(92, old + 3), message="Agnes is rendering your video…")
+            _set(job_id, status="processing", progress=min(92, old + 3), message="Building your video…")
             poll_delay = min(8, max(3, poll_delay))
         else:
             raise TimeoutError("Agnes did not finish within the configured time. Check Render logs and try again later.")
 
         provider_url = result.get("url") or (result.get("metadata") or {}).get("url")
         if not provider_url or not str(provider_url).startswith("https://"):
-            raise RuntimeError("Agnes marked the task complete but did not return a valid HTTPS video URL.")
+            raise RuntimeError("The video service marked the task complete but did not return a valid HTTPS video URL.")
         _set(job_id, status="downloading", progress=96, message="Preparing your video for preview and download…")
         media = requests.get(provider_url, timeout=(20, 180))
         media.raise_for_status()
