@@ -196,7 +196,7 @@ document.querySelectorAll(".tool-card").forEach(card=>{
   };
   async function watchAgnesVideo(jobId,target){
     const status=bubble("Building your video…","bot");
-    for(let attempt=0;attempt<360;attempt++){
+    for(let attempt=0;attempt<1800;attempt++){
       try{
         const response=await fetch("/api/agnes-video/"+encodeURIComponent(jobId));
         const job=await response.json();
@@ -324,7 +324,7 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     }
     async function watchTutorAgnesVideo(jobId,target){
       const status=add("Building your video…","bot");
-      for(let attempt=0;attempt<360;attempt++){
+      for(let attempt=0;attempt<1800;attempt++){
         try{
           const response=await fetch("/api/agnes-video/"+encodeURIComponent(jobId));const job=await response.json();
           if(!response.ok)throw new Error(job.error||"Could not read video status.");
