@@ -1,13 +1,222 @@
-{% extends "base.html" %}{% block title %}Dashboard · CyberLord
-{% endblock %}{% block content %}
-{% if cyber_returning %}<div class="cyber-welcome-back">Welcome back, {{ current_user.email }}. Cyber recognised you and will continue from where you left off.</div>{% endif %}
-<div class="dash-head"><div><div class="eyebrow">OPERATIONS CENTER</div><h1>Security dashboard</h1><p class="muted">{{ current_user.email }} · Current plan: <strong>{{ plans[current_user.plan].name }}</strong>{% if current_user.plan_expires_at %} · Expires: {{ current_user.plan_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}</p></div><span class="status">● SYSTEM READY</span></div>
-{% if tutor_pro %}
-<div class="tutor-status-card"><div><div class="eyebrow">TUTOR PRO</div><h3>Tutor Pro active</h3><p class="muted">Unlimited tutor questions, voice tutor and Code Lab until {{ tutor_pro_expires_at.strftime('%Y-%m-%d %H:%M UTC') if tutor_pro_expires_at else '' }}.</p></div><a class="btn primary" href="{{ url_for('code_lab') }}">Open Code Lab</a></div>
-{% elif tutor_remaining is not none %}
-<div class="tutor-status-card"><div><div class="eyebrow">FREE TUTOR</div><h3>{{ tutor_remaining }} of {{ tutor_limit }} free tutor questions left today</h3><p class="muted">When you use them up, unlock Tutor Pro to keep going.</p></div><a class="btn ghost" href="#plans">Unlock Tutor Pro</a></div>
-{% endif %}
-<div class="quick-links"><a class="btn ghost" href="{{ url_for('academy_terminal') }}">Open Training Terminal</a><a class="btn ghost" href="{{ url_for('code_lab') }}">Open Code Lab</a><a class="btn ghost" href="{{ url_for('tutor') }}">Open Cyber Tutor</a><a class="btn ghost" href="{{ url_for('interaction_board') }}">Open Interaction Board</a></div>
-<div class="quick-links"><a class="card" href="{{ url_for('scanner') }}"><span class="num">01</span><h3>Security Scanner</h3><p>Run public domain scans, technology and certificate checks, email security checks and limited port checks. Free plan includes 3 failed or accepted scan actions per day.</p><strong>Open scanner</strong></a><a class="card" href="{{ url_for('image_analyzer') }}"><span class="num">02</span><h3>Image Intelligence</h3><p>Analyze an image by link or upload for metadata, exposure indicators and visual intel. Free plan includes 30 image analyses per day.</p><strong>Open image intelligence</strong></a><a class="card" href="{{ url_for('video_analyzer') }}"><span class="num">03</span><h3>Video Intelligence</h3><p>Analyze a video by URL for metadata, scene intel and frames. Free plan includes 3 video analyses per day.</p><strong>Open video intelligence</strong></a></div>
-<section class="panel pricing-panel" id="plans"><div class="section-head"><div><div class="eyebrow">ACCESS PLANS</div><h2>Choose your pace</h2><p class="muted">Pay with card through Squad, or USDT. Plans activate after payment verification.</p></div></div><div class="plans-grid"><article class="plan-card"><h3>FREE</h3><div class="price">₦0<span>/ forever</span></div><ul><li>3 failed or accepted scans per day</li><li>Basic domain tools</li><li>Starter academy access</li></ul><a class="btn ghost" href="#scanner">Current free access</a></article><article class="plan-card featured"><span class="badge">MOST POPULAR</span><h3>PRO</h3><div class="price">₦6,300<span>/ 30 days</span></div><ul><li>140 scan actions per day</li><li>3 academy courses</li><li>Advanced OSINT checks</li></ul>{% if squad_available %}<form method="post" action="{{ url_for('squad_checkout') }}"><input type="hidden" name="plan" value="pro"><button class="btn primary" type="submit">Pay ₦6,300 with Squad</button></form>{% endif %}<form method="post" action="{{ url_for('manual_payment_submit') }}"><input type="hidden" name="plan" value="pro"><input type="hidden" name="network" value="trc20"><button class="btn ghost" type="submit">Pay with USDT (TRC20)</button></form><form method="post" action="{{ url_for('manual_payment_submit') }}"><input type="hidden" name="plan" value="pro"><input type="hidden" name="network" value="bep20"><button class="btn ghost" type="submit">Pay with USDT (BEP20)</button></form></article><article class="plan-card"><h3>PRO PLUS</h3><div class="price">₦12,600<span>/ 30 days</span></div><ul><li>Unlimited scan actions</li><li>Every academy course</li><li>Complete access</li></ul>{% if squad_available %}<form method="post" action="{{ url_for('squad_checkout') }}"><input type="hidden" name="plan" value="pro_plus"><button class="btn primary" type="submit">Pay ₦12,600 with Squad</button></form>{% endif %}<form method="post" action="{{ url_for('manual_payment_submit') }}"><input type="hidden" name="plan" value="pro_plus"><input type="hidden" name="network" value="trc20"><button class="btn ghost" type="submit">Pay with USDT (TRC20)</button></form><form method="post" action="{{ url_for('manual_payment_submit') }}"><input type="hidden" name="plan" value="pro_plus"><input type="hidden" name="network" value="bep20"><button class="btn ghost" type="submit">Pay with USDT (BEP20)</button></form></article><article class="plan-card"><h3>TUTOR PRO</h3><div class="price">₦6,300<span>/ 30 days</span></div><ul><li>Unlimited tutor chat + voice tutor</li><li>Full Code Lab (new coding tasks)</li><li>Separate from Pro/Pro Plus</li></ul>{% if squad_available %}<form method="post" action="{{ url_for('squad_checkout') }}"><input type="hidden" name="plan" value="tutor_pro"><button class="btn primary" type="submit">Pay ₦6,300 with Squad</button></form>{% endif %}<form method="post" action="{{ url_for('manual_payment_submit') }}"><input type="hidden" name="plan" value="tutor_pro"><input type="hidden" name="network" value="trc20"><button class="btn ghost" type="submit">Pay with USDT (TRC20)</button></form><form method="post" action="{{ url_for('manual_payment_submit') }}"><input type="hidden" name="plan" value="tutor_pro"><input type="hidden" name="network" value="bep20"><button class="btn ghost" type="submit">Pay with USDT (BEP20)</button></form></article></div></section>
+{% extends "base.html" %}
+{% block title %}Dashboard — CyberLord Africa{% endblock %}
+{% block content %}
+<style>
+  .dash-nav { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:18px; }
+  .dash-nav a { padding:9px 15px; border-radius:9px; background:#0d1826; border:1px solid #26374d; color:#aebdd2; font-size:13px; font-weight:700; }
+  .dash-nav a.active { background:#fff; color:#071020; border-color:#fff; }
+  .panel { background:#0d1826; border:1px solid #26374d; border-radius:14px; padding:22px; box-shadow:0 14px 40px rgba(0,0,0,.18); }
+  .sh-row { display:flex; flex-wrap:wrap; gap:14px; align-items:stretch; }
+  .sh-card { flex:1 1 200px; background:#0d1826; border:1px solid #26374d; border-radius:14px; padding:18px; text-align:center; }
+  .sh-card b { font-size:28px; font-weight:900; display:block; }
+  .sh-card span { font-size:10px; letter-spacing:.14em; color:#8fa1b8; text-transform:uppercase; font-weight:800; }
+  .live-badge { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; letter-spacing:.12em; color:#7fe0a8; text-transform:uppercase; }
+  .live-badge::before { content:''; width:8px; height:8px; border-radius:50%; background:#35e07f; box-shadow:0 0 8px rgba(53,224,127,.8); animation:blink 1.6s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .flat-list li { display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid #203149; padding:9px 0; font-size:13px; }
+  .flat-list li:last-child { border-bottom:none; }
+  .ai-compose-row { display:flex; gap:8px; }
+  .ai-compose-row input { flex:1; padding:11px 13px; border-radius:10px; border:1px solid #334557; background:#0a1522; color:#dbe7f6; }
+  .ai-compose-row button { padding:11px 16px; border-radius:10px; background:#f7b731; border:none; color:#1a1200; font-weight:800; cursor:pointer; }
+  .ai-compose-row button:hover { background:#ffdf85; }
+  .chat-feed { max-height:320px; overflow:auto; padding-right:4px; }
+  .chat-feed .bubble { border:1px solid #26374d; background:#0a1522; padding:10px 12px; border-radius:10px; margin-bottom:8px; font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+  .chat-feed .bubble.me { background:#112f55; border-color:#0d5bd7; }
+  .hero-grid { display:grid; grid-template-columns: minmax(0,1.35fr) minmax(0,1fr); gap:18px; margin:18px 0; }
+  @media (max-width: 880px) { .hero-grid { grid-template-columns:1fr; } }
+</style>
+
+<header class="page-head">
+  <div><h1 style="font-size:clamp(24px,3vw,36px);margin:0;">Dashboard</h1><p>Welcome back, <span style="color:#f7b731;">{{ (user.name or user.username) | e }}</span>. Your workspace, analytics, and AI attack box are all below.</p></div>
+  <span class="live-badge">Live</span>
+</header>
+<nav class="dash-nav">
+  <a href="/dashboard/" class="active">Overview</a>
+  <a href="/dashboard/account">Account</a>
+  <a href="/dashboard/security">Security</a>
+  <a href="/admin/">Admin</a>
+</nav>
+
+<div class="sh-row">
+  <div class="sh-card"><b>{{ stats.scans }}</b><span>Scans</span></div>
+  <div class="sh-card"><b>{{ stats.alerts }}</b><span>Active alerts</span></div>
+  <div class="sh-card"><b>${{ '%.2f'|format(stats.spend) }}</b><span>Spend</span></div>
+  <div class="sh-card"><b>{{ stats.files }}</b><span>Files</span></div>
+  <div class="sh-card"><b>{{ stats.api_usage }}</b><span>API calls</span></div>
+  <div class="sh-card"><b>{{ stats.queue }}</b><span>Queue</span></div>
+</div>
+
+<div class="hero-grid">
+  <section class="panel">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+      <span style="width:9px;height:9px;border-radius:50%;background:#35e07f;box-shadow:0 0 9px rgba(53,224,127,.8);"></span>
+      <h2 style="font-size:17px;margin:0;">Scan intensity</h2>
+    </div>
+    <p style="color:#9db0c7;font-size:12.5px;margin:0 0 14px;">Live scan volume over the last 14 days. Push a scan and watch this update.</p>
+    <canvas id="scanChart" height="170"></canvas>
+  </section>
+  <section class="panel">
+    <h2 style="font-size:17px;margin:0 0 12px;">Recent scans</h2>
+    <ul class="flat-list" style="list-style:none;margin:0;padding:0;">
+      {% if recent_scans %}
+        {% for target in recent_scans %}
+        <li><span style="color:#d6e2f2;">{{ target }}</span><span style="color:#7fe0a8;font-weight:700;">✓ completed</span></li>
+        {% endfor %}
+      {% else %}
+        <li><span style="color:#9db0c7;">No scans yet</span><span style="color:#9db0c7;">Run one below</span></li>
+      {% endif %}
+    </ul>
+  </section>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:18px;">
+  <section class="panel">
+    <h2 style="font-size:17px;margin:0 0 12px;">Attack box</h2>
+    <div class="ai-compose-row">
+      <input id="askPrompt" type="text" placeholder="Ask about threats, tell a target, or type a task\u2026" />
+      <button onclick="askCyber()">Send</button>
+    </div>
+    <div id="askResult" class="chat-feed" style="margin-top:14px;">
+      <div class="bubble"><strong>CyberLord AI</strong><br/>Ask me about a target, email, breach, or social engineering vector. I will reason through the public data available here.</div>
+    </div>
+  </section>
+
+  <section class="panel" id="keyTipsPanel">
+    <h2 style="font-size:17px;margin:0 0 12px;">Key tips</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <button onclick="loadTips('awareness')" style="padding:7px 12px;border-radius:999px;background:#f7b731;border:none;font-weight:800;cursor:pointer;">Awareness</button>
+      <button onclick="loadTips('osint')" style="padding:7px 12px;border-radius:999px;background:#203149;border:1px solid #334557;color:#dbe7f6;font-weight:800;cursor:pointer;">OSINT</button>
+      <button onclick="loadTips('soc')" style="padding:7px 12px;border-radius:999px;background:#203149;border:1px solid #334557;color:#dbe7f6;font-weight:800;cursor:pointer;">SOC</button>
+      <button onclick="loadTips('redteam')" style="padding:7px 12px;border-radius:999px;background:#203149;border:1px solid #334557;color:#dbe7f6;font-weight:800;cursor:pointer;">Red Team</button>
+      <button onclick="loadTips('forensics')" style="padding:7px 12px;border-radius:999px;background:#203149;border:1px solid #334557;color:#dbe7f6;font-weight:800;cursor:pointer;">Forensics</button>
+    </div>
+    <ul class="flat-list" style="list-style:none;margin:0;padding:0;" id="tipsList">
+      <li><span style="color:#9db0c7;">Loading tips\u2026</span></li>
+    </ul>
+    <p style="color:#8fa1b8;font-size:11.5px;margin:10px 0 0;">Auto-updated. Last scanned <span id="tipsStamp">{{ tips_date }}</span>.</p>
+  </section>
+
+  <section class="panel">
+    <h2 style="font-size:17px;margin:0 0 14px;">Plan & budget</h2>
+    <div style="margin-bottom:12px;">
+      <span style="color:#8fa1b8;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;">Current plan</span>
+      <p style="font-size:18px;font-weight:800;margin:6px 0 0;color:#f7b731;">{{ user.plan|capitalize }} ({{ user.plan }})</p>
+    </div>
+    <div style="height:8px;border-radius:999px;background:#0a1522;border:1px solid #26374d;overflow:hidden;margin-bottom:6px;">
+      <div style="width:{{ budget_pct|int }}%;height:100%;background:linear-gradient(90deg,#f7b731,#ffdf85);"></div>
+    </div>
+    <p style="color:#9db0c7;font-size:12.5px;margin:0 0 10px;">{{ budget_used }} / {{ budget_capacity }} scans used ({{ budget_pct|round }}%)</p>
+    <p style="margin:0 0 14px;"><a href="/dashboard/account" style="color:#7fb1ff;font-size:13px;font-weight:800;text-decoration:none;">Manage subscription \u2192</a></p>
+    <div style="border-top:1px solid #203149;padding-top:14px;">
+      <div class="sh-row">
+        <div class="sh-card"><b>{{ budget_used }}</b><span>Used</span></div>
+        <div class="sh-card"><b>{{ budget_left }}</b><span>Remaining</span></div>
+      </div>
+      <p style="color:#8fa1b8;font-size:11.5px;margin:10px 0 0;">Monthly scan budget resets on your billing cycle.</p>
+    </div>
+    <div style="border-top:1px solid #203149;padding-top:14px;margin-top:14px;">
+      <h3 style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#8fa1b8;margin:0 0 10px;">Available plans</h3>
+      {% if squad_enabled %}<form method="post" action="{{ url_for('payment_squad_initiate') }}"><input type="hidden" name="plan" value="pro"><button class="btn primary btn-pay" type="submit">Pay \u20a66,300 with Squad</button></form>{% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 style="font-size:17px;margin:0 0 12px;">Recent activity</h2>
+    {% if recent_logs %}
+    <ul class="flat-list" style="list-style:none;margin:0;padding:0;">
+      {% for entry in recent_logs %}
+        <li><span style="color:#d6e2f2;">{{ entry.action }} <small style="color:#8fa1b8;">{{ entry.ip }}</small></span><span style="color:#8fa1b8;font-size:11px;">{{ entry.created_at }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p style="color:#9db0c7;font-size:13px;">No activity in the last 24 hours.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" id="studioPanel">
+    <h2 style="font-size:17px;margin:0 0 12px;">Content Studio</h2>
+    <p style="color:#9db0c7;font-size:12.5px;margin:0 0 12px;">Generate your next post, script, and visuals from one prompt.</p>
+    <div class="ai-compose-row">
+      <input id="studioPrompt" type="text" placeholder="e.g. A viral cybersec hook for TikTok\u2026" />
+      <button onclick="studioGenerate()">Generate</button>
+    </div>
+    <div id="studioResult" class="chat-feed" style="margin-top:14px;"><div class="bubble">Your generations will appear here.</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+      <button onclick="renderPreview('video')" style="padding:7px 12px;border-radius:999px;background:#203149;border:1px solid #334557;color:#dbe7f6;font-weight:800;cursor:pointer;">Video</button>
+      <button onclick="renderPreview('thumbnail')" style="padding:7px 12px;border-radius:999px;background:#203149;border:1px solid #334557;color:#dbe7f6;font-weight:800;cursor:pointer;">Thumbnail</button>
+      <button onclick="renderPreview('carousel')" style="padding:7px 12px;border-radius:999px;background:#203149;border:1px solid #334557;color:#dbe7f6;font-weight:800;cursor:pointer;">Carousel</button>
+      <button onclick="renderPreview('caption')" style="padding:7px 12px;border-radius:999px;background:#203149;border:1px solid #334557;color:#dbe7f6;font-weight:800;cursor:pointer;">Caption</button>
+      <button onclick="studioVoice()" style="padding:7px 12px;border-radius:999px;background:#f7b731;border:none;font-weight:800;cursor:pointer;">Voiceover</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 style="font-size:17px;margin:0 0 12px;">Campaigns</h2>
+    {% if campaigns %}
+    <ul class="flat-list" style="list-style:none;margin:0;padding:0;">
+      {% for c in campaigns %}
+      <li><span style="color:#d6e2f2;">{{ c.name }} <small style="color:#8fa1b8;">({{ c.status }})</small></span><a href="/action-hub" style="color:#7fb1ff;font-size:12px;font-weight:800;text-decoration:none;">Open \u2192</a></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p style="color:#9db0c7;font-size:13px;">No campaigns yet. <a href="/action-hub" style="color:#7fb1ff;text-decoration:none;">Create one \u2192</a></p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 style="font-size:17px;margin:0 0 12px;">Quick actions</h2>
+    <ul class="flat-list" style="list-style:none;margin:0;padding:0;">
+      <li><a href="/action-hub" style="color:#d6e2f2;text-decoration:none;">Create campaign</a><span style="color:#8fa1b8;"&gt;\u2192</span></li>
+      <li><a href="/scan" style="color:#d6e2f2;text-decoration:none;">New scan</a><span style="color:#8fa1b8;"&gt;\u2192</span></li>
+      <li><a href="/api" style="color:#d6e2f2;text-decoration:none;">API docs</a><span style="color:#8fa1b8;"&gt;\u2192</span></li>
+      <li><a href="/dashboard/account" style="color:#d6e2f2;text-decoration:none;">Account settings</a><span style="color:#8fa1b8;"&gt;\u2192</span></li>
+    </ul>
+  </section>
+</div>
+
+<script>
+async function askCyber(){
+  const box = document.getElementById('askResult');
+  const input = document.getElementById('askPrompt');
+  const prompt = input.value.trim();
+  if (!prompt) return;
+  box.innerHTML += '<div class="bubble me"><strong>You</strong><br/>' + prompt.replace(/</g,'&lt;') + '</div>';
+  box.scrollTop = box.scrollHeight;
+  try {
+    const resp = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt})});
+    const data = await resp.json();
+    box.innerHTML += '<div class="bubble"><strong>CyberLord AI</strong><br/>' + (data.response || data.error || 'No answer yet.').replace(/</g,'&lt;') + '</div>';
+    box.scrollTop = box.scrollHeight;
+    input.value='';
+  } catch(e) { box.innerHTML += '<div class="bubble">AI request failed.</div>'; }
+}
+async function loadTips(cat){
+  const list = document.getElementById('tipsList');
+  list.innerHTML = '<li><span style="color:#9db0c7;">Loading tips\u2026</span></li>';
+  try {
+    const resp = await fetch('/dashboard/tips/' + cat);
+    const data = await resp.json();
+    const tips = data.tips || [];
+    list.innerHTML = '';
+    if (!tips.length) list.innerHTML = '<li><span style="color:#9db0c7;">No tips yet.</span></li>';
+    tips.forEach(function(t){ var li = document.createElement('li'); var s = document.createElement('span'); s.style.color = '#d6e2f2'; s.textContent = t.title; var b = document.createElement('span'); b.style.color = '#8fa1b8'; b.style.fontSize = '11px'; b.textContent = t.created_at || ''; li.appendChild(s); li.appendChild(b); list.appendChild(li); });
+    document.getElementById('tipsStamp').textContent = tips.length ? (tips[0].created_at || '') : '';
+  } catch(e){ list.innerHTML = '<li><span style="color:#9db0c7;">Could not load tips.</span></li>'; }
+}
+async function studioGenerate(){
+  const box = document.getElementById('studioResult');
+  const prompt = document.getElementById('studioPrompt').value.trim();
+  if (!prompt) return;
+  box.innerHTML += '<div class="bubble me"><strong>You</strong><br/>' + prompt.replace(/</g,'&lt;') + '</div>';
+  try {
+    const resp = await fetch('/studio/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt})});
+    const data = await resp.json();
+    box.innerHTML += '<div class="bubble"><strong>Studio</strong><br/>' + (data.caption || data.error || 'Done.').replace(/</g,'&lt;') + '</div>';
+    box.scrollTop = box.scrollHeight;
+  } catch(e){ box.innerHTML += '<div class="bubble">Generation failed.</div>'; }
+}
+function renderPreview(kind){ alert(kind + ' preview queued.'); }
+function studioVoice(){ alert('Voiceover queued.'); }
+new Chart(document.getElementById('scanChart'), {type:'bar', data:{labels:{{ chart_labels|tojson }}, datasets:[{label:'Scans', data:{{ chart_data|tojson }}, backgroundColor:'rgba(247,183,49,0.55)', borderColor:'#f7b731', borderWidth:1, borderRadius:4}]}, options:{plugins:{legend:{display:false}}, scales:{x:{ticks:{color:'#8fa1b8'}, grid:{color:'#16233a'}}, y:{beginAtZero:true, ticks:{color:'#8fa1b8'}, grid:{color:'#16233a'}}}}});
+</script>
 {% endblock %}
