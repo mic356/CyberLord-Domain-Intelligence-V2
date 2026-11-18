@@ -3,7 +3,7 @@ import os, re, json, hmac, hashlib, secrets, socket, ssl, ipaddress, subprocess,
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 import requests
 import dns.resolver
 import phonenumbers
@@ -1574,6 +1574,36 @@ def academy_quiz_submit():
                    feedback=feedback, best_score=row.best_score)
 
 
+@app.route("/videos", methods=["GET"])
+@login_required
+def cyberlord_videos():
+    """Free video discovery: uses YouTube's public search page and embeds user-selected videos.
+
+    No YouTube API key, paid provider, or GPU is required. This does not generate original videos.
+    """
+    query = (request.args.get("q") or "").strip()[:160]
+    video_input = (request.args.get("v") or "").strip()
+    video_id = video_input
+    # Accept a video ID or a standard YouTube/youtu.be URL, then validate the ID.
+    if video_input.startswith(("https://", "http://")):
+        try:
+            parsed_video_url = urlparse(video_input)
+            host = (parsed_video_url.hostname or "").lower()
+            if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtube-nocookie.com", "www.youtube-nocookie.com"}:
+                video_id = (parse_qs(parsed_video_url.query).get("v") or [""])[0]
+                if not video_id and parsed_video_url.path.startswith("/embed/"):
+                    video_id = parsed_video_url.path.split("/embed/", 1)[1].split("/", 1)[0]
+            elif host == "youtu.be":
+                video_id = parsed_video_url.path.strip("/").split("/", 1)[0]
+            else:
+                video_id = ""
+        except Exception:
+            video_id = ""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        video_id = ""
+    return render_template("videos.html", video_query=query, video_id=video_id)
+
+
 @app.route("/tutor")
 @login_required
 def tutor():
@@ -2717,6 +2747,7 @@ def ai_assistant():
                  "live_sources": _ls, "images": _images[:4]},
                 fallback_latest, (_prior_ai_answers + "\n\n" + reply).strip(),
                 next((m.get("images", []) for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user" and m.get("images")), None),
+                persona=persona,
             )
             return jsonify(**_response_payload)
         except Exception as exc:
@@ -2737,6 +2768,7 @@ def ai_assistant():
                              "live_sources": ["Gemini response; search grounding unavailable"], "images": []},
                             fallback_latest, (_prior_ai_answers + "\n\n" + _reply).strip(),
                             next((m.get("images", []) for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user" and m.get("images")), None),
+                            persona=persona,
                         )
                         return jsonify(**_retry_payload)
                 except Exception:
@@ -2813,6 +2845,7 @@ def ai_assistant():
                  "live_sources": "Groq response; verify important security findings against primary sources"},
                 fallback_latest, (_prior_ai_answers + "\n\n" + reply).strip(),
                 next((m.get("images", []) for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user" and m.get("images")), None),
+                persona=persona,
             )
             return jsonify(**_groq_payload)
         except Exception as exc:
@@ -2848,6 +2881,7 @@ def ai_assistant():
              "live_sources": _fb_sources, "images": _fb_images},
             fallback_latest, (_prior_ai_answers + "\n\n" + reply).strip(),
             next((m.get("images", []) for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user" and m.get("images")), None),
+            persona=persona,
         )
         return jsonify(**_fallback_payload)
     except Exception:
@@ -3427,35 +3461,78 @@ def _video_generation_intent(user_text):
     return any(re.search(pattern, text, re.I | re.S) for pattern in patterns)
 
 
-def _generate_video_from_answer(user_text, assistant_reply, reference_images=None, owner_id=None):
-    """Queue a video job through the configured primary provider; media generation stays provider-neutral."""
+def _video_discovery_intent(user_text):
+    text = str(user_text or "").lower()
+    if _video_generation_intent(text):
+        return False
+    return bool(re.search(
+        r"\b(find|search for|show me|recommend|look for|get me|any)\b.{0,90}\b(video|videos|tutorial|tutorials|youtube)\b"
+        r"|\b(video|videos|tutorial|tutorials)\b.{0,70}\b(about|on|for|related to)\b",
+        text, re.I | re.S
+    ))
+
+
+def _video_search_query(user_text, persona="main"):
+    query = re.sub(r"\s+", " ", str(user_text or "")).strip()
+    query = re.sub(r"(?i)\b(please|can you|could you|find|search for|show me|recommend|look for|get me|any|youtube|videos?|tutorials?)\b", " ", query)
+    query = re.sub(r"\s+", " ", query).strip(" .,!?")
+    if persona == "tutor" and query:
+        query += " cybersecurity educational lesson"
+    return (query or ("cybersecurity tutorial" if persona == "tutor" else "educational videos"))[:160]
+
+
+def _attach_video_discovery(response_payload, user_text, persona="main"):
+    query = _video_search_query(user_text, persona)
+    search_url = "https://www.youtube.com/results?search_query=" + requests.utils.quote(query)
+    try:
+        from super_mode import youtube_search
+        result = youtube_search(query, limit=6)
+        items = result.get("items") or []
+        response_payload["video_search"] = {"query": query, "items": items, "search_url": search_url, "source": "YouTube"}
+        if not result.get("configured"):
+            response_payload["video_search"]["setup_note"] = "YouTube previews need the optional YOUTUBE_API_KEY. The direct YouTube search link works without it."
+        response_payload["reply"] = (
+            "I found some videos for you. Choose one below to play it here."
+            if items else "I can open YouTube results for that topic. Select the search button below."
+        )
+    except Exception as exc:
+        app.logger.warning("Chat video discovery failed: %s", str(exc)[:160])
+        response_payload["video_search"] = {"query": query, "items": [], "search_url": search_url, "source": "YouTube"}
+        response_payload["reply"] = "I couldn't load video previews right now. You can still open the YouTube search below."
+
+
+def _generate_video_from_answer(user_text, assistant_reply, reference_images=None, owner_id=None, persona="main"):
+    """Queue video generation for either AI persona through the same optional provider."""
     image_attached = next((item for item in (reference_images or []) if isinstance(item, dict) and item.get("data")), None)
     image_animation_request = bool(image_attached and re.search(r"\b(animate|make|create|generate|turn|bring)\b", str(user_text or ""), re.I)
                                    and not re.search(r"\b(how to|how do i|teach me how|explain how)\b", str(user_text or ""), re.I))
     if not (_video_generation_intent(user_text) or image_animation_request):
         return None, None
     if not os.getenv("AGNES_API_KEY", "").strip():
-        app.logger.error("Agnes video intent detected but AGNES_API_KEY is not configured")
-        return None, "Video generation is not configured yet. Add AGNES_API_KEY in Render Environment."
+        return None, "Original AI video generation is currently unavailable. I can find relevant existing videos instead."
     try:
         from agnes_video import start_video_job
+        if persona == "tutor":
+            duty = "Create a short, beginner-friendly CyberLord Academy cybersecurity education video. Focus on defensive, lawful learning and safe lab-only examples."
+        else:
+            duty = "Create a polished short educational or creative video for the user's general topic. Keep it accurate, suitable for a broad audience, and visually coherent."
         prompt = (
-            "Create a coherent, polished short video based on this request. "
-            "Use the assistant answer as factual context, translate it into clear visual scenes, "
+            duty + " Use the assistant answer as factual context, translate it into clear visual scenes, "
             "and avoid long blocks of on-screen text. USER REQUEST: " + str(user_text)[:1200] +
             "\nASSISTANT ANSWER: " + str(assistant_reply)[:3000]
         )
-        image = image_attached
-        job_id = start_video_job(prompt, owner_id=owner_id, image=image)
-        app.logger.info("Video job queued: job=%s image_attached=%s", job_id[:8], bool(image))
+        job_id = start_video_job(prompt, owner_id=owner_id, image=image_attached)
+        app.logger.info("Video job queued: persona=%s job=%s image_attached=%s", persona, job_id[:8], bool(image_attached))
         return {"job_id": job_id, "status": "queued"}, None
     except Exception as exc:
-        app.logger.exception("Agnes video job could not be queued: %s", str(exc)[:180])
-        return None, "CyberLord could not start the Agnes video job. Please try again shortly."
+        app.logger.exception("Shared video job could not be queued: %s", str(exc)[:180])
+        return None, "Original AI video generation could not be started. I can find relevant existing videos instead."
 
 
-def _with_generated_images(response_payload, user_text, assistant_reply, reference_images=None):
-    """Attach images, downloadable files and optional videos to the normal AI answer."""
+def _with_generated_images(response_payload, user_text, assistant_reply, reference_images=None, persona="main"):
+    """Attach generated media and YouTube discovery to either AI persona."""
+    if _video_discovery_intent(user_text):
+        _attach_video_discovery(response_payload, user_text, persona)
     generated, note = _generate_images_from_answer(user_text, assistant_reply, reference_images)
     if generated:
         response_payload["generated_images"] = generated[:4]
@@ -3471,6 +3548,7 @@ def _with_generated_images(response_payload, user_text, assistant_reply, referen
     generated_video, video_note = _generate_video_from_answer(
         user_text, assistant_reply, reference_images,
         owner_id=(str(current_user.id) if current_user.is_authenticated else None),
+        persona=persona,
     )
     if generated_video:
         response_payload["video_generation_job_id"] = generated_video["job_id"]
@@ -3483,6 +3561,7 @@ def _with_generated_images(response_payload, user_text, assistant_reply, referen
         if _video_generation_intent(user_text):
             # Never imply a render is underway if the provider did not accept a job.
             response_payload["reply"] = str(video_note)
+            _attach_video_discovery(response_payload, user_text, persona)
     return response_payload
 
 def _send_telegram_photo(chat_id, image, caption="Generated by CyberLord"):
