@@ -176,7 +176,26 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     el.textContent=text;
     messagesEl.appendChild(el);if(role==="bot")linkify(el);scroll();return el;
   };
-  const renderGeneratedMedia=(data, target)=>{
+     const renderVideoSearch=(data,target)=>{
+     const result=data.video_search;if(!result)return;
+     const card=document.createElement("section");card.className="cl-ai-video-results";
+     const heading=document.createElement("strong");heading.textContent="Video results: "+(result.query||"");card.appendChild(heading);
+     (result.items||[]).forEach(item=>{
+       const row=document.createElement("div");row.className="cl-ai-video-result";
+       const thumb=document.createElement("img");thumb.src=item.thumbnail||("https://i.ytimg.com/vi/"+item.video_id+"/hqdefault.jpg");thumb.alt="Video thumbnail";thumb.loading="lazy";
+       const info=document.createElement("div");info.style.flex="1";
+       const title=document.createElement("div");title.textContent=item.title||"YouTube video";title.style.fontWeight="700";
+       const channel=document.createElement("small");channel.textContent=item.channel||"YouTube";
+       const play=document.createElement("button");play.type="button";play.textContent="▶ Play here";play.addEventListener("click",()=>{
+         const frame=document.createElement("iframe");frame.src="https://www.youtube-nocookie.com/embed/"+encodeURIComponent(item.video_id);frame.title=item.title||"YouTube video";frame.loading="lazy";frame.allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";frame.allowFullscreen=true;row.replaceChildren(frame);
+       });
+       info.append(title,channel,document.createElement("br"),play);row.append(thumb,info);card.appendChild(row);
+     });
+     const link=document.createElement("a");link.href=result.search_url||("https://www.youtube.com/results?search_query="+encodeURIComponent(result.query||""));link.target="_blank";link.rel="noopener noreferrer";link.textContent="Open full YouTube results ↗";link.className="cl-ai-image-download";card.appendChild(link);
+     if(result.setup_note){const note=document.createElement("p");note.textContent=result.setup_note;card.appendChild(note);}
+     target.appendChild(card);
+   };
+const renderGeneratedMedia=(data, target)=>{
     (data.generated_files||[]).forEach(file=>{
       const wrap=document.createElement("div"),a=document.createElement("a");
       a.href="data:"+(file.mime_type||"application/octet-stream")+";base64,"+file.data;
@@ -257,8 +276,8 @@ document.querySelectorAll(".tool-card").forEach(card=>{
       if(files.length){
         for(const file of files){pending.textContent="Reading "+file.name+"…";const result=await cyberLordAttachment(file,text);if(result.image){images.push(result.image);}else if(result.text){text+="\n\n"+result.text;history[history.length-1].content=text;}else if(result.analysis){text+="\n\nFile analysis ("+file.name+"):\n"+result.analysis;history[history.length-1].content=text;}}
       }
-      const ytMatch=/\b(youtube|youtube video|video on youtube)\b/i.test(text);
-      if(ytMatch){try{pending.textContent="Researching YouTube…";const yt=await cyberLordJSON("/api/super-mode/youtube",{query:text});pending.remove();const answer=yt.summary||((yt.items||[]).map(v=>v.title+" — "+v.channel+"\n"+v.url).join("\n\n"))||yt.message||"No YouTube results were returned.";bubble(answer,"bot");history.push({role:"assistant",content:answer});return;}catch(ytErr){bubble("YouTube research: "+ytErr.message,"bot");return;}}
+      const ytMatch=/\b(youtube|youtube video|video on youtube|find .*videos?|show .*videos?|search .*videos?|recommend .*videos?)\b/i.test(text);
+       if(ytMatch){try{pending.textContent="Searching YouTube…";const yt=await cyberLordJSON("/api/super-mode/youtube",{query:text});pending.remove();const answer=yt.summary||"I found videos for you. Choose one below.";bubble(answer,"bot");renderVideoSearch({video_search:{query:text,items:yt.items||[],search_url:"https://www.youtube.com/results?search_query="+encodeURIComponent(text)}},messagesEl);history.push({role:"assistant",content:answer});return;}catch(ytErr){pending.remove();const answer="YouTube previews are unavailable right now. You can still search the topic on YouTube.";bubble(answer,"bot");renderVideoSearch({video_search:{query:text,items:[],search_url:"https://www.youtube.com/results?search_query="+encodeURIComponent(text)}},messagesEl);history.push({role:"assistant",content:answer});return;}}
       const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({persona:"main",messages:history.slice(-12)})});
       const data=await res.json();
       pending.remove();
@@ -269,6 +288,7 @@ document.querySelectorAll(".tool-card").forEach(card=>{
         data.generated_images.forEach(im=>{const wrap=document.createElement("div");const src="data:"+(im.mime_type||"image/png")+";base64,"+im.data;const el=document.createElement("img");el.alt="Generated by CyberLord";el.src=src;el.style.maxWidth="100%";el.style.borderRadius="12px";const dl=document.createElement("a");dl.href=src;dl.download="cyberlord-generated-image.png";dl.textContent="Download image";dl.className="cl-ai-image-download";wrap.appendChild(el);wrap.appendChild(dl);messagesEl.appendChild(wrap);});
       }
       renderGeneratedMedia(data,messagesEl);
+      renderVideoSearch(data,messagesEl);
       if(Array.isArray(data.images)&&data.images.length){
         const grid=document.createElement("div");grid.className="cl-ai-images";
         data.images.forEach(img=>{
@@ -315,6 +335,25 @@ document.querySelectorAll(".tool-card").forEach(card=>{
       el.className="tutor-msg "+role; el.textContent=text;
       box.appendChild(el); box.scrollTop=box.scrollHeight;
       return el;
+    }
+    function renderTutorVideoSearch(data,target){
+      const result=data.video_search;if(!result)return;
+      const card=document.createElement("section");card.className="cl-ai-video-results";
+      const heading=document.createElement("strong");heading.textContent="Video results: "+(result.query||"");card.appendChild(heading);
+      (result.items||[]).forEach(item=>{
+        const row=document.createElement("div");row.className="cl-ai-video-result";
+        const thumb=document.createElement("img");thumb.src=item.thumbnail||("https://i.ytimg.com/vi/"+item.video_id+"/hqdefault.jpg");thumb.alt="Video thumbnail";thumb.loading="lazy";
+        const info=document.createElement("div");info.style.flex="1";
+        const title=document.createElement("div");title.textContent=item.title||"YouTube video";title.style.fontWeight="700";
+        const channel=document.createElement("small");channel.textContent=item.channel||"YouTube";
+        const play=document.createElement("button");play.type="button";play.textContent="▶ Play here";play.addEventListener("click",()=>{
+          const frame=document.createElement("iframe");frame.src="https://www.youtube-nocookie.com/embed/"+encodeURIComponent(item.video_id);frame.title=item.title||"YouTube video";frame.loading="lazy";frame.allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";frame.allowFullscreen=true;row.replaceChildren(frame);
+        });
+        info.append(title,channel,document.createElement("br"),play);row.append(thumb,info);card.appendChild(row);
+      });
+      const link=document.createElement("a");link.href=result.search_url||("https://www.youtube.com/results?search_query="+encodeURIComponent(result.query||""));link.target="_blank";link.rel="noopener noreferrer";link.textContent="Open full YouTube results ↗";link.className="cl-ai-image-download";card.appendChild(link);
+      if(result.setup_note){const note=document.createElement("p");note.textContent=result.setup_note;card.appendChild(note);}
+      target.appendChild(card);box.scrollTop=box.scrollHeight;
     }
     function renderGeneratedMedia(data,target){
       (data.generated_files||[]).forEach(file=>{const a=document.createElement("a");a.href="data:"+(file.mime_type||"application/octet-stream")+";base64,"+file.data;a.download=file.filename||"cyberlord-file";a.textContent="⬇ Download "+(file.filename||"file");a.className="cl-ai-image-download";target.appendChild(a);});
@@ -371,6 +410,7 @@ document.querySelectorAll(".tool-card").forEach(card=>{
         if(data.image_generation_note) add(data.image_generation_note,"bot");
         if(Array.isArray(data.generated_images)) data.generated_images.forEach(im=>{const wrap=document.createElement("div"),src="data:"+(im.mime_type||"image/png")+";base64,"+im.data,pic=document.createElement("img");pic.src=src;pic.alt="Generated by CyberLord Tutor";pic.style.maxWidth="100%";pic.style.borderRadius="12px";const dl=document.createElement("a");dl.href=src;dl.download="cyberlord-tutor-image.png";dl.textContent="Download image";dl.className="cl-ai-image-download";wrap.appendChild(pic);wrap.appendChild(dl);box.appendChild(wrap);});
         renderGeneratedMedia(data,box);
+        renderTutorVideoSearch(data,box);
       }catch(err){ pending.textContent=err.message||"Something went wrong. Please try again."; }
     });
   });

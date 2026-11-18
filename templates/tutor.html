@@ -81,7 +81,27 @@ window.cyberLordPrepareImage = async function(file){
     thread.appendChild(img); scroll();
   }
 
-  function renderGeneratedMedia(data){
+    function renderVideoSearch(data){
+    var result=data.video_search;if(!result)return;
+    var card=document.createElement("section");card.className="cl-ai-video-results";
+    var heading=document.createElement("strong");heading.textContent="Video results: "+(result.query||"");card.appendChild(heading);
+    (result.items||[]).forEach(function(item){
+      var row=document.createElement("div");row.className="cl-ai-video-result";
+      var thumb=document.createElement("img");thumb.src=item.thumbnail||("https://i.ytimg.com/vi/"+item.video_id+"/hqdefault.jpg");thumb.alt="Video thumbnail";thumb.loading="lazy";
+      var info=document.createElement("div");info.style.flex="1";
+      var title=document.createElement("div");title.textContent=item.title||"YouTube video";title.style.fontWeight="700";
+      var channel=document.createElement("small");channel.textContent=item.channel||"YouTube";
+      var play=document.createElement("button");play.type="button";play.textContent="▶ Play here";play.addEventListener("click",function(){
+        var frame=document.createElement("iframe");frame.src="https://www.youtube-nocookie.com/embed/"+encodeURIComponent(item.video_id);frame.title=item.title||"YouTube video";frame.loading="lazy";frame.allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";frame.allowFullscreen=true;row.replaceChildren(frame);
+      });
+      info.append(title,channel,document.createElement("br"),play);row.append(thumb,info);card.appendChild(row);
+    });
+    var link=document.createElement("a");link.href=result.search_url||("https://www.youtube.com/results?search_query="+encodeURIComponent(result.query||""));link.target="_blank";link.rel="noopener noreferrer";link.textContent="Open full YouTube results ↗";link.className="cl-ai-image-download";card.appendChild(link);
+    if(result.setup_note){var note=document.createElement("p");note.textContent=result.setup_note;card.appendChild(note);}
+    thread.appendChild(card);scroll();
+  }
+
+function renderGeneratedMedia(data){
     (data.generated_files || []).forEach(function(file){
       var a=document.createElement("a");a.href="data:"+(file.mime_type||"application/octet-stream")+";base64,"+file.data;
       a.download=file.filename||"cyberlord-file";a.textContent="⬇ Download "+(file.filename||"file");a.className="cl-ai-image-download";thread.appendChild(a);
