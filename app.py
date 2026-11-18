@@ -2533,7 +2533,7 @@ def ai_assistant():
                 "If asked something off-academy, do NOT refuse flatly: redirect cleverly, tying the question back to a "
                 "cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                 "Keep it natural, human and short. "
-                "MEDIA ACTION RULE: When the user asks to create or build a video, do not write a scene brief, prompt, source, storyboard, or explanation. The application handles the generation action. Reply only with a short status such as “Building your video now.” Do not claim it is rendering until a generation job has actually been accepted. For image requests, follow the image-generation workflow. "
+                "CyberLord includes built-in image and short-video generation tools. If asked to create an image, picture, diagram, infographic or video, do not claim you cannot; provide a concise visual/scene brief so the application can generate and attach it when the provider is configured. "
                 + (" " + _user_mem_ctx if _user_mem_ctx else "")
             )}] + messages
     if not isinstance(messages, list):
@@ -2604,8 +2604,9 @@ def ai_assistant():
                     "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                     "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                     "Natural, human, short. "
-                    "MEDIA ACTION RULE: When the user asks to create, generate, make, or animate a video, do not output a scene brief, prompt, source, storyboard, or unrelated cybersecurity lesson. The application handles video generation separately. Reply only with a short status such as 'Building your video now.' Do not claim the video is rendering or will appear until the application confirms a job was accepted. If generation fails, state the actual failure plainly. "
-                    "For image requests, provide a concise visual brief only when the image-generation workflow requires it. "
+                    "MEDIA CAPABILITIES: You can request image and short video creation through CyberLord's built-in media tools. "
+                    "When the user asks you to generate, create, draw, design, or make an image, picture, diagram, infographic, or illustration, respond with a concise useful visual brief and NEVER claim you cannot generate or export images. The application will generate and attach the image when the provider is configured. "
+                    "When the user asks you to create, generate, make, or animate a video or clip, provide a concise scene brief and NEVER claim video generation is impossible; the application will attempt generation when its video provider is configured. If generation is unavailable, the application will explain the provider setup issue. "
                     "Keep all generated educational visuals relevant to cybersecurity and safe learning. "
                     "Quiz rule: when a student asks about a lesson quiz question, you may discuss and "
                     "explain it, but reveal the correct answer only if they ask to check their answer or "
@@ -3674,21 +3675,59 @@ def _deliver_messaging_result(result, send_text, send_image, send_file=None, sen
 
 
 def _telegram_download_image(file_id):
+    """Download and normalize a Telegram photo for the shared AI vision pipeline.
+
+    Telegram's file endpoint may return a generic Content-Type such as
+    application/octet-stream. Do not reject a valid image based only on that
+    header: inspect the actual image bytes with Pillow and re-encode them.
+    """
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token or not file_id:
+        app.logger.warning("Telegram image download skipped: bot token or file_id missing")
         return None
     try:
-        meta = requests.get(f"https://api.telegram.org/bot{token}/getFile", params={"file_id": file_id}, timeout=12)
+        meta = requests.get(
+            f"https://api.telegram.org/bot{token}/getFile",
+            params={"file_id": file_id}, timeout=15,
+        )
         meta.raise_for_status()
-        path = (meta.json().get("result") or {}).get("file_path")
-        if not path: return None
-        media = requests.get(f"https://api.telegram.org/file/bot{token}/{path}", timeout=20)
+        payload = meta.json()
+        if not payload.get("ok"):
+            app.logger.warning("Telegram getFile returned not-ok: %s", str(payload)[:180])
+            return None
+        path = (payload.get("result") or {}).get("file_path")
+        if not path:
+            app.logger.warning("Telegram getFile response did not include file_path")
+            return None
+        media = requests.get(
+            f"https://api.telegram.org/file/bot{token}/{path}", timeout=30,
+        )
         media.raise_for_status()
-        mime = media.headers.get("Content-Type", "image/jpeg").split(";")[0].lower()
-        if mime not in ("image/jpeg", "image/png", "image/webp") or len(media.content) > 20 * 1024 * 1024: return None
-        return _normalize_image_for_ai(media.content, mime)
+        raw = media.content
+        if not raw or len(raw) > 20 * 1024 * 1024:
+            app.logger.warning("Telegram image has invalid size: %s bytes", len(raw or b""))
+            return None
+
+        # Verify the content itself, rather than trusting Telegram/proxy MIME headers.
+        try:
+            with Image.open(BytesIO(raw)) as candidate:
+                image_format = (candidate.format or "").upper()
+                candidate.verify()
+        except Exception as image_exc:
+            app.logger.warning(
+                "Telegram attachment is not a readable image (content-type=%s): %s",
+                media.headers.get("Content-Type", "unknown"), str(image_exc)[:140],
+            )
+            return None
+        if image_format not in ("JPEG", "JPG", "PNG", "WEBP"):
+            app.logger.warning("Telegram image format is not supported: %s", image_format)
+            return None
+        normalized = _normalize_image_for_ai(raw, "image/jpeg" if image_format in ("JPEG", "JPG") else "image/" + image_format.lower())
+        if not normalized:
+            app.logger.warning("Telegram image normalization returned no image (format=%s)", image_format)
+        return normalized
     except Exception as exc:
-        app.logger.warning("Telegram image download failed: %s", str(exc)[:160])
+        app.logger.warning("Telegram image download failed: %s", str(exc)[:180])
         return None
 
 
