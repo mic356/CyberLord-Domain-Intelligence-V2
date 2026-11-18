@@ -364,13 +364,3 @@ html[data-theme="dark"] .reviews-average{color:#2dd4bf}
 /* CyberLord Super Mode workspace */
 .super-hero{background:linear-gradient(125deg,#142a43,#102b35);border-color:#31516a}.super-hero h1{font-size:clamp(32px,5vw,52px);margin:8px 0}.super-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.super-grid .panel{margin:0;min-width:0}.super-grid textarea{display:block;width:100%;margin:10px 0;padding:12px;border:1px solid #334764;border-radius:8px;background:#091321;color:white;font:inherit;resize:vertical}.super-grid input[type=file]{margin-bottom:12px}.super-grid form .btn{margin-top:8px}.super-grid .result{max-height:360px;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:700px){.super-grid{grid-template-columns:1fr}}
 .voice-recorder{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}.voice-recorder .muted{font-size:11px}
-
-
-/* In-chat YouTube discovery cards shared by Dashboard AI and Academy Tutor. */
-.cl-ai-video-results{display:grid;gap:12px;margin:12px 0;padding:12px;border:1px solid var(--line,#cbd5e1);border-radius:14px;background:var(--card,#fff);color:var(--text,inherit)}
-.cl-ai-video-result{display:flex;gap:12px;align-items:center;padding:9px;border-radius:10px;background:var(--soft,#f1f5f9)}
-.cl-ai-video-result img{width:150px;max-width:38%;border-radius:8px}
-.cl-ai-video-result button{margin-top:6px;padding:7px 11px;border:0;border-radius:8px;background:var(--accent,#2563eb);color:#fff;font-weight:700;cursor:pointer}
-.cl-ai-video-results a{overflow-wrap:anywhere}
-.cl-ai-video-result iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:10px}
-@media(max-width:520px){.cl-ai-video-result{align-items:flex-start;flex-direction:column}.cl-ai-video-result img{width:100%;max-width:100%}}
