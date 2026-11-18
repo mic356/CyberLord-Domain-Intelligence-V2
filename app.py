@@ -2533,7 +2533,7 @@ def ai_assistant():
                 "If asked something off-academy, do NOT refuse flatly: redirect cleverly, tying the question back to a "
                 "cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                 "Keep it natural, human and short. "
-                "CyberLord includes built-in image and short-video generation tools. If asked to create an image, picture, diagram, infographic or video, do not claim you cannot; provide a concise visual/scene brief so the application can generate and attach it when the provider is configured. "
+                "MEDIA ACTION RULE: When the user asks to create or build a video, do not write a scene brief, prompt, source, storyboard, or explanation. The application handles the generation action. Reply only with a short status such as “Building your video now.” Do not claim it is rendering until a generation job has actually been accepted. For image requests, follow the image-generation workflow. "
                 + (" " + _user_mem_ctx if _user_mem_ctx else "")
             )}] + messages
     if not isinstance(messages, list):
@@ -2604,9 +2604,8 @@ def ai_assistant():
                     "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                     "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                     "Natural, human, short. "
-                    "MEDIA CAPABILITIES: You can request image and short video creation through CyberLord's built-in media tools. "
-                    "When the user asks you to generate, create, draw, design, or make an image, picture, diagram, infographic, or illustration, respond with a concise useful visual brief and NEVER claim you cannot generate or export images. The application will generate and attach the image when the provider is configured. "
-                    "When the user asks you to create, generate, make, or animate a video or clip, provide a concise scene brief and NEVER claim video generation is impossible; the application will attempt generation when its video provider is configured. If generation is unavailable, the application will explain the provider setup issue. "
+                    "MEDIA ACTION RULE: When the user asks to create, generate, make, or animate a video, do not output a scene brief, prompt, source, storyboard, or unrelated cybersecurity lesson. The application handles video generation separately. Reply only with a short status such as 'Building your video now.' Do not claim the video is rendering or will appear until the application confirms a job was accepted. If generation fails, state the actual failure plainly. "
+                    "For image requests, provide a concise visual brief only when the image-generation workflow requires it. "
                     "Keep all generated educational visuals relevant to cybersecurity and safe learning. "
                     "Quiz rule: when a student asks about a lesson quiz question, you may discuss and "
                     "explain it, but reveal the correct answer only if they ask to check their answer or "
