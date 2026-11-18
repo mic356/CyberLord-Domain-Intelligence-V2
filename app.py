@@ -283,25 +283,16 @@ serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
 # Fixed prices agreed for launch. NGN prices are fixed rather than live FX conversions.
 PLANS = {
-    "free": {"name": "FREE", "price": 0, "ngn": 0, "usdt": "0.00", "rank": 0},
-    "pro": {"name": "PRO", "price": 6300, "ngn": 6300, "usdt": "4.50", "rank": 1},
-    "pro_plus": {"name": "PRO PLUS", "price": 12600, "ngn": 12600, "usdt": "9.00", "rank": 2},
+    "free": {"name": "FREE", "price": 0, "ngn": 0, "rank": 0},
+    "pro": {"name": "PRO", "price": 6300, "ngn": 6300, "rank": 1},
+    "pro_plus": {"name": "PRO PLUS", "price": 12600, "ngn": 12600, "rank": 2},
     # Tutor Pro is a separate add-on entitlement (see tutor_pro_expires_at on User).
     # rank stays 0 so it never unlocks PRO / PRO PLUS scan tools or courses on its own;
     # it only unlocks unlimited tutor chat + voice UI + Code Lab.
-    "tutor_pro": {"name": "TUTOR PRO", "price": 6300, "ngn": 6300, "usdt": "4.50", "rank": 0},
+    "tutor_pro": {"name": "TUTOR PRO", "price": 6300, "ngn": 6300, "rank": 0},
 }
 TUTOR_FREE_DAILY_LIMIT = 10
 TUTOR_PRO_NGN = 6300
-TUTOR_PRO_USDT = "4.50"
-USDT_WALLETS = {
-    "trc20": "TSLdKMFJB3pqWMkkZoUfdo5j2GVh2ANHSw",
-    "bep20": "0xab22fd86fbf75f7082436b25c0f851d4d7484e32",
-}
-USDT_CONTRACTS = {
-    "trc20": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
-    "bep20": "0x55d398326f99059fF775485246999027B3197955",
-}
 PRO_TOOLS = {"phone", "email_review", "breach"}
 PLUS_TOOLS = {"attack_surface", "cve", "compare", "port"}
 TOOL_NAMES = {
@@ -1338,7 +1329,7 @@ def dashboard():
     # Per-user memory: one greeting flag the templates can use. Greeting copy
     # stays short; the AI itself gets the full memory context on each request.
     _returning = bool(session.get("cyber_welcome_back"))
-    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS, tutor_pro=tutor_pro_active(current_user), tutor_remaining=tutor_remaining(current_user), tutor_limit=TUTOR_FREE_DAILY_LIMIT, tutor_pro_expires_at=getattr(current_user, "tutor_pro_expires_at", None), tutor_pro_status=tutor_pro_active(current_user), cyber_returning=_returning)
+    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, tutor_pro=tutor_pro_active(current_user), tutor_remaining=tutor_remaining(current_user), tutor_limit=TUTOR_FREE_DAILY_LIMIT, tutor_pro_expires_at=getattr(current_user, "tutor_pro_expires_at", None), tutor_pro_status=tutor_pro_active(current_user), cyber_returning=_returning)
 
 # Academy lessons and their exercise questions now live in academy_questions.py
 # (add practitioner-level questions there; see the how-to at the top of that file).
@@ -1838,223 +1829,126 @@ def run_tool(tool):
         app.logger.exception("Tool execution failed")
         return jsonify(error="The check could not be completed. Verify the target and try again."),500
 
-def verify_tron_usdt(tx_hash, expected_amount):
-    """Verify a confirmed TRC20 USDT transfer using TronGrid's confirmed account history."""
-    wallet = USDT_WALLETS["trc20"]
-    params = {"limit": 200, "only_confirmed": "true", "contract_address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"}
-    headers = {}
-    api_key = os.getenv("TRONGRID_API_KEY")
-    if api_key:
-        headers["TRON-PRO-API-KEY"] = api_key
-    response = requests.get(f"https://api.trongrid.io/v1/accounts/{wallet}/transactions/trc20", params=params, headers=headers, timeout=20)
+
+def squad_api_base():
+    """Squad's production API base. Use sandbox only when explicitly requested."""
+    return "https://sandbox-api-d.squadco.com" if os.getenv("SQUAD_ENV", "live").lower() == "sandbox" else "https://api-d.squadco.com"
+
+
+def squad_request(method, path, **kwargs):
+    secret = os.getenv("SQUAD_SECRET_KEY", "").strip()
+    if not secret:
+        raise RuntimeError("Squad is not configured. Add SQUAD_SECRET_KEY to the server environment.")
+    headers = kwargs.pop("headers", {})
+    headers.update({"Authorization": "Bearer " + secret, "Content-Type": "application/json"})
+    response = requests.request(method, squad_api_base() + path, headers=headers, timeout=20, **kwargs)
     response.raise_for_status()
-    for transfer in response.json().get("data", []):
-        info = transfer.get("token_info", {})
-        if transfer.get("transaction_id", "").lower() != tx_hash.lower():
-            continue
-        if info.get("address") != "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t":
-            continue
-        if transfer.get("to", "").lower() != wallet.lower():
-            continue
-        decimals = int(info.get("decimals", 6))
-        received = Decimal(str(transfer.get("value", "0"))) / (Decimal(10) ** decimals)
-        if received != expected_amount:
-            return False, "The transaction amount does not match the selected plan."
-        return True, "Confirmed TRC20 USDT transfer verified."
-    return False, "No confirmed incoming USDT transfer matching this transaction hash was found yet. Check the network and try again later."
+    payload = response.json()
+    if not payload.get("success"):
+        raise RuntimeError(payload.get("message", "Squad request was not successful"))
+    return payload.get("data") or {}
 
-def verify_bep20_usdt(tx_hash, expected_amount):
-    """Verify a BEP20 USDT transfer from a successful, sufficiently confirmed BSC receipt."""
-    rpc = os.getenv("BSC_RPC_URL") or "https://bsc-dataseed.binance.org/"
-    token = USDT_CONTRACTS["bep20"].lower()
-    recipient = USDT_WALLETS["bep20"].lower()
-    transfer_topic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-    def rpc_call(method, params):
-        r = requests.post(rpc, json={"jsonrpc":"2.0","id":1,"method":method,"params":params}, timeout=20)
-        r.raise_for_status()
-        payload = r.json()
-        if payload.get("error"):
-            raise RuntimeError("BSC RPC returned an error")
-        return payload.get("result")
-    chain_id = rpc_call("eth_chainId", [])
-    if int(chain_id, 16) != 56:
-        raise RuntimeError("Configured RPC endpoint is not BNB Smart Chain mainnet")
-    receipt = rpc_call("eth_getTransactionReceipt", [tx_hash])
-    if not receipt:
-        return False, "Transaction not found on BNB Smart Chain yet."
-    if int(receipt.get("status", "0x0"), 16) != 1:
-        return False, "The blockchain transaction failed."
-    latest = rpc_call("eth_blockNumber", [])
-    confirmations = int(latest, 16) - int(receipt.get("blockNumber", "0x0"), 16) + 1
-    if confirmations < 12:
-        return False, f"Transaction has {confirmations} confirmations; at least 12 are required."
-    for log in receipt.get("logs", []):
-        topics = log.get("topics", [])
-        if log.get("address", "").lower() != token or len(topics) < 3 or topics[0].lower() != transfer_topic:
-            continue
-        to_address = "0x" + topics[2][-40:].lower()
-        if to_address != recipient:
-            continue
-        received = Decimal(int(log.get("data", "0x0"), 16)) / (Decimal(10) ** 18)
-        if received != expected_amount:
-            return False, "The transaction amount does not match the selected plan."
-        return True, "Confirmed BEP20 USDT transfer verified."
-    return False, "This transaction does not contain an incoming transfer of the supported USDT token to the CyberLord wallet."
 
-def verify_usdt(network, tx_hash, plan):
-    if network == "trc20":
-        return verify_tron_usdt(tx_hash, Decimal(PLANS[plan]["usdt"]))
-    if network == "bep20":
-        return verify_bep20_usdt(tx_hash, Decimal(PLANS[plan]["usdt"]))
-    return False, "Unsupported payment network."
+def squad_verify(reference, payment):
+    """Trust only Squad's server-side verify endpoint, never browser query parameters."""
+    data = squad_request("GET", "/transaction/verify/" + reference)
+    status = str(data.get("transaction_status", "")).lower()
+    amount = data.get("transaction_amount", data.get("amount"))
+    currency = str(data.get("transaction_currency_id", data.get("currency", ""))).upper()
+    if status != "success":
+        return False
+    if int(amount or 0) != payment.amount or currency != "NGN":
+        app.logger.warning("Squad payment mismatch for reference %s", reference)
+        return False
+    return True
 
-@app.route("/payment/usdt/submit", methods=["POST"])
+
+@app.route("/payment/squad/initialize", methods=["POST"])
 @login_required
-def payment_usdt_submit():
+def payment_squad_initialize():
     plan = request.form.get("plan", "")
-    network = request.form.get("network", "").lower()
-    tx_hash = request.form.get("tx_hash", "").strip()
-    if plan not in ("pro", "pro_plus", "tutor_pro") or network not in USDT_WALLETS:
-        flash("Select a valid plan and USDT network.", "error")
+    if plan not in ("pro", "pro_plus", "tutor_pro"):
+        flash("Select a valid plan.", "error")
         return redirect(url_for("dashboard") + "#plans")
-    valid_hash = (re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash) if network == "bep20" else re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash))
-    if not valid_hash:
-        flash("Enter the 64-character transaction hash from the selected blockchain.", "error")
+    if not os.getenv("SQUAD_SECRET_KEY", "").strip():
+        flash("Online payment is not configured yet. Please contact support.", "error")
         return redirect(url_for("dashboard") + "#plans")
-    existing = Payment.query.filter_by(tx_hash=tx_hash).first()
-    if existing and (existing.status == "success" or existing.user_id != current_user.id or existing.plan != plan or existing.network != network):
-        flash("This transaction hash has already been submitted and cannot be reused.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    payment = existing or Payment(user_id=current_user.id, reference="USDT-" + secrets.token_urlsafe(16), plan=plan,
-        amount=int(Decimal(PLANS[plan]["usdt"]) * 100), status="pending", currency="USDT", network=network, tx_hash=tx_hash)
-    if not existing:
-        db.session.add(payment)
-        db.session.commit()
-    try:
-        verified, message = verify_usdt(network, tx_hash, plan)
-    except Exception:
-        app.logger.exception("USDT transaction verification provider failed")
-        verified, message = False, "The blockchain verification service is temporarily unavailable. Your payment remains pending; retry later."
-    if verified:
-        user = db.session.get(User, payment.user_id)
-        if payment.status != "success" and user:
-            activate_subscription(user, payment)
-        flash("Payment verified. " + PLANS[plan]["name"] + " is active for 30 days.", "success")
-    else:
-        payment.status = "pending"
-        db.session.commit()
-        flash(message + " Your submission is pending and no subscription has been activated.", "warning")
-    return redirect(url_for("dashboard") + "#plans")
-
-@app.route("/payment/bank/submit", methods=["POST"])
-@login_required
-def payment_bank_submit():
-    plan = request.form.get("plan", "")
-    bank_reference = request.form.get("bank_reference", "").strip()
-    if plan not in ("pro", "pro_plus", "tutor_pro") or not bank_reference or len(bank_reference) > 115:
-        flash("Select a plan and enter your bank transfer reference.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    reference = "BANK-" + bank_reference
-    if Payment.query.filter_by(reference=reference).first():
-        flash("That bank transfer reference has already been submitted.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    payment_method = request.form.get("payment_method", "opay").strip().lower()
-    if payment_method not in ("opay", "union_bank"):
-        flash("Select a valid bank payment method.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    upload = request.files.get("receipt")
-    receipt_bytes = None
-    if upload and upload.filename:
-        allowed = {"image/jpeg", "image/png", "application/pdf", "image/webp"}
-        if upload.mimetype not in allowed:
-            flash("Receipt must be a JPG, PNG, WEBP or PDF file.", "error")
-            return redirect(url_for("dashboard") + "#plans")
-        receipt_bytes = upload.read(5 * 1024 * 1024 + 1)
-        if not receipt_bytes or len(receipt_bytes) > 5 * 1024 * 1024:
-            flash("Receipt file must be smaller than 5 MB.", "error")
-            return redirect(url_for("dashboard") + "#plans")
+    reference = "CLSQ-" + secrets.token_urlsafe(18).replace("-", "").replace("_", "")
+    amount = PLANS[plan]["ngn"] * 100
     payment = Payment(user_id=current_user.id, reference=reference, plan=plan,
-        amount=PLANS[plan]["ngn"] * 100, status="pending", currency="NGN", network=payment_method)
+                      amount=amount, currency="NGN", status="pending", network="squad")
     db.session.add(payment)
-    db.session.flush()
-    if receipt_bytes:
-        db.session.add(BankReceipt(payment_id=payment.id,
-            filename=os.path.basename(upload.filename or "receipt")[:180],
-            content_type=upload.mimetype, data=receipt_bytes))
     db.session.commit()
-    flash("Bank transfer submitted — awaiting manual confirmation. Your plan will activate only after the funds are confirmed.", "success")
+    try:
+        data = squad_request("POST", "/transaction/initiate", json={
+            "email": current_user.email,
+            "amount": amount,
+            "currency": "NGN",
+            "customer_name": getattr(current_user, "name", "") or current_user.email,
+            "initiate_type": "inline",
+            "transaction_ref": reference,
+            "callback_url": url_for("payment_squad_callback", _external=True),
+            "payment_channels": ["card", "bank", "ussd", "transfer"],
+            "pass_charge": False,
+            "metadata": {"user_id": current_user.id, "plan": plan}
+        })
+        checkout_url = data.get("checkout_url") or data.get("payment_url") or data.get("authorization_url")
+        if not checkout_url or not checkout_url.startswith("https://"):
+            raise RuntimeError("Squad did not return a valid checkout URL.")
+        return redirect(checkout_url, code=303)
+    except Exception:
+        payment.status = "failed"
+        db.session.commit()
+        app.logger.exception("Squad checkout initialization failed")
+        flash("Could not start Squad checkout. Please try again later.", "error")
+        return redirect(url_for("dashboard") + "#plans")
+
+
+@app.route("/payment/squad/callback")
+@login_required
+def payment_squad_callback():
+    reference = request.args.get("transaction_ref") or request.args.get("reference") or ""
+    payment = Payment.query.filter_by(reference=reference, user_id=current_user.id, network="squad").first()
+    if not payment:
+        flash("Squad payment reference was not found.", "error")
+        return redirect(url_for("dashboard") + "#plans")
+    try:
+        if payment.status != "success" and squad_verify(reference, payment):
+            activate_subscription(current_user, payment)
+            db.session.commit()
+            flash("Payment verified by Squad. Your plan is active for 30 days.", "success")
+        elif payment.status == "success":
+            flash("Your payment is already confirmed.", "success")
+        else:
+            flash("Squad has not confirmed this payment yet. Refresh your dashboard shortly.", "warning")
+    except Exception:
+        app.logger.exception("Squad callback verification failed")
+        flash("We could not verify the payment yet. Your plan has not been activated; please retry shortly.", "warning")
     return redirect(url_for("dashboard") + "#plans")
 
-# Paystack integration is retained for future reactivation, but disabled unless explicitly enabled.
-@app.route("/payment/initialize", methods=["POST"])
-@login_required
-def payment_initialize():
-    if os.getenv("PAYSTACK_ENABLED", "false").lower() != "true":
-        flash("Paystack is temporarily disabled while the account is awaiting approval.", "warning")
-        return redirect(url_for("dashboard") + "#plans")
-    plan=request.form.get("plan") or (request.get_json(silent=True) or {}).get("plan")
-    if plan not in ("pro","pro_plus","tutor_pro"): return jsonify(error="Invalid plan"), 400
-    secret=os.getenv("PAYSTACK_SECRET_KEY")
-    if not secret: return jsonify(error="Paystack is not configured on the server."), 503
-    reference="CLD-"+secrets.token_urlsafe(18)
-    amount=PLANS[plan]["ngn"]*100
-    payment=Payment(user_id=current_user.id,reference=reference,plan=plan,amount=amount,currency="NGN")
-    db.session.add(payment); db.session.commit()
+
+@app.route("/payment/squad/webhook", methods=["POST"])
+def payment_squad_webhook():
+    # Squad webhook is only a notification. Re-query Squad before granting value.
+    event = request.get_json(silent=True) or {}
+    body = event.get("Body") or event.get("body") or {}
+    reference = event.get("TransactionRef") or event.get("transaction_ref") or body.get("transaction_ref")
+    if not reference:
+        return jsonify(received=True), 200
+    payment = Payment.query.filter_by(reference=reference, network="squad").first()
+    if not payment or payment.status == "success":
+        return jsonify(received=True), 200
     try:
-        response=requests.post("https://api.paystack.co/transaction/initialize",
-            headers={"Authorization":"Bearer "+secret,"Content-Type":"application/json"},
-            json={"email":current_user.email,"amount":amount,"currency":"NGN","reference":reference,
-                  "callback_url":url_for("payment_callback",_external=True),"metadata":{"user_id":current_user.id,"plan":plan}},timeout=15)
-        data=response.json()
-        if not response.ok or not data.get("status"): raise RuntimeError(data.get("message","Paystack initialization failed"))
-        return redirect(data["data"]["authorization_url"],code=303)
+        if squad_verify(reference, payment):
+            user = db.session.get(User, payment.user_id)
+            if user:
+                activate_subscription(user, payment)
+                db.session.commit()
     except Exception:
-        payment.status="failed"; db.session.commit()
-        app.logger.exception("Paystack initialization failed")
-        flash("Could not start Paystack checkout. Please try again later.", "error")
-        return redirect(url_for("dashboard"))
-
-def verify_paystack(reference):
-    secret=os.getenv("PAYSTACK_SECRET_KEY")
-    if not secret: return None
-    r=requests.get("https://api.paystack.co/transaction/verify/"+reference,headers={"Authorization":"Bearer "+secret},timeout=15)
-    data=r.json()
-    if r.ok and data.get("status") and data.get("data",{}).get("status")=="success": return data["data"]
-    return None
-
-@app.route("/payment/callback")
-@login_required
-def payment_callback():
-    if os.getenv("PAYSTACK_ENABLED", "false").lower() != "true":
-        flash("Paystack is currently disabled.", "warning")
-        return redirect(url_for("dashboard"))
-    reference=request.args.get("reference", "")
-    payment=Payment.query.filter_by(reference=reference,user_id=current_user.id).first()
-    if not payment: flash("Payment reference was not found.", "error"); return redirect(url_for("dashboard"))
-    try: data=verify_paystack(reference)
-    except Exception: data=None
-    if data and data.get("amount")==payment.amount and data.get("currency")=="NGN" and payment.status != "success":
-        activate_subscription(current_user, payment)
-        flash("Payment verified. Your plan is active for 30 days.", "success")
-    else:
-        flash("Payment is not yet verified. If you paid, wait briefly and refresh your dashboard.", "warning")
-    return redirect(url_for("dashboard"))
-
-@app.route("/payment/webhook", methods=["POST"])
-def payment_webhook():
-    if os.getenv("PAYSTACK_ENABLED", "false").lower() != "true": return "Paystack disabled", 404
-    secret=os.getenv("PAYSTACK_SECRET_KEY", "")
-    signature=request.headers.get("x-paystack-signature", "")
-    expected=hmac.new(secret.encode(),request.get_data(),hashlib.sha512).hexdigest()
-    if not secret or not hmac.compare_digest(signature,expected): return "invalid signature", 401
-    event=request.get_json(silent=True) or {}
-    if event.get("event")=="charge.success":
-        data=event.get("data",{}); ref=data.get("reference")
-        payment=Payment.query.filter_by(reference=ref).first()
-        if payment and payment.status != "success" and data.get("status")=="success" and data.get("amount")==payment.amount and data.get("currency")=="NGN":
-            user=db.session.get(User,payment.user_id)
-            if user: activate_subscription(user, payment)
-    return jsonify(received=True)
+        db.session.rollback()
+        app.logger.exception("Squad webhook verification failed")
+        return jsonify(received=False), 503
+    return jsonify(received=True), 200
 
 def _admin_csrf_token():
     token = session.get("admin_csrf_token")
@@ -2180,9 +2074,9 @@ def admin_payment_receipt(payment_id):
 def admin_approve_bank_payment(payment_id):
     _require_admin()
     payment = db.session.get(Payment, payment_id)
-    eligible_methods = {"bank_transfer", "opay", "union_bank"}
+    eligible_methods = {"squad"}
     if not payment or payment.currency != "NGN" or payment.network not in eligible_methods or payment.status != "pending":
-        flash("This payment is not an eligible pending bank transfer.", "error")
+        flash("This payment is not an eligible pending Squad payment.", "error")
         return redirect(url_for("admin_dashboard"))
     user = db.session.get(User, payment.user_id)
     if not user:
@@ -2302,7 +2196,7 @@ _LIVE_CYBER_KEYS = (
     "git", "github secrets", "code injection", "how do i hack", "hack into", "break into", "course",
 )
 _LIVE_SITE_KEYS = (
-    "cyberlord", "pro plus", "how much is pro", "subscription", "payment", "paystack", "bank transfer", "usdt",
+    "cyberlord", "pro plus", "how much is pro", "subscription", "payment",
     "deep scan", "interaction board", "security centre", "advanced intelligence", "academy", "tutor",
 )
 _LIVE_TRIGGER_KEYS = (
@@ -2527,7 +2421,7 @@ def ai_assistant():
                     "Do NOT redirect non-cybersecurity topics back to cybersecurity and do NOT force a security angle. "
                     "You can also answer about the CyberLord website itself: it offers domain scans, deep scan, "
                     "CyberLord Academy, the AI tutor, the interaction board, the security centre, and advanced "
-                    "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). "
+                    "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300. "
                     "Answer truthfully and concisely in clear standard English, with a warm and playful tone, like a sharp friend. ALWAYS answer in clear standard English first. "
                     "If you do not actually know, say so plainly in one line instead of guessing or inventing. "
                     "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. "
@@ -2549,7 +2443,7 @@ def ai_assistant():
                 "Do NOT redirect non-cybersecurity topics back to cybersecurity and do NOT force a security angle. "
                 "You can also answer about the CyberLord website itself: it offers domain scans, deep scan, "
                 "CyberLord Academy, the AI tutor, the interaction board, the security centre, and advanced "
-                "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). "
+                "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300. "
                 "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. "
                 "Answer truthfully and concisely with a warm, human tone, like a helpful friend. "
                 "If you do not actually know, say so plainly in one line instead of guessing or inventing a wrong answer. "
@@ -2652,7 +2546,7 @@ def ai_assistant():
                     "cybersecurity and do NOT force a security angle. You can also answer about the CyberLord "
                     "website itself: it offers domain scans, deep scan, CyberLord Academy, the AI tutor, the "
                     "interaction board, the security centre, and advanced intelligence. Pricing is Free NGN 0, "
-                    "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with a warm, human tone, "
+                    "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300. " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with a warm, human tone, "
                     "like a helpful friend. If you do not actually know, say so plainly in one line instead of "
                     "guessing or inventing. The security guardrails below apply only to security-related requests; "
                     "for general chat, just answer normally. "
@@ -2802,7 +2696,7 @@ def ai_assistant():
                 "cybersecurity and do NOT force a security angle. You can also answer about the CyberLord "
                 "website itself: it offers domain scans, deep scan, CyberLord Academy, the AI tutor, the "
                 "interaction board, the security centre, and advanced intelligence. Pricing is Free NGN 0, "
-                "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with swagger, "
+                "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300. " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with swagger, "
                 "like a sharp friend who knows the streets of Lagos. If you do not actually know, say so plainly in one line instead of "
                 "guessing or inventing. The security guardrails below apply only to security-related requests; "
                 "for general chat, just answer normally. " + _current_datetime_line() + ". "
