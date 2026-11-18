@@ -195,13 +195,13 @@ document.querySelectorAll(".tool-card").forEach(card=>{
     if(data.video_generation_job_id) watchAgnesVideo(data.video_generation_job_id,target);
   };
   async function watchAgnesVideo(jobId,target){
-    const status=bubble("Agnes: video request queued…","bot");
+    const status=bubble("Building your video…","bot");
     for(let attempt=0;attempt<360;attempt++){
       try{
         const response=await fetch("/api/agnes-video/"+encodeURIComponent(jobId));
         const job=await response.json();
         if(!response.ok)throw new Error(job.error||"Could not read video status.");
-        status.textContent=(job.message||"Agnes is processing your video…")+" ("+(job.progress||0)+"%)";
+        status.textContent=(job.message||"Building your video…")+" ("+(job.progress||0)+"%)";
         if(job.status==="completed"){
           const wrap=document.createElement("div"),video=document.createElement("video");
           video.controls=true;video.preload="metadata";video.src=job.preview_url;video.style.width="100%";video.style.maxWidth="560px";video.style.borderRadius="12px";
@@ -323,12 +323,12 @@ document.querySelectorAll(".tool-card").forEach(card=>{
       if(data.video_generation_job_id)watchTutorAgnesVideo(data.video_generation_job_id,target);
     }
     async function watchTutorAgnesVideo(jobId,target){
-      const status=add("Agnes: video request queued…","bot");
+      const status=add("Building your video…","bot");
       for(let attempt=0;attempt<360;attempt++){
         try{
           const response=await fetch("/api/agnes-video/"+encodeURIComponent(jobId));const job=await response.json();
           if(!response.ok)throw new Error(job.error||"Could not read video status.");
-          status.textContent=(job.message||"Agnes is processing your video…")+" ("+(job.progress||0)+"%)";
+          status.textContent=(job.message||"Building your video…")+" ("+(job.progress||0)+"%)";
           if(job.status==="completed"){
             const wrap=document.createElement("div"),video=document.createElement("video");video.controls=true;video.preload="metadata";video.src=job.preview_url;video.style.width="100%";video.style.maxWidth="560px";video.style.borderRadius="12px";
             const link=document.createElement("a");link.href=job.download_url;link.download="cyberlord-generated-video.mp4";link.textContent="Download video";link.className="cl-ai-image-download";wrap.appendChild(video);wrap.appendChild(link);target.appendChild(wrap);status.textContent="Your video is ready.";return;

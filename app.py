@@ -2533,7 +2533,7 @@ def ai_assistant():
                 "If asked something off-academy, do NOT refuse flatly: redirect cleverly, tying the question back to a "
                 "cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                 "Keep it natural, human and short. "
-                "CyberLord includes built-in image and short-video generation tools. If asked to create an image, picture, diagram, infographic or video, do not claim you cannot; provide a concise visual/scene brief so the application can generate and attach it when the provider is configured. "
+                "CyberLord includes built-in image and short-video generation tools. If asked to create an image, picture, diagram, infographic or video, do not claim you cannot; respond naturally and briefly; for a video request, simply say “Building your video now.” Do not describe internal prompts, briefs, or source material. "
                 + (" " + _user_mem_ctx if _user_mem_ctx else "")
             )}] + messages
     if not isinstance(messages, list):
@@ -2605,8 +2605,8 @@ def ai_assistant():
                     "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                     "Natural, human, short. "
                     "MEDIA CAPABILITIES: You can request image and short video creation through CyberLord's built-in media tools. "
-                    "When the user asks you to generate, create, draw, design, or make an image, picture, diagram, infographic, or illustration, respond with a concise useful visual brief and NEVER claim you cannot generate or export images. The application will generate and attach the image when the provider is configured. "
-                    "When the user asks you to create, generate, make, or animate a video or clip, provide a concise scene brief and NEVER claim video generation is impossible; the application will attempt generation when its video provider is configured. If generation is unavailable, the application will explain the provider setup issue. "
+                    "When the user asks you to generate, create, draw, design, or make an image, picture, diagram, infographic, or illustration, respond naturally and briefly; do not expose internal generation prompts or explain that the user’s text is source material. The application will generate and attach the image when the provider is configured. "
+                    "When the user asks you to create, generate, make, or animate a video or clip, simply say “Building your video now.” Do not expose a scene brief or internal generation process; the application will report a clear setup or generation error if needed. "
                     "Keep all generated educational visuals relevant to cybersecurity and safe learning. "
                     "Quiz rule: when a student asks about a lesson quiz question, you may discuss and "
                     "explain it, but reveal the correct answer only if they ask to check their answer or "
@@ -2756,7 +2756,7 @@ def ai_assistant():
                 "something off-academy, do NOT refuse flatly: redirect cleverly, tying the question "
                 "back to a cybersecurity or lesson angle, or pull it back to a related lesson concept. "
                 "Natural, human, short. "
-                "MEDIA CAPABILITIES: CyberLord has built-in image and short-video generation tools. When asked to generate/create/draw/design an image, picture, diagram, infographic or illustration, give a concise visual brief and NEVER claim you cannot generate or export images. The application will attach generated media when its provider is configured. For video requests, describe the intended scenes briefly and let the application attempt generation; do not claim the capability does not exist. "
+                "MEDIA CAPABILITIES: CyberLord has built-in image and short-video generation tools. When asked to generate/create/draw/design an image, picture, diagram, infographic or illustration, respond naturally and briefly; do not expose internal generation prompts or explain that the user’s text is source material. The application will attach generated media when its provider is configured. For video requests, simply say “Building your video now.” Do not expose a scene brief or internal generation process. "
                 "Keep generated educational visuals relevant to cybersecurity and safe learning. "
                 "Quiz rule: when a student asks about a lesson quiz question, you may discuss and "
                 "explain it, but reveal the correct answer only if they ask to check their answer or "
@@ -3473,8 +3473,12 @@ def _with_generated_images(response_payload, user_text, assistant_reply, referen
     if generated_video:
         response_payload["video_generation_job_id"] = generated_video["job_id"]
         response_payload["video_generation"] = "queued"
-        response_payload["video_generation_note"] = "Your video request has been sent to Agnes. I'll send the finished video here when it's ready."
-    elif video_note:
+        # Keep the user-facing assistant natural: do not expose the internal
+        # scene brief or tell users that their text is being used as a source.
+        response_payload["reply"] = "Building your video now. I'll show it here when it's ready."
+        response_payload["video_generation_note"] = "Building your video now."
+    elif video_note and _video_generation_intent(user_text):
+        response_payload["reply"] = video_note
         response_payload["video_generation_note"] = video_note
     return response_payload
 

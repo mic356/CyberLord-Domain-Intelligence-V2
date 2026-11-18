@@ -6,6 +6,7 @@ Render's web service should run one Gunicorn worker unless a shared job store is
 from __future__ import annotations
 
 import base64
+import logging
 import os
 import threading
 import time
@@ -14,12 +15,16 @@ from typing import Any
 
 import requests
 
+logger = logging.getLogger("cyberlord.agnes")
+
 _JOBS: dict[str, dict[str, Any]] = {}
 _LOCK = threading.RLock()
 
 
 def _base_url() -> str:
-    return os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com").strip().rstrip("/")
+    # Accept either the API host or a host already ending in /v1.
+    value = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com").strip().rstrip("/")
+    return value[:-3] if value.endswith("/v1") else value
 
 
 def _model() -> str:
@@ -75,7 +80,9 @@ def video_bytes(job_id: str) -> tuple[bytes, str, str] | None:
 def _run_job(job_id: str, prompt: str, image: dict[str, str] | None) -> None:
     api_key = os.getenv("AGNES_API_KEY", "").strip()
     if not api_key:
-        _set(job_id, status="failed", progress=100, error="Video generation is not configured. Add AGNES_API_KEY in Render Environment.")
+        message = "Video generation is not configured. Add AGNES_API_KEY in Render Environment."
+        logger.error("Agnes job %s failed: AGNES_API_KEY is not configured", job_id)
+        _set(job_id, status="failed", progress=100, error=message, message="Video generation could not start.")
         return
 
     model = _model()
@@ -104,19 +111,23 @@ def _run_job(job_id: str, prompt: str, image: dict[str, str] | None) -> None:
 
     headers = {"Authorization": "Bearer " + api_key, "Content-Type": "application/json"}
     try:
-        _set(job_id, status="submitting", progress=8, message="Submitting your video request to Agnes…")
+        logger.info("Agnes job %s: submitting model=%s mode=%s duration=%ss", job_id, model, payload["mode"], duration)
+        _set(job_id, status="submitting", progress=8, message="Building your video…")
         response = requests.post(_base_url() + "/v1/videos", headers=headers, json=payload, timeout=(15, 90))
         if not response.ok:
             try:
                 detail = (response.json().get("error") or {}).get("message") or response.text
             except Exception:
                 detail = response.text
+            logger.error("Agnes job %s: create request failed HTTP %s: %s", job_id, response.status_code, str(detail)[:250])
             raise RuntimeError("Agnes rejected the video request (HTTP %s): %s" % (response.status_code, str(detail)[:350]))
         created = response.json()
-        video_id = created.get("video_id") or created.get("id") or created.get("task_id")
+        created_data = created.get("data") if isinstance(created.get("data"), dict) else {}
+        video_id = created.get("video_id") or created.get("id") or created.get("task_id") or created_data.get("video_id") or created_data.get("id")
         if not video_id:
             raise RuntimeError("Agnes accepted the request but did not return a video task ID.")
-        _set(job_id, status="processing", progress=15, provider_task_id=str(video_id), message="Agnes is generating your video…")
+        logger.info("Agnes job %s: accepted video_id=%s", job_id, str(video_id)[:100])
+        _set(job_id, status="processing", progress=15, provider_task_id=str(video_id), message="Building your video…")
 
         deadline = time.time() + int(os.getenv("AGNES_VIDEO_TIMEOUT_SECONDS", "720"))
         poll_delay = 2
@@ -132,28 +143,33 @@ def _run_job(job_id: str, prompt: str, image: dict[str, str] | None) -> None:
             if poll.status_code == 429:
                 poll_delay = min(15, poll_delay * 2)
                 continue
-            if poll.status_code in (408, 500, 502, 503, 504):
+            if poll.status_code in (408, 500, 502, 503, 504, 520, 522, 524):
                 poll_delay = min(15, poll_delay * 2)
                 continue
             poll.raise_for_status()
             result = poll.json()
-            state = str(result.get("status") or (result.get("data") or {}).get("status") or "processing").lower()
+            result_data = result.get("data") if isinstance(result.get("data"), dict) else {}
+            state = str(result.get("status") or result_data.get("status") or "processing").lower()
+            provider_progress = result.get("progress", result_data.get("progress"))
             if state in ("failed", "error", "cancelled", "canceled"):
                 detail = result.get("error") or result.get("message") or "Agnes could not complete this video."
+                logger.error("Agnes job %s: provider status=%s error=%s", job_id, state, str(detail)[:250])
                 raise RuntimeError(str(detail)[:350])
-            if state in ("completed", "complete", "succeeded", "success"):
+            if state in ("completed", "complete", "succeeded", "success", "done"):
                 break
             with _LOCK:
                 old = _JOBS.get(job_id, {}).get("progress", 15)
-            _set(job_id, status="processing", progress=min(92, old + 3), message="Agnes is rendering your video…")
+            try:
+                progress_value = int(provider_progress) if provider_progress is not None else min(92, old + 3)
+            except (TypeError, ValueError):
+                progress_value = min(92, old + 3)
+            _set(job_id, status="processing", progress=max(15, min(94, progress_value)), message="Building your video…")
             poll_delay = min(8, max(2, poll_delay))
         else:
             raise TimeoutError("Agnes is taking longer than expected. Please try again later.")
 
-        provider_url = (result or {}).get("url") or ((result or {}).get("metadata") or {}).get("url")
-        if not provider_url:
-            data = (result or {}).get("data") or {}
-            provider_url = data.get("url") or (data.get("metadata") or {}).get("url")
+        result_data = (result or {}).get("data") if isinstance((result or {}).get("data"), dict) else {}
+        provider_url = (result or {}).get("url") or ((result or {}).get("metadata") or {}).get("url") or result_data.get("url") or ((result_data.get("metadata") or {}).get("url"))
         if not provider_url or not str(provider_url).startswith("https://"):
             raise RuntimeError("Agnes marked the task complete but did not return a valid video URL.")
         _set(job_id, status="downloading", progress=96, message="Preparing your video for preview and download…", provider_url=provider_url)
@@ -164,11 +180,13 @@ def _run_job(job_id: str, prompt: str, image: dict[str, str] | None) -> None:
         mime = media.headers.get("Content-Type", "video/mp4").split(";")[0].strip().lower()
         if not mime.startswith("video/"):
             mime = "video/mp4"
+        logger.info("Agnes job %s: video downloaded successfully (%s bytes)", job_id, len(media.content))
         _set(job_id, status="completed", progress=100, message="Your video is ready.", video_bytes=media.content,
              mime_type=mime, filename="cyberlord-generated-video.mp4", provider_url=None)
     except Exception as exc:
         message = str(exc)
         # Avoid accidentally echoing request headers or credentials in logs/status.
+        logger.exception("Agnes job %s failed: %s", job_id, message[:300])
         _set(job_id, status="failed", progress=100, error=message[:450], message="Video generation failed.")
 
 
@@ -177,7 +195,7 @@ def start_video_job(prompt: str, owner_id: str | None = None, image: dict[str, s
     with _LOCK:
         _JOBS[job_id] = {
             "job_id": job_id, "owner_id": str(owner_id) if owner_id is not None else None,
-            "status": "queued", "progress": 2, "message": "Your video request is queued…",
+            "status": "queued", "progress": 2, "message": "Building your video…",
             "created_at": time.time(), "updated_at": time.time(), "filename": "cyberlord-generated-video.mp4",
         }
     thread = threading.Thread(target=_run_job, args=(job_id, prompt, image), daemon=True, name="agnes-video-" + job_id[:8])
