@@ -1896,76 +1896,176 @@ def payment_bank_submit():
     flash("Paystack is the only supported payment method.", "warning")
     return redirect(url_for("dashboard") + "#plans")
 
-# Paystack is the sole payment provider. Live checkout requires an approved Paystack account and an sk_live_ key.
+# Paystack is the sole payment provider. The public key is not required for
+# hosted-checkout redirects: transaction initialization and verification happen
+# server-side using the secret key. Never put PAYSTACK_SECRET_KEY in browser code.
 @app.route("/payment/initialize", methods=["POST"])
 @login_required
 def payment_initialize():
-    if not paystack_live_ready():
-        flash("Live Paystack checkout is not configured. Activate your Paystack business and add its live secret key in Render.", "warning")
+    plan = (request.form.get("plan") or (request.get_json(silent=True) or {}).get("plan") or "").strip()
+    if plan not in ("pro", "pro_plus", "tutor_pro"):
+        if request.is_json:
+            return jsonify(error="Choose a valid plan."), 400
+        flash("Choose a valid plan.", "error")
         return redirect(url_for("dashboard") + "#plans")
-    plan=request.form.get("plan") or (request.get_json(silent=True) or {}).get("plan")
-    if plan not in ("pro","pro_plus","tutor_pro"): return jsonify(error="Invalid plan"), 400
-    secret=os.getenv("PAYSTACK_SECRET_KEY")
-    if not secret or not secret.startswith("sk_live_"): return jsonify(error="A Paystack LIVE secret key is required."), 503
-    reference="CLD-"+secrets.token_urlsafe(18)
-    amount=PLANS[plan]["ngn"]*100
-    payment=Payment(user_id=current_user.id,reference=reference,plan=plan,amount=amount,currency="NGN")
-    db.session.add(payment); db.session.commit()
+    if not paystack_live_ready():
+        message = "Live Paystack checkout is unavailable. Your Paystack business must be approved and PAYSTACK_ENABLED=true with a valid sk_live_ secret key in Render."
+        if request.is_json:
+            return jsonify(error=message), 503
+        flash(message, "warning")
+        return redirect(url_for("dashboard") + "#plans")
+
+    secret = os.getenv("PAYSTACK_SECRET_KEY", "").strip()
+    reference = "CLD-" + secrets.token_urlsafe(18)
+    amount = int(PLANS[plan]["ngn"]) * 100  # Paystack amounts are in kobo.
+    payment = Payment(user_id=current_user.id, reference=reference, plan=plan,
+                      amount=amount, currency="NGN", status="pending")
+    db.session.add(payment)
+    db.session.commit()
     try:
-        response=requests.post("https://api.paystack.co/transaction/initialize",
-            headers={"Authorization":"Bearer "+secret,"Content-Type":"application/json"},
-            json={"email":current_user.email,"amount":amount,"currency":"NGN","reference":reference,
-                  "callback_url":url_for("payment_callback",_external=True),"metadata":{"user_id":current_user.id,"plan":plan}},timeout=15)
-        data=response.json()
-        if not response.ok or not data.get("status"): raise RuntimeError(data.get("message","Paystack initialization failed"))
-        return redirect(data["data"]["authorization_url"],code=303)
+        response = requests.post(
+            "https://api.paystack.co/transaction/initialize",
+            headers={"Authorization": "Bearer " + secret, "Content-Type": "application/json"},
+            json={
+                "email": current_user.email,
+                "amount": amount,
+                "currency": "NGN",
+                "reference": reference,
+                "callback_url": url_for("payment_callback", _external=True),
+                "metadata": {"user_id": current_user.id, "plan": plan,
+                             "payment_id": payment.id, "custom_fields": [
+                                 {"display_name": "CyberLord plan", "variable_name": "plan", "value": plan}
+                             ]},
+            },
+            timeout=(5, 20),
+        )
+        payload = response.json()
+        checkout_url = (payload.get("data") or {}).get("authorization_url")
+        if not response.ok or not payload.get("status") or not checkout_url:
+            raise RuntimeError(str(payload.get("message") or "Paystack did not return a checkout URL"))
+        return redirect(checkout_url, code=303)
     except Exception:
-        payment.status="failed"; db.session.commit()
-        app.logger.exception("Paystack initialization failed")
-        flash("Could not start Paystack checkout. Please try again later.", "error")
-        return redirect(url_for("dashboard"))
+        db.session.rollback()
+        failed = Payment.query.filter_by(reference=reference).first()
+        if failed and failed.status == "pending":
+            failed.status = "failed"
+            db.session.commit()
+        app.logger.exception("Paystack checkout initialization failed for payment %s", reference)
+        message = "We could not start checkout. No subscription was activated. Please try again."
+        if request.is_json:
+            return jsonify(error=message), 502
+        flash(message, "error")
+        return redirect(url_for("dashboard") + "#plans")
+
 
 def verify_paystack(reference):
-    secret=os.getenv("PAYSTACK_SECRET_KEY")
-    if not secret or not secret.startswith("sk_live_"): return None
-    r=requests.get("https://api.paystack.co/transaction/verify/"+reference,headers={"Authorization":"Bearer "+secret},timeout=15)
-    data=r.json()
-    if r.ok and data.get("status") and data.get("data",{}).get("status")=="success": return data["data"]
+    """Fetch transaction status from Paystack; never trust callback query data."""
+    secret = os.getenv("PAYSTACK_SECRET_KEY", "").strip()
+    if not secret or not secret.startswith("sk_live_") or not reference:
+        return None
+    response = requests.get(
+        "https://api.paystack.co/transaction/verify/" + requests.utils.quote(reference, safe=""),
+        headers={"Authorization": "Bearer " + secret}, timeout=(5, 20),
+    )
+    payload = response.json()
+    if response.ok and payload.get("status") and isinstance(payload.get("data"), dict):
+        return payload["data"]
     return None
+
+
+def _verified_payment_matches(payment, data):
+    """Validate every value that binds a successful charge to a local order."""
+    if not payment or not isinstance(data, dict):
+        return False
+    customer = data.get("customer") or {}
+    metadata = data.get("metadata") or {}
+    user = db.session.get(User, payment.user_id)
+    if not user:
+        return False
+    return (
+        data.get("status") == "success"
+        and data.get("reference") == payment.reference
+        and data.get("amount") == payment.amount
+        and str(data.get("currency", "")).upper() == payment.currency
+        and str(customer.get("email", "")).strip().lower() == user.email.strip().lower()
+        and str(metadata.get("plan", "")) == payment.plan
+        and str(metadata.get("user_id", "")) == str(payment.user_id)
+    )
+
+
+def _complete_paystack_payment(payment, data):
+    """Idempotently activate only the matching, Paystack-verified order."""
+    if not _verified_payment_matches(payment, data):
+        return False
+    if payment.status == "success":
+        return True
+    if payment.status != "pending":
+        return False
+    user = db.session.get(User, payment.user_id)
+    if not user:
+        return False
+    activate_subscription(user, payment)
+    return True
+
 
 @app.route("/payment/callback")
 @login_required
 def payment_callback():
     if not paystack_live_ready():
         flash("Live Paystack checkout is not configured.", "warning")
+        return redirect(url_for("dashboard") + "#plans")
+    reference = (request.args.get("reference") or request.args.get("trxref") or "").strip()
+    payment = Payment.query.filter_by(reference=reference, user_id=current_user.id).first()
+    if not payment:
+        flash("We could not match this checkout to your account. Contact support if you completed payment.", "error")
+        return redirect(url_for("dashboard") + "#plans")
+    if payment.status == "success":
+        flash("This payment has already been verified; your subscription is active.", "success")
         return redirect(url_for("dashboard"))
-    reference=request.args.get("reference", "")
-    payment=Payment.query.filter_by(reference=reference,user_id=current_user.id).first()
-    if not payment: flash("Payment reference was not found.", "error"); return redirect(url_for("dashboard"))
-    try: data=verify_paystack(reference)
-    except Exception: data=None
-    if data and data.get("amount")==payment.amount and data.get("currency")=="NGN" and payment.status != "success":
-        activate_subscription(current_user, payment)
-        flash("Payment verified. Your plan is active for 30 days.", "success")
-    else:
-        flash("Payment is not yet verified. If you paid, wait briefly and refresh your dashboard.", "warning")
+    try:
+        data = verify_paystack(reference)
+        if data and _complete_paystack_payment(payment, data):
+            flash("Payment verified successfully. Your selected plan is now active for 30 days.", "success")
+        else:
+            flash("Payment is not yet verified. Your plan has not been activated. Refresh shortly or contact support if you were charged.", "warning")
+    except Exception:
+        app.logger.exception("Paystack callback verification failed for %s", reference)
+        flash("We could not verify the payment right now. Your plan has not been activated; please refresh shortly.", "warning")
     return redirect(url_for("dashboard"))
+
 
 @app.route("/payment/webhook", methods=["POST"])
 def payment_webhook():
-    if not paystack_live_ready(): return "Paystack live checkout is not configured", 404
-    secret=os.getenv("PAYSTACK_SECRET_KEY", "")
-    signature=request.headers.get("x-paystack-signature", "")
-    expected=hmac.new(secret.encode(),request.get_data(),hashlib.sha512).hexdigest()
-    if not secret or not hmac.compare_digest(signature,expected): return "invalid signature", 401
-    event=request.get_json(silent=True) or {}
-    if event.get("event")=="charge.success":
-        data=event.get("data",{}); ref=data.get("reference")
-        payment=Payment.query.filter_by(reference=ref).first()
-        if payment and payment.status != "success" and data.get("status")=="success" and data.get("amount")==payment.amount and data.get("currency")=="NGN":
-            user=db.session.get(User,payment.user_id)
-            if user: activate_subscription(user, payment)
-    return jsonify(received=True)
+    if not paystack_live_ready():
+        return "Paystack live checkout is not configured", 404
+    secret = os.getenv("PAYSTACK_SECRET_KEY", "").strip()
+    signature = request.headers.get("x-paystack-signature", "")
+    expected = hmac.new(secret.encode(), request.get_data(), hashlib.sha512).hexdigest()
+    if not signature or not hmac.compare_digest(signature, expected):
+        return "invalid signature", 401
+    event = request.get_json(silent=True) or {}
+    if event.get("event") != "charge.success":
+        return jsonify(received=True)
+    event_data = event.get("data") or {}
+    reference = str(event_data.get("reference") or "").strip()
+    payment = Payment.query.filter_by(reference=reference).first()
+    if not payment:
+        # Acknowledge safely; no local order means there is nothing to activate.
+        app.logger.warning("Paystack webhook received unknown reference %s", reference)
+        return jsonify(received=True)
+    if payment.status == "success":
+        return jsonify(received=True, already_processed=True)
+    try:
+        # Signature authenticates the webhook; a fresh API verification also
+        # confirms the canonical transaction, customer, amount and metadata.
+        verified = verify_paystack(reference)
+        if verified and _complete_paystack_payment(payment, verified):
+            return jsonify(received=True, activated=True)
+        app.logger.warning("Paystack webhook did not match local order %s", reference)
+        return jsonify(received=True, activated=False)
+    except Exception:
+        app.logger.exception("Paystack webhook processing failed for %s", reference)
+        return jsonify(received=False), 500
 
 def _admin_csrf_token():
     token = session.get("admin_csrf_token")
