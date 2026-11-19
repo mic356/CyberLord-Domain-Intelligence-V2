@@ -14,7 +14,7 @@ services:
       - key: PAYSTACK_SECRET_KEY
         sync: false
       - key: PAYSTACK_ENABLED
-        value: "false"
+        value: "true"
       - key: PAYMENT_ADMIN_TOKEN
         sync: false
       - key: TRONGRID_API_KEY

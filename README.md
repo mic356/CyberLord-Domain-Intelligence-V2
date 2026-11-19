@@ -11,8 +11,8 @@ For account, subscription or payment assistance, contact [CyberLord Customer Car
 
 ## Plans
 - FREE: domain scan, subdomain intelligence, email DNS, DNS intelligence, technology fingerprint and IP intelligence.
-- PRO — ₦6,300 or 4.50 USDT: adds Phone Intelligence, Individual Email Review and Breach Exposure; 30 days.
-- PRO PLUS — ₦12,600 or 9.00 USDT: adds Attack Surface Map, CVE Intelligence, Compare Domains and Limited Port Scanner; 30 days.
+- PRO — ₦6,300: adds Phone Intelligence, Individual Email Review and Breach Exposure; 30 days.
+- PRO PLUS — ₦12,600: adds Attack Surface Map, CVE Intelligence, Compare Domains and Limited Port Scanner; 30 days.
 
 ## Local setup
 1. Install Python 3.11+.
@@ -30,18 +30,16 @@ Lesson content and exercise questions live in `academy_questions.py` (imported b
 Use the included `render.yaml`, or set:
 - Build: `pip install -r requirements.txt`
 - Start: `gunicorn app:app`
-- Environment: `SECRET_KEY`, `DATABASE_URL`, `PAYMENT_ADMIN_TOKEN`, `PAYSTACK_ENABLED=false`; optional `TRONGRID_API_KEY`, `BSC_RPC_URL`, `RESEND_API_KEY`, `RESEND_FROM`, `KALI_WORKER_URL`, `KALI_WORKER_TOKEN` and `GEMINI_API_KEY` (with optional `GEMINI_MODEL`). See `AI_SETUP.md` for where to paste the Gemini key in Render (Environment > `GEMINI_API_KEY`); without it the tutor and AI answer from the built-in knowledge base.
+- Environment: `SECRET_KEY`, `DATABASE_URL`, `PAYMENT_ADMIN_TOKEN`, `PAYSTACK_ENABLED=true`; optional `TRONGRID_API_KEY`, `BSC_RPC_URL`, `RESEND_API_KEY`, `RESEND_FROM`, `KALI_WORKER_URL`, `KALI_WORKER_TOKEN` and `GEMINI_API_KEY` (with optional `GEMINI_MODEL`). See `AI_SETUP.md` for where to paste the Gemini key in Render (Environment > `GEMINI_API_KEY`); without it the tutor and AI answer from the built-in knowledge base.
 
 Set `DATABASE_URL` to your Neon PostgreSQL connection string. Never commit secrets or `.env`.
 
-## Paystack (temporarily disabled)
-Paystack code is retained but both initialization and webhook processing are disabled unless `PAYSTACK_ENABLED=true`. Keep it false until the merchant account is approved and live credentials have been configured. When re-enabled, configure the webhook URL as `https://YOUR-SERVICE.onrender.com/payment/webhook`.
+## Paystack (only payment method)
+The dashboard accepts Paystack only. Set `PAYSTACK_ENABLED=true` and add the approved account's `sk_live_...` value as `PAYSTACK_SECRET_KEY` in Render Environment. The application deliberately refuses test keys for production checkout. Configure the Paystack webhook URL as `https://YOUR-DOMAIN/payment/webhook`. Keep the secret key in Render only; never commit it to GitHub. Live processing still requires Paystack to activate the business and issue live keys.
 
 ## Password reset email
 Set `RESEND_API_KEY` and `RESEND_FROM` to a verified sender/domain in Resend. A Render `onrender.com` address is not a domain you own and cannot be used as a verified sender domain. Reset tokens expire after 30 minutes. Responses do not reveal whether an email address is registered.
 
-## Bybit
-The Bybit payment option is displayed in the dashboard as pending merchant integration. Do not collect payments through a personal Bybit transfer or unlock plans based on screenshots/manual claims. Implement merchant checkout only after obtaining approved merchant/API access and a verified callback flow.
 
 ## Important limitations
 ## Expanded defensive scanning
@@ -75,18 +73,13 @@ Users can download each of their own saved scan records from the dashboard as JS
 
 ## Subscription payments (current configuration)
 
-- PRO: NGN 6,300 or 4.50 USDT; 30 days after verified payment.
-- PRO PLUS: NGN 12,600 or 9.00 USDT; 30 days after verified payment.
-- USDT networks: TRC20 and BEP20 only. The app checks the incoming transfer, destination wallet, supported USDT token contract, exact amount, and confirmation state before activation. A transaction hash can only be used once. A screenshot is never accepted as proof of a blockchain payment.
-- Bank transfer references are recorded as pending. An administrator must independently confirm receipt and approve using the protected `/admin/payments/<payment_id>/approve` endpoint. Set a strong `PAYMENT_ADMIN_TOKEN` environment variable; send it only in the Authorization Bearer header. Do not approve based on a receipt image alone. Bank account details are not configured in this package yet.
-- Paystack code is retained but disabled by default. Set `PAYSTACK_ENABLED=true` only after the merchant account is approved and live credentials are configured.
+- PRO: NGN 6,300; 30 days after verified Paystack payment.
+- PRO PLUS: NGN 12,600; 30 days after verified Paystack payment.
+- Bank transfer and cryptocurrency payment submissions are disabled. Paystack is the only payment provider. Transactions are activated only after server-side verification of successful status, exact amount and NGN currency.
 
 ### Payment-related Render environment variables
 
-- `PAYSTACK_ENABLED=false` (leave false until approved)
-- `PAYMENT_ADMIN_TOKEN` (long random secret, required for manual bank approvals)
-- `TRONGRID_API_KEY` (optional, recommended for TRON API reliability)
-- `BSC_RPC_URL` (optional; defaults to a public BNB Smart Chain mainnet RPC)
+- `PAYSTACK_ENABLED=true` (the app still requires an `sk_live_` key)
 
 The app includes an additive startup database migration for the new subscription-expiry and payment-verification fields. Always back up the production database before deploying schema changes. Test a small payment first on the intended mainnet network; do not use testnet transfers for production activation.
 
@@ -111,8 +104,8 @@ CyberLord AI calls Google's Gemini API from the Flask backend when `GEMINI_API_K
 ## Clear monetization and monitoring status
 
 - FREE is the entry plan: core domain/DNS intelligence, Cyber Academy learning guides and the built-in CyberLord knowledge assistant.
-- PRO is NGN 6,300 or 4.50 USDT for 30 days after independently verified payment.
-- PRO PLUS is NGN 12,600 or 9.00 USDT for 30 days after independently verified payment.
+- PRO is NGN 6,300 for 30 days after verified Paystack payment.
+- PRO PLUS is NGN 12,600 for 30 days after verified Paystack payment.
 - Public pricing information explains that paid plans unlock additional tools; server-side tool access remains governed by the existing plan checks.
 - Individual/manual checks are available according to the user's plan. Continuous background monitoring with scheduled rechecks and notifications is a planned paid add-on, not an active feature in this release. Do not advertise it as currently available until a scheduler, persistent monitoring configuration, safe scan queue, and notification delivery have been implemented and tested.
 
@@ -135,7 +128,7 @@ The dashboard now links to three PRO PLUS passive investigation modules: Digital
 
 
 ## Private administrator payment dashboard
-The admin area is served by this same Flask application at `/admin`. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the existing Render service environment. The admin login is separate from customer authentication. Confirm bank/OPay funds independently before approving a pending request; approval activates the customer's 30-day plan. Customer payment forms show a successful submission notice without falsely claiming that funds have been received.
+The admin area is served by this same Flask application at `/admin`. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the existing Render service environment. The admin login is separate from customer authentication. Payment administration is read-only for legacy records. Manual bank approvals are disabled because Paystack is the only supported payment method.
 
 ### CyberLord AI, Academy and Interaction Board
 
@@ -145,11 +138,11 @@ The admin area is served by this same Flask application at `/admin`. Set `ADMIN_
 
 Set `GEMINI_API_KEY` under the Render service's Environment settings. Do not place the key in `static/`, HTML templates, JavaScript, GitHub files or public messages.
 
-## Linked messaging accounts and bank receipt uploads
+## Linked messaging accounts
 
 The existing Telegram and WhatsApp adapters now support signed-in website account linking at `/account/messaging`. Generate an eight-digit code, then send `/link CODE` in the relevant chat. Codes are hashed in the database, expire after 10 minutes, are single-use, and link using the platform chat identifier. Linked Academy Tutor conversations share the website account's Tutor Pro expiry and 10-question daily free quota. Messaging history, persona selection and duplicate webhook event IDs are database-backed.
 
-Bank transfer forms accept optional JPG/PNG/WEBP/PDF evidence up to 5 MB. Receipts are stored in SQL and visible to an authenticated admin. Bank payments still require manual confirmation and approval; receipt upload alone never activates a subscription. USDT TRC20/BEP20 verification remains unchanged. See `MESSAGING_INTEGRATION_SETUP.md` for Meta WhatsApp configuration requirements.
+See `MESSAGING_INTEGRATION_SETUP.md` for Meta WhatsApp configuration requirements.
 
 
 ## Artificial Brain and large uploads

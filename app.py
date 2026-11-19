@@ -1164,7 +1164,7 @@ def about():
 
 @app.route("/pricing")
 def pricing():
-    return render_template("pricing.html")
+    return render_template("pricing.html", paystack_live_ready=paystack_live_ready())
 
 SEO_PUBLIC_PAGES = [
     ("index", "https://cyberlord.name.ng/", "1.0", "daily"),
@@ -1330,6 +1330,12 @@ def reset_password(token):
             return redirect(url_for("login"))
     return render_template("auth.html", mode="reset")
 
+def paystack_live_ready():
+    """Only expose checkout when explicitly enabled with a live secret key."""
+    secret = os.getenv("PAYSTACK_SECRET_KEY", "").strip()
+    return os.getenv("PAYSTACK_ENABLED", "false").lower() == "true" and secret.startswith("sk_live_")
+
+
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -1338,7 +1344,7 @@ def dashboard():
     # Per-user memory: one greeting flag the templates can use. Greeting copy
     # stays short; the AI itself gets the full memory context on each request.
     _returning = bool(session.get("cyber_welcome_back"))
-    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, usdt_wallets=USDT_WALLETS, tutor_pro=tutor_pro_active(current_user), tutor_remaining=tutor_remaining(current_user), tutor_limit=TUTOR_FREE_DAILY_LIMIT, tutor_pro_expires_at=getattr(current_user, "tutor_pro_expires_at", None), tutor_pro_status=tutor_pro_active(current_user), cyber_returning=_returning)
+    return render_template("dashboard.html", plans=PLANS, tool_names=TOOL_NAMES, pro_tools=PRO_TOOLS, plus_tools=PLUS_TOOLS, history=history, paystack_live_ready=paystack_live_ready(), tutor_pro=tutor_pro_active(current_user), tutor_remaining=tutor_remaining(current_user), tutor_limit=TUTOR_FREE_DAILY_LIMIT, tutor_pro_expires_at=getattr(current_user, "tutor_pro_expires_at", None), tutor_pro_status=tutor_pro_active(current_user), cyber_returning=_returning)
 
 # Academy lessons and their exercise questions now live in academy_questions.py
 # (add practitioner-level questions there; see the how-to at the top of that file).
@@ -1881,91 +1887,26 @@ def verify_usdt(network, tx_hash, plan):
 @app.route("/payment/usdt/submit", methods=["POST"])
 @login_required
 def payment_usdt_submit():
-    plan = request.form.get("plan", "")
-    network = request.form.get("network", "").lower()
-    tx_hash = request.form.get("tx_hash", "").strip()
-    if plan not in ("pro", "pro_plus", "tutor_pro") or network not in USDT_WALLETS:
-        flash("Select a valid plan and USDT network.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    valid_hash = (re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash) if network == "bep20" else re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash))
-    if not valid_hash:
-        flash("Enter the 64-character transaction hash from the selected blockchain.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    existing = Payment.query.filter_by(tx_hash=tx_hash).first()
-    if existing and (existing.status == "success" or existing.user_id != current_user.id or existing.plan != plan or existing.network != network):
-        flash("This transaction hash has already been submitted and cannot be reused.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    payment = existing or Payment(user_id=current_user.id, reference="USDT-" + secrets.token_urlsafe(16), plan=plan,
-        amount=int(Decimal(PLANS[plan]["usdt"]) * 100), status="pending", currency="USDT", network=network, tx_hash=tx_hash)
-    if not existing:
-        db.session.add(payment)
-        db.session.commit()
-    try:
-        verified, message = verify_usdt(network, tx_hash, plan)
-    except Exception:
-        app.logger.exception("USDT transaction verification provider failed")
-        verified, message = False, "The blockchain verification service is temporarily unavailable. Your payment remains pending; retry later."
-    if verified:
-        user = db.session.get(User, payment.user_id)
-        if payment.status != "success" and user:
-            activate_subscription(user, payment)
-        flash("Payment verified. " + PLANS[plan]["name"] + " is active for 30 days.", "success")
-    else:
-        payment.status = "pending"
-        db.session.commit()
-        flash(message + " Your submission is pending and no subscription has been activated.", "warning")
+    flash("Paystack is the only supported payment method.", "warning")
     return redirect(url_for("dashboard") + "#plans")
 
 @app.route("/payment/bank/submit", methods=["POST"])
 @login_required
 def payment_bank_submit():
-    plan = request.form.get("plan", "")
-    bank_reference = request.form.get("bank_reference", "").strip()
-    if plan not in ("pro", "pro_plus", "tutor_pro") or not bank_reference or len(bank_reference) > 115:
-        flash("Select a plan and enter your bank transfer reference.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    reference = "BANK-" + bank_reference
-    if Payment.query.filter_by(reference=reference).first():
-        flash("That bank transfer reference has already been submitted.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    payment_method = request.form.get("payment_method", "opay").strip().lower()
-    if payment_method not in ("opay", "union_bank"):
-        flash("Select a valid bank payment method.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    upload = request.files.get("receipt")
-    receipt_bytes = None
-    if upload and upload.filename:
-        allowed = {"image/jpeg", "image/png", "application/pdf", "image/webp"}
-        if upload.mimetype not in allowed:
-            flash("Receipt must be a JPG, PNG, WEBP or PDF file.", "error")
-            return redirect(url_for("dashboard") + "#plans")
-        receipt_bytes = upload.read(5 * 1024 * 1024 + 1)
-        if not receipt_bytes or len(receipt_bytes) > 5 * 1024 * 1024:
-            flash("Receipt file must be smaller than 5 MB.", "error")
-            return redirect(url_for("dashboard") + "#plans")
-    payment = Payment(user_id=current_user.id, reference=reference, plan=plan,
-        amount=PLANS[plan]["ngn"] * 100, status="pending", currency="NGN", network=payment_method)
-    db.session.add(payment)
-    db.session.flush()
-    if receipt_bytes:
-        db.session.add(BankReceipt(payment_id=payment.id,
-            filename=os.path.basename(upload.filename or "receipt")[:180],
-            content_type=upload.mimetype, data=receipt_bytes))
-    db.session.commit()
-    flash("Bank transfer submitted — awaiting manual confirmation. Your plan will activate only after the funds are confirmed.", "success")
+    flash("Paystack is the only supported payment method.", "warning")
     return redirect(url_for("dashboard") + "#plans")
 
-# Paystack integration is retained for future reactivation, but disabled unless explicitly enabled.
+# Paystack is the sole payment provider. Live checkout requires an approved Paystack account and an sk_live_ key.
 @app.route("/payment/initialize", methods=["POST"])
 @login_required
 def payment_initialize():
-    if os.getenv("PAYSTACK_ENABLED", "false").lower() != "true":
-        flash("Paystack is temporarily disabled while the account is awaiting approval.", "warning")
+    if not paystack_live_ready():
+        flash("Live Paystack checkout is not configured. Activate your Paystack business and add its live secret key in Render.", "warning")
         return redirect(url_for("dashboard") + "#plans")
     plan=request.form.get("plan") or (request.get_json(silent=True) or {}).get("plan")
     if plan not in ("pro","pro_plus","tutor_pro"): return jsonify(error="Invalid plan"), 400
     secret=os.getenv("PAYSTACK_SECRET_KEY")
-    if not secret: return jsonify(error="Paystack is not configured on the server."), 503
+    if not secret or not secret.startswith("sk_live_"): return jsonify(error="A Paystack LIVE secret key is required."), 503
     reference="CLD-"+secrets.token_urlsafe(18)
     amount=PLANS[plan]["ngn"]*100
     payment=Payment(user_id=current_user.id,reference=reference,plan=plan,amount=amount,currency="NGN")
@@ -1986,7 +1927,7 @@ def payment_initialize():
 
 def verify_paystack(reference):
     secret=os.getenv("PAYSTACK_SECRET_KEY")
-    if not secret: return None
+    if not secret or not secret.startswith("sk_live_"): return None
     r=requests.get("https://api.paystack.co/transaction/verify/"+reference,headers={"Authorization":"Bearer "+secret},timeout=15)
     data=r.json()
     if r.ok and data.get("status") and data.get("data",{}).get("status")=="success": return data["data"]
@@ -1995,8 +1936,8 @@ def verify_paystack(reference):
 @app.route("/payment/callback")
 @login_required
 def payment_callback():
-    if os.getenv("PAYSTACK_ENABLED", "false").lower() != "true":
-        flash("Paystack is currently disabled.", "warning")
+    if not paystack_live_ready():
+        flash("Live Paystack checkout is not configured.", "warning")
         return redirect(url_for("dashboard"))
     reference=request.args.get("reference", "")
     payment=Payment.query.filter_by(reference=reference,user_id=current_user.id).first()
@@ -2012,7 +1953,7 @@ def payment_callback():
 
 @app.route("/payment/webhook", methods=["POST"])
 def payment_webhook():
-    if os.getenv("PAYSTACK_ENABLED", "false").lower() != "true": return "Paystack disabled", 404
+    if not paystack_live_ready(): return "Paystack live checkout is not configured", 404
     secret=os.getenv("PAYSTACK_SECRET_KEY", "")
     signature=request.headers.get("x-paystack-signature", "")
     expected=hmac.new(secret.encode(),request.get_data(),hashlib.sha512).hexdigest()
@@ -2148,19 +2089,8 @@ def admin_payment_receipt(payment_id):
 
 @app.route("/admin/payments/<int:payment_id>/approve", methods=["POST"])
 def admin_approve_bank_payment(payment_id):
-    _require_admin()
-    payment = db.session.get(Payment, payment_id)
-    eligible_methods = {"bank_transfer", "opay", "union_bank"}
-    if not payment or payment.currency != "NGN" or payment.network not in eligible_methods or payment.status != "pending":
-        flash("This payment is not an eligible pending bank transfer.", "error")
-        return redirect(url_for("admin_dashboard"))
-    user = db.session.get(User, payment.user_id)
-    if not user:
-        flash("The customer account could not be found.", "error")
-        return redirect(url_for("admin_dashboard"))
-    activate_subscription(user, payment)
-    flash(f"Payment #{payment.id} approved. {PLANS[payment.plan]['name']} is now active for the customer.", "success")
-    return redirect(url_for("admin_dashboard"))
+    # Manual bank approvals are intentionally disabled: Paystack is the sole provider.
+    abort(410, description="Manual bank-transfer approvals are disabled. Paystack is the only payment method.")
 
 @app.route("/admin/payments/<int:payment_id>/reject", methods=["POST"])
 def admin_reject_bank_payment(payment_id):
@@ -2497,7 +2427,7 @@ def ai_assistant():
                     "Do NOT redirect non-cybersecurity topics back to cybersecurity and do NOT force a security angle. "
                     "You can also answer about the CyberLord website itself: it offers domain scans, deep scan, "
                     "CyberLord Academy, the AI tutor, the interaction board, the security centre, and advanced "
-                    "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). "
+                    "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300. Paystack is the only payment provider. "
                     "Answer truthfully and concisely in clear standard English, with a warm and playful tone, like a sharp friend. ALWAYS answer in clear standard English first. "
                     "If you do not actually know, say so plainly in one line instead of guessing or inventing. "
                     "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. "
@@ -2519,7 +2449,7 @@ def ai_assistant():
                 "Do NOT redirect non-cybersecurity topics back to cybersecurity and do NOT force a security angle. "
                 "You can also answer about the CyberLord website itself: it offers domain scans, deep scan, "
                 "CyberLord Academy, the AI tutor, the interaction board, the security centre, and advanced "
-                "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). "
+                "intelligence. Pricing is Free NGN 0, Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300. Paystack is the only payment provider. "
                 "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. "
                 "Answer truthfully and concisely with a warm, human tone, like a helpful friend. "
                 "If you do not actually know, say so plainly in one line instead of guessing or inventing a wrong answer. "
@@ -2622,7 +2552,7 @@ def ai_assistant():
                     "cybersecurity and do NOT force a security angle. You can also answer about the CyberLord "
                     "website itself: it offers domain scans, deep scan, CyberLord Academy, the AI tutor, the "
                     "interaction board, the security centre, and advanced intelligence. Pricing is Free NGN 0, "
-                    "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with a warm, human tone, "
+                    "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300. Paystack is the only payment provider. " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with a warm, human tone, "
                     "like a helpful friend. If you do not actually know, say so plainly in one line instead of "
                     "guessing or inventing. The security guardrails below apply only to security-related requests; "
                     "for general chat, just answer normally. "
@@ -2770,7 +2700,7 @@ def ai_assistant():
                 "cybersecurity and do NOT force a security angle. You can also answer about the CyberLord "
                 "website itself: it offers domain scans, deep scan, CyberLord Academy, the AI tutor, the "
                 "interaction board, the security centre, and advanced intelligence. Pricing is Free NGN 0, "
-                "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300 (4.50 USDT). " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with swagger, "
+                "Pro NGN 6,300, Pro Plus NGN 12,600, Tutor Pro NGN 6,300. Paystack is the only payment provider. " "IMPORTANT: You must NEVER answer cybersecurity or cyber-course questions yourself. If the user question is about cybersecurity, hacking, penetration testing, security tools (like nmap, wireshark, burp, metasploit, sqlmap), vulnerabilities, malware, phishing, hardening, or any Academy course or lesson topic, do NOT answer it. Instead reply with a short friendly redirect, for example: That is one for the tutor, head to the Academy tutor and they will walk you through it. and point them to the Academy tutor or the relevant course page (for example Cybersecurity Foundations, Web Application Security, Network Security, Email & Phishing Defense, Digital Forensics & Incident Response, or Career Path & Certifications). Keep the redirect warm and brief, one or two sentences. " "Answer truthfully and concisely with swagger, "
                 "like a sharp friend who knows the streets of Lagos. If you do not actually know, say so plainly in one line instead of "
                 "guessing or inventing. The security guardrails below apply only to security-related requests; "
                 "for general chat, just answer normally. " + _current_datetime_line() + ". "
