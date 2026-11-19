@@ -4,7 +4,7 @@
   <div>
     <strong>This lesson is part of {{ course.title }} ({{ plan.name }}).</strong>
     <p class="muted">Upgrade to unlock this lesson and every other lesson in the course. Your free course, finished lessons and progress stay exactly as they are.</p>
-    <p class="plan-price">From <strong>₦{{ plan.ngn }} / {{ plan.usdt }} USDT</strong> for 30 days.</p>
+    <p class="plan-price">From <strong>₦{{ plan.ngn }}</strong> for 30 days, paid through Paystack.</p>
   </div>
   <img class="upgrade-cover" src="{{ url_for('static', filename='academy/' + course.cover) }}" alt="{{ course.title }} cover" loading="lazy">
   <div class="upgrade-actions">
