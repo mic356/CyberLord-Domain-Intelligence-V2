@@ -1,5 +1,5 @@
-{% extends "base.html" %}{% block title %}My Images | CyberLord{% endblock %}{% block description %}Generate images and keep a private gallery.{% endblock %}{% block content %}
-<div class="page-heading"><div class="eyebrow">CYBERLORD / IMAGES</div><h1>My Images</h1>
+{% extends "base.html" %}{% block title %}My Images | Dark Matrix{% endblock %}{% block description %}Generate images and keep a private gallery.{% endblock %}{% block content %}
+<div class="page-heading"><div class="eyebrow">DARK MATRIX / IMAGES</div><h1>My Images</h1>
 <p class="muted">Your gallery is private. Only you can see these images.</p></div>
 {% if remaining is none %}<p class="tutor-pill">Paid plan: unlimited generations</p>
 {% else %}<p class="tutor-pill">{{ remaining }} of {{ limit }} free generations left today. <a href="{{ url_for('dashboard') }}#plans">Go unlimited</a></p>{% endif %}

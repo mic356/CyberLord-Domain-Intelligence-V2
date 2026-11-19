@@ -2,7 +2,7 @@
 <section class="policy-page">
 <div class="eyebrow">GUIDE</div>
 <h1>SPF and DMARC setup guide</h1>
-<p class="muted">Updated: November 2026 · For Nigerian small businesses · CyberLord Domain Intelligence</p>
+<p class="muted">Updated: November 2026 · For Nigerian small businesses · Dark Matrix Cyber Intelligence</p>
 
 <p>There is a scam that costs Nigerian businesses millions of naira every year, and it takes about ten minutes to block. A criminal registers a lookalike domain or simply sends mail claiming to be from your domain, and your customer, trusting the sender name, pays into their account. SPF, DKIM and DMARC are the three records that stop this. They tell receiving mail servers which systems are allowed to send email for your domain, and what to do with mail that fails the check. This guide explains them in plain English and shows exactly what to add, using examples relevant to businesses in Lagos and across Nigeria.</p>
 
@@ -25,7 +25,7 @@
 <p>Publishing an SPF record that does not include the service you actually send invoices from, which breaks your own mail. Forgetting that a marketing platform or bulk SMS-to-email service needs its own include. Setting <code>p=reject</code> on day one and discovering your bank alerts or receipt emails stop arriving. Choosing a DMARC reporting address that nobody opens, which defeats the purpose. And assuming your .com.ng or .ng domain is protected because your host "does email", when in fact DNS records are a separate thing from the hosting package. Check with a tool rather than trusting assumptions.</p>
 
 <h2>Verify your setup</h2>
-<p>After adding the records, wait a few hours for DNS to propagate, then check them. You can run a domain scan in CyberLord and look at the email posture results, which show whether SPF, DKIM and DMARC records exist and what they say. For a wider view of your domain's security, our <a href="{{ url_for('guide_website_security') }}">free website security check guide</a> explains what else to look for, and if your staff email has been caught in a breach, the <a href="{{ url_for('index') }}">domain scan</a> will show your email posture posture results.</p>
+<p>After adding the records, wait a few hours for DNS to propagate, then check them. You can run a domain scan in Dark Matrix and look at the email posture results, which show whether SPF, DKIM and DMARC records exist and what they say. For a wider view of your domain's security, our <a href="{{ url_for('guide_website_security') }}">free website security check guide</a> explains what else to look for, and if your staff email has been caught in a breach, the <a href="{{ url_for('index') }}">domain scan</a> will show your email posture posture results.</p>
 
 <h2>Protect your domain today</h2>
 <p>Ten minutes of DNS work now can save you from a fraud loss later, and it makes your real invoices more likely to be delivered and trusted. Start with SPF and DKIM, publish DMARC in monitor mode, and read the reports.</p>

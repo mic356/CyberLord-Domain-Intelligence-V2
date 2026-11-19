@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Domain Monitoring · CyberLord{% endblock %}
+{% block title %}Domain Monitoring · Dark Matrix{% endblock %}
 {% block content %}
 <div class="dash-head"><div><div class="eyebrow">CONTINUOUS SECURITY WATCH</div><h1>Domain monitoring</h1><p class="muted">Plan: <strong>{{ plan_name }}</strong> · {% if limit %}{{ limit }} monitored domain(s) · checks every {{ interval_hours }} hours{% else %}Automated monitoring requires a paid plan{% endif %}</p></div><span class="status">● MONITORING CENTER</span></div>
-<div class="monitoring-status-card"><div><div class="eyebrow">OWNERSHIP VERIFICATION REQUIRED</div><h3>Only monitor domains you own or are authorized to manage.</h3><p>Publish the unique DNS TXT token CyberLord gives you. Scheduled checks begin only after verification.</p></div><span class="monitoring-status-badge">DNS TXT PROOF</span></div>
+<div class="monitoring-status-card"><div><div class="eyebrow">OWNERSHIP VERIFICATION REQUIRED</div><h3>Only monitor domains you own or are authorized to manage.</h3><p>Publish the unique DNS TXT token Dark Matrix gives you. Scheduled checks begin only after verification.</p></div><span class="monitoring-status-badge">DNS TXT PROOF</span></div>
 {% if limit %}<section class="panel"><div class="eyebrow">ADD AN ASSET</div><h2>Register a domain</h2><form method="post" class="monitor-add-form"><input name="domain" placeholder="example.com" required maxlength="253"><button class="btn primary" type="submit">Add domain</button></form><p class="muted small">PRO: 1 domain, daily checks. PRO PLUS: up to 5 domains, checks every 6 hours.</p></section>
 {% else %}<section class="panel"><h2>Unlock automated monitoring</h2><p>Upgrade to PRO for one monitored domain or PRO PLUS for up to five domains and more frequent checks.</p><a class="btn primary" href="{{ url_for('dashboard') }}#plans">View plans</a></section>{% endif %}
 <section class="panel"><div class="section-head"><div><div class="eyebrow">YOUR ASSETS</div><h2>Monitored domains</h2></div></div>
