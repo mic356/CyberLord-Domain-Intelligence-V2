@@ -1902,60 +1902,119 @@ def payment_bank_submit():
 @app.route("/payment/initialize", methods=["POST"])
 @login_required
 def payment_initialize():
-    plan = (request.form.get("plan") or (request.get_json(silent=True) or {}).get("plan") or "").strip()
-    if plan not in ("pro", "pro_plus", "tutor_pro"):
-        if request.is_json:
-            return jsonify(error="Choose a valid plan."), 400
-        flash("Choose a valid plan.", "error")
-        return redirect(url_for("dashboard") + "#plans")
-    if not paystack_live_ready():
-        message = "Live Paystack checkout is unavailable. Your Paystack business must be approved and PAYSTACK_ENABLED=true with a valid sk_live_ secret key in Render."
-        if request.is_json:
-            return jsonify(error=message), 503
-        flash(message, "warning")
+    """Create a Paystack hosted checkout and return its URL to the browser.
+
+    AJAX requests receive JSON so the dashboard can show a useful error instead
+    of silently following a 303 redirect back to the dashboard. Regular form
+    submissions retain a safe redirect fallback.
+    """
+    wants_json = (
+        request.is_json
+        or "application/json" in request.headers.get("Accept", "")
+        or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    )
+
+    def payment_error(message, status=400):
+        if wants_json:
+            return jsonify(ok=False, error=message), status
+        flash(message, "error")
         return redirect(url_for("dashboard") + "#plans")
 
+    plan = (request.form.get("plan") or (request.get_json(silent=True) or {}).get("plan") or "").strip()
+    if plan not in ("pro", "pro_plus", "tutor_pro"):
+        return payment_error("Please choose a valid CyberLord plan.", 400)
+
+    if not paystack_live_ready():
+        return payment_error(
+            "Paystack is not ready on the server. Check PAYSTACK_ENABLED=true and the live PAYSTACK_SECRET_KEY in Render.",
+            503,
+        )
+
     secret = os.getenv("PAYSTACK_SECRET_KEY", "").strip()
+    if not current_user.email:
+        return payment_error("Your account needs a valid email address before checkout.", 400)
+
     reference = "CLD-" + secrets.token_urlsafe(18)
-    amount = int(PLANS[plan]["ngn"]) * 100  # Paystack amounts are in kobo.
-    payment = Payment(user_id=current_user.id, reference=reference, plan=plan,
-                      amount=amount, currency="NGN", status="pending")
+    amount = int(PLANS[plan]["ngn"]) * 100  # Paystack expects kobo.
+    payment = Payment(
+        user_id=current_user.id, reference=reference, plan=plan,
+        amount=amount, currency="NGN", status="pending",
+    )
     db.session.add(payment)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Could not save local payment record before Paystack checkout")
+        return payment_error("CyberLord could not create your payment record. Please try again.", 500)
+
     try:
         response = requests.post(
             "https://api.paystack.co/transaction/initialize",
-            headers={"Authorization": "Bearer " + secret, "Content-Type": "application/json"},
+            headers={
+                "Authorization": "Bearer " + secret,
+                "Content-Type": "application/json",
+                "Cache-Control": "no-cache",
+            },
             json={
                 "email": current_user.email,
                 "amount": amount,
                 "currency": "NGN",
                 "reference": reference,
                 "callback_url": url_for("payment_callback", _external=True),
-                "metadata": {"user_id": current_user.id, "plan": plan,
-                             "payment_id": payment.id, "custom_fields": [
-                                 {"display_name": "CyberLord plan", "variable_name": "plan", "value": plan}
-                             ]},
+                "metadata": {
+                    "user_id": current_user.id,
+                    "plan": plan,
+                    "payment_id": payment.id,
+                    "custom_fields": [{
+                        "display_name": "CyberLord plan",
+                        "variable_name": "plan",
+                        "value": plan,
+                    }],
+                },
             },
-            timeout=(5, 20),
+            timeout=(10, 30),
         )
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+
         checkout_url = (payload.get("data") or {}).get("authorization_url")
-        if not response.ok or not payload.get("status") or not checkout_url:
-            raise RuntimeError(str(payload.get("message") or "Paystack did not return a checkout URL"))
-        return redirect(checkout_url, code=303)
-    except Exception:
-        db.session.rollback()
+        if response.ok and payload.get("status") is True and checkout_url and checkout_url.startswith("https://"):
+            app.logger.info("Paystack checkout initialized: plan=%s reference=%s", plan, reference)
+            if wants_json:
+                return jsonify(ok=True, authorization_url=checkout_url), 200
+            return redirect(checkout_url, code=303)
+
+        # Keep the provider's safe human-readable response in the server log;
+        # never log the secret key or full authorization headers.
+        provider_message = str(payload.get("message") or "Paystack did not return a checkout URL")[:300]
+        app.logger.error(
+            "Paystack initialization rejected: http_status=%s reference=%s message=%s",
+            response.status_code, reference, provider_message,
+        )
+        raise RuntimeError(provider_message)
+
+    except requests.Timeout:
+        app.logger.exception("Paystack initialization timed out for reference %s", reference)
+        failure_message = "Paystack took too long to respond. Please check your connection and try again."
+    except requests.RequestException as exc:
+        app.logger.exception("Network error while contacting Paystack for reference %s: %s", reference, str(exc)[:200])
+        failure_message = "CyberLord could not connect to Paystack. Please try again in a moment."
+    except Exception as exc:
+        app.logger.exception("Paystack checkout initialization failed for reference %s: %s", reference, str(exc)[:300])
+        failure_message = "Paystack could not start checkout: " + str(exc)[:220]
+
+    try:
         failed = Payment.query.filter_by(reference=reference).first()
         if failed and failed.status == "pending":
             failed.status = "failed"
             db.session.commit()
-        app.logger.exception("Paystack checkout initialization failed for payment %s", reference)
-        message = "We could not start checkout. No subscription was activated. Please try again."
-        if request.is_json:
-            return jsonify(error=message), 502
-        flash(message, "error")
-        return redirect(url_for("dashboard") + "#plans")
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Could not mark failed Paystack payment %s", reference)
+    return payment_error(failure_message, 502)
 
 
 def verify_paystack(reference):
