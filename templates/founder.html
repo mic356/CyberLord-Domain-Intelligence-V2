@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Ogbonna Michael Chinedu — Founder of CyberLord Domain Intelligence{% endblock %}
+{% block description %}Meet Ogbonna Michael Chinedu, Founder and Chief Executive Officer of CyberLord Domain Intelligence, an independent cybersecurity research and technology platform.{% endblock %}
+{% block canonical %}https://cyberlord.name.ng/founder{% endblock %}
+{% block og_title %}Ogbonna Michael Chinedu — Founder of CyberLord Domain Intelligence{% endblock %}
+{% block og_description %}Official founder profile of Ogbonna Michael Chinedu, Founder and CEO of CyberLord Domain Intelligence.{% endblock %}
+{% block structured_data %}
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"ProfilePage",
+  "@id":"https://cyberlord.name.ng/founder#profile",
+  "url":"https://cyberlord.name.ng/founder",
+  "name":"Founder of CyberLord Domain Intelligence",
+  "mainEntity":{
+    "@type":"Person",
+    "@id":"https://cyberlord.name.ng/founder#person",
+    "name":"Ogbonna Michael Chinedu",
+    "url":"https://cyberlord.name.ng/founder",
+    "jobTitle":"Founder and Chief Executive Officer",
+    "founder":{"@id":"https://cyberlord.name.ng/#organization"},
+    "worksFor":{"@id":"https://cyberlord.name.ng/#organization"},
+    "sameAs":["https://github.com/mic356","https://github.com/mic356/cyberlord-domain-intelligence"]
+  }
+}
+</script>
+{% endblock %}
+{% block content %}
+<section class="page-hero" style="max-width:900px;margin:2.5rem auto 1.5rem">
+  <div class="eyebrow">OFFICIAL FOUNDER PROFILE</div>
+  <h1>Ogbonna Michael Chinedu</h1>
+  <p class="lead">Founder &amp; Chief Executive Officer of CyberLord Domain Intelligence</p>
+</section>
+<section class="panel" style="max-width:900px;margin:0 auto 3rem;padding:clamp(1.25rem,4vw,2.5rem)">
+  <h2>About the founder</h2>
+  <p>Ogbonna Michael Chinedu is the founder and creator of CyberLord Domain Intelligence. He leads the platform’s development and direction, with a focus on cybersecurity research, domain intelligence and practical digital security tools.</p>
+  <h2>About CyberLord Domain Intelligence</h2>
+  <p>CyberLord Domain Intelligence is an independently developed cybersecurity research and technology platform. Its tools are designed to help users examine publicly observable domain and web-security information, understand potential security issues and support responsible defensive research.</p>
+  <p>Platform capabilities include domain reconnaissance, DNS intelligence, website security analysis and cybersecurity learning resources. Security testing is intended for systems the user owns or is explicitly authorised to assess.</p>
+  <div class="actions" style="display:flex;gap:.8rem;flex-wrap:wrap;margin-top:1.5rem">
+    <a class="btn primary" href="{{ url_for('index') }}">Visit CyberLord</a>
+    <a class="btn ghost" href="https://github.com/mic356/cyberlord-domain-intelligence" target="_blank" rel="noopener">View the project on GitHub</a>
+  </div>
+</section>
+{% endblock %}

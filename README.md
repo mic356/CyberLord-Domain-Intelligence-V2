@@ -152,3 +152,11 @@ CyberLord now includes a shared artificial-brain orchestration module (`artifici
 The Super Mode large uploader uses private Backblaze B2 multipart uploads, upload progress, and same-browser resume by reselecting the same file. Video/audio/PDF/image uploads are capped at up to 2 GB where Gemini and account limits permit. Office/text documents are extracted server-side and capped at 50 MB. See `LARGE_UPLOAD_SETUP.md` for Backblaze B2 setup and limitations.
 
 See `ARTIFICIAL_BRAIN_GUIDE.md` for the brain architecture, private knowledge controls and limitations.
+
+## Public founder profile and search discovery
+
+- Public founder profile: https://cyberlord.name.ng/founder
+- The page identifies Ogbonna Michael Chinedu as Founder and Chief Executive Officer of CyberLord Domain Intelligence.
+- Person and Organization JSON-LD connect the founder profile to the site's existing organization identity.
+- The founder URL is included in the XML sitemap and linked from the global footer.
+- After deployment, submit `https://cyberlord.name.ng/sitemap.xml` in Google Search Console and Bing Webmaster Tools, then request indexing for `/founder`. Indexing and AI recognition are not guaranteed.

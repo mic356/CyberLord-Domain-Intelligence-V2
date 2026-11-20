@@ -1162,6 +1162,12 @@ def about():
     return render_template("about.html")
 
 
+@app.route("/founder")
+def founder():
+    """Public, crawlable profile of CyberLord Domain Intelligence's founder."""
+    return render_template("founder.html")
+
+
 @app.route("/pricing")
 def pricing():
     return render_template("pricing.html", paystack_live_ready=paystack_live_ready())
@@ -1169,6 +1175,7 @@ def pricing():
 SEO_PUBLIC_PAGES = [
     ("index", "https://cyberlord.name.ng/", "1.0", "daily"),
     ("about", "https://cyberlord.name.ng/about", "0.8", "monthly"),
+    ("founder", "https://cyberlord.name.ng/founder", "0.8", "monthly"),
     ("pricing", "https://cyberlord.name.ng/pricing", "0.8", "monthly"),
     ("faq", "https://cyberlord.name.ng/faq", "0.9", "weekly"),
     ("guide_email_compromised", "https://cyberlord.name.ng/guides/check-if-email-is-compromised", "0.9", "weekly"),
