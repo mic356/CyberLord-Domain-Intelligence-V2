@@ -1,8 +1,9 @@
-# Dark Matrix — Public Business Profile
+# CyberLord — Public Business Profile
 
-- Public name: Dark Matrix
+- Public name: CyberLord
 - Business type: Cybersecurity company
 - Team: Team Cyber
+- Founder: Ogbonna Michael Chinedu
 - Website: https://cyberlord.name.ng/
 - Location: Owerri, Imo State, Nigeria
 - Email: workcyber556@gmail.com
