@@ -1,7 +1,7 @@
-{% extends "base.html" %}{% block title %}Dark Matrix Tutor | Ask any cybersecurity question{% endblock %}{% block description %}Dark Matrix Tutor: ask any cybersecurity question and talk with it by voice.{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}CyberLord Tutor | Ask any cybersecurity question{% endblock %}{% block description %}CyberLord Tutor: ask any cybersecurity question and talk with it by voice.{% endblock %}{% block content %}
 <div class="page-heading">
-  <div class="eyebrow">DARK MATRIX TUTOR / ANSWER DASHBOARD</div>
-  <h1>Dark Matrix Tutor</h1>
+  <div class="eyebrow">CyberLord TUTOR / ANSWER DASHBOARD</div>
+  <h1>CyberLord Tutor</h1>
   <p class="muted">Ask any cybersecurity question below. Tap the speaker at the bottom to hear answers read aloud, or tap the mic and just talk to it.</p>
 </div>
 {% if tutor_pro %}
@@ -12,7 +12,7 @@
 
 <section class="tutor-dashboard" id="tutor-dashboard" data-lesson="{{ lesson_slug or '' }}">
   <div class="chat-thread" id="chat-thread" aria-live="polite">
-    <div class="chat-msg bot tutor-intro">I am Dark Matrix Tutor. Ask me anything about cybersecurity.</div>
+    <div class="chat-msg bot tutor-intro">I am CyberLord Tutor. Ask me anything about cybersecurity.</div>
   </div>
   <form class="tutor-form chat-form" id="chat-form">
     <input type="text" id="chat-input" placeholder="Ask any cybersecurity question…" aria-label="Type your question" autocomplete="off">
@@ -75,7 +75,7 @@ window.cyberLordPrepareImage = async function(file){
   function showImage(data, alt){
     var img = document.createElement("img");
     img.className = "cl-ai-generated-image";
-    img.alt = alt || "Dark Matrix generated image";
+    img.alt = alt || "CyberLord generated image";
     img.src = "data:" + (data.mime_type || "image/png") + ";base64," + data.data;
     img.style.maxWidth = "100%"; img.style.borderRadius = "12px"; img.style.display = "block";
     thread.appendChild(img); scroll();

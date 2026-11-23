@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Video Library | Dark Matrix Cyber Intelligence{% endblock %}
-{% block description %}Discover cybersecurity lessons and educational videos with Dark Matrix's free video library.{% endblock %}
+{% block title %}Video Library | CyberLord Cyber Intelligence{% endblock %}
+{% block description %}Discover cybersecurity lessons and educational videos with CyberLord's free video library.{% endblock %}
 {% block content %}
 <section class="video-hub" style="max-width:1000px;margin:28px auto;padding:24px;border:1px solid var(--line,#dbe3ee);border-radius:18px;background:var(--card,#fff)">
   <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between">
-    <div><p style="color:var(--muted,#64748b);margin:0 0 6px">DARK MATRIX MEDIA</p><h1 style="margin:0">Video Discovery</h1><p style="color:var(--muted,#64748b)">Find cybersecurity tutorials and play selected YouTube videos here.</p></div>
+    <div><p style="color:var(--muted,#64748b);margin:0 0 6px">CyberLord MEDIA</p><h1 style="margin:0">Video Discovery</h1><p style="color:var(--muted,#64748b)">Find cybersecurity tutorials and play selected YouTube videos here.</p></div>
     <span style="padding:8px 12px;border-radius:20px;background:#e8f7ee;color:#176b3a;font-weight:600">Free · No GPU required</span>
   </div>
   <form method="get" action="{{ url_for('cyberlord_videos') }}" style="display:flex;gap:10px;flex-wrap:wrap;margin:22px 0">
@@ -13,7 +13,7 @@
   </form>
   {% if video_query %}
   <div style="padding:16px;border-radius:12px;background:var(--soft,#f1f5f9);margin-bottom:18px">
-    <strong>Search results for: {{ video_query }}</strong><p style="margin:8px 0 12px;color:var(--muted,#64748b)">YouTube will show current matching videos. Choose a video, copy its link, then paste it below to play it inside Dark Matrix.</p>
+    <strong>Search results for: {{ video_query }}</strong><p style="margin:8px 0 12px;color:var(--muted,#64748b)">YouTube will show current matching videos. Choose a video, copy its link, then paste it below to play it inside CyberLord.</p>
     <a target="_blank" rel="noopener noreferrer" href="https://www.youtube.com/results?search_query={{ video_query|urlencode }}" style="display:inline-block;padding:10px 14px;border-radius:9px;background:#dc2626;color:#fff;text-decoration:none;font-weight:700">Open YouTube results ↗</a>
   </div>
   {% endif %}
@@ -27,6 +27,6 @@
   {% else %}
     <div style="padding:28px;text-align:center;border:1px dashed var(--line,#cbd5e1);border-radius:14px;color:var(--muted,#64748b)"><div style="font-size:2rem">▶</div><strong>Your video player is ready</strong><p style="margin-bottom:0">Search YouTube above, then paste a video's link here.</p></div>
   {% endif %}
-  <div style="margin-top:24px;padding:16px;border-radius:12px;background:var(--soft,#f1f5f9)"><h2 style="font-size:1.05rem;margin-top:0">About AI video generation</h2><p style="margin-bottom:0;color:var(--muted,#64748b)">This free version discovers and plays existing videos. Creating brand-new AI videos requires access to GPU computing. Dark Matrix will not claim a video is being generated unless a working generation service is connected. No paid provider is activated by this feature.</p></div>
+  <div style="margin-top:24px;padding:16px;border-radius:12px;background:var(--soft,#f1f5f9)"><h2 style="font-size:1.05rem;margin-top:0">About AI video generation</h2><p style="margin-bottom:0;color:var(--muted,#64748b)">This free version discovers and plays existing videos. Creating brand-new AI videos requires access to GPU computing. CyberLord will not claim a video is being generated unless a working generation service is connected. No paid provider is activated by this feature.</p></div>
 </section>
 {% endblock %}

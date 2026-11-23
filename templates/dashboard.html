@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}Dashboard · Dark Matrix
+{% extends "base.html" %}{% block title %}Dashboard · CyberLord
 {% endblock %}{% block content %}
 {% if cyber_returning %}<div class="cyber-welcome-back">Welcome back, {{ current_user.email }}. Cyber recognised you and will continue from where you left off.</div>{% endif %}
 <div class="dash-head"><div><div class="eyebrow">OPERATIONS CENTER</div><h1>Security dashboard</h1><p class="muted">{{ current_user.email }} · Current plan: <strong>{{ plans[current_user.plan].name }}</strong>{% if current_user.plan_expires_at %} · Expires: {{ current_user.plan_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}</p></div><span class="status">● SYSTEM READY</span></div>
@@ -10,10 +10,10 @@
 {% endif %}
 <div class="quick-links"><a class="btn ghost" href="{{ url_for('academy_terminal') }}">Open Training Terminal</a><a class="btn ghost" href="{{ url_for('code_lab') }}">Open Code Lab</a><a class="btn ghost" href="{{ url_for('messaging_account_settings') }}">Connect Telegram / WhatsApp</a></div>
 <div class="app-shortcuts"><a href="{{ url_for('security_centre') }}">◈ Security Centre</a><a href="{{ url_for('advanced_intelligence') }}">✧ Advanced Intelligence Lab</a><a href="{{ url_for('monitoring') }}">◉ Domain Monitoring</a><a href="{{ url_for('academy') }}">✦ Cyber Academy</a><a href="#activity">▤ My reports &amp; history</a></div>
-<section class="panel ai-guide-panel"><div class="eyebrow">DARK MATRIX AI · QUICK GUIDES</div><h2>What would you like help with?</h2><p class="muted">Choose a guide to open Dark Matrix AI with a useful starting question. You can continue the conversation in your own words.</p><div class="cl-ai-guide"><button type="button" data-ai-guide="Show me how to use the Domain Security Scan step by step.">Domain scan guide</button><button type="button" data-ai-guide="Teach me Nmap from beginner level with safe examples.">Learn Nmap</button><button type="button" data-ai-guide="Explain my scan results in simple language and show me what to do next.">Understand scan results</button><button type="button" data-ai-guide="Explain my Pro and Pro Plus features and how payment verification works.">Plans &amp; payment guide</button><button type="button" data-ai-guide="Create a beginner cybersecurity learning roadmap for me.">Learning roadmap</button></div></section>
+<section class="panel ai-guide-panel"><div class="eyebrow">CyberLord AI · QUICK GUIDES</div><h2>What would you like help with?</h2><p class="muted">Choose a guide to open CyberLord AI with a useful starting question. You can continue the conversation in your own words.</p><div class="cl-ai-guide"><button type="button" data-ai-guide="Show me how to use the Domain Security Scan step by step.">Domain scan guide</button><button type="button" data-ai-guide="Teach me Nmap from beginner level with safe examples.">Learn Nmap</button><button type="button" data-ai-guide="Explain my scan results in simple language and show me what to do next.">Understand scan results</button><button type="button" data-ai-guide="Explain my Pro and Pro Plus features and how payment verification works.">Plans &amp; payment guide</button><button type="button" data-ai-guide="Create a beginner cybersecurity learning roadmap for me.">Learning roadmap</button></div></section>
 <section class="welcome-guide panel" aria-label="Getting started">
 <div class="guide-heading"><div><div class="eyebrow">QUICK START</div><h2>Run your first security check</h2>
-<p class="muted">A simple workflow to help you use Dark Matrix confidently and responsibly.</p></div><span class="guide-pulse">● READY</span></div>
+<p class="muted">A simple workflow to help you use CyberLord confidently and responsibly.</p></div><span class="guide-pulse">● READY</span></div>
 <div class="guide-steps">
 <div class="guide-step"><span>01</span><b>Choose a tool</b><small>Pick the check that matches your target and objective.</small></div>
 <div class="guide-step"><span>02</span><b>Enter a target</b><small>Use a domain, IP address, phone number or email as requested.</small></div>
@@ -57,7 +57,7 @@
 <form method="post" action="{{ url_for('payment_initialize') }}" class="paystack-checkout-form"><input type="hidden" name="plan" value="tutor_pro"><button class="btn primary btn-pay" type="submit" {% if not paystack_live_ready %}disabled{% endif %}>Pay securely with Paystack</button></form>
 </article></div>
 <div id="paystack-checkout-status" class="guide-note" role="status" aria-live="polite" hidden></div>
-{% if not paystack_live_ready %}<div class="guide-note"><b>Paystack setup pending:</b> checkout will become available after your Paystack business is activated and the LIVE secret key is saved in Render as <code>PAYSTACK_SECRET_KEY</code>. No other payment method is accepted.</div>{% else %}<p class="muted">Payments are processed on Paystack's secure checkout. Dark Matrix activates access only after server-side verification.</p>{% endif %}</section>
+{% if not paystack_live_ready %}<div class="guide-note"><b>Paystack setup pending:</b> checkout will become available after your Paystack business is activated and the LIVE secret key is saved in Render as <code>PAYSTACK_SECRET_KEY</code>. No other payment method is accepted.</div>{% else %}<p class="muted">Payments are processed on Paystack's secure checkout. CyberLord activates access only after server-side verification.</p>{% endif %}</section>
 <script>
 (function () {
   const forms = document.querySelectorAll('.paystack-checkout-form');
@@ -100,20 +100,20 @@
 </script>
 <section class="panel" id="activity"><div class="eyebrow">RECENT ACTIVITY</div><h2>Scan history</h2><p class="muted">Showing your latest 5 scans. Use See all to expand the list. You can download or delete your own scan records.</p>{% if history %}<div class="history" id="scan-history">{% for item in history %}<div class="history-item{% if loop.index > 5 %} history-extra{% endif %}"><span>{{ item.tool|replace('_',' ')|title }}</span><b>{{ item.target }}</b><small>{{ item.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</small><span class="history-download"><a class="btn small ghost" href="{{ url_for('download_scan', scan_id=item.id, format='json') }}">Download JSON</a><a class="btn small ghost" href="{{ url_for('download_scan', scan_id=item.id, format='txt') }}">Download TXT</a><a class="btn small ghost" href="{{ url_for('download_scan', scan_id=item.id, format='pdf') }}">Download PDF</a><form method="post" action="{{ url_for('delete_scan', scan_id=item.id) }}" class="delete-history-form" onsubmit="return confirm('Delete this scan activity? This cannot be undone.');"><button class="btn small danger" type="submit">Delete</button></form></span></div>{% endfor %}</div>{% if history|length > 5 %}<button type="button" class="btn small ghost" id="history-toggle" aria-expanded="false">See all {{ history|length }} activities</button>{% endif %}{% else %}<p class="muted">Your completed checks will appear here.</p>{% endif %}</section>
 
-<!-- Dark Matrix AI customer-support assistant -->
+<!-- CyberLord AI customer-support assistant -->
 <div class="cl-ai-launcher-wrap">
   <button type="button" class="cl-ai-launcher" id="cl-ai-open" aria-controls="cl-ai-panel" aria-expanded="false">
-    <span class="cl-ai-spark">✦</span><span><b>Dark Matrix AI</b><small>Cybersecurity knowledge assistant</small></span>
+    <span class="cl-ai-spark">✦</span><span><b>CyberLord AI</b><small>Cybersecurity knowledge assistant</small></span>
   </button>
 </div>
-<aside class="cl-ai-panel" id="cl-ai-panel" aria-label="Dark Matrix AI assistant" hidden>
-  <div class="cl-ai-head"><div><span class="cl-ai-avatar">CL</span><span><b>Dark Matrix AI</b><small>Cybersecurity assistant</small></span></div>
+<aside class="cl-ai-panel" id="cl-ai-panel" aria-label="CyberLord AI assistant" hidden>
+  <div class="cl-ai-head"><div><span class="cl-ai-avatar">CL</span><span><b>CyberLord AI</b><small>Cybersecurity assistant</small></span></div>
     <button type="button" id="cl-ai-close" aria-label="Close assistant">×</button></div>
   <div class="cl-ai-body" id="cl-ai-messages" aria-live="polite">
-    <div class="cl-ai-message bot">Welcome to Dark Matrix Intelligence. 👋 I can explain cybersecurity concepts, tools, networks, web and cloud security, vulnerability management, incident response and more. I can also check individual CVE records against the live NIST NVD and recent CISA exploited-vulnerability entries when those public services are available. What would you like to explore?</div>
+    <div class="cl-ai-message bot">Welcome to CyberLord Intelligence. 👋 I can explain cybersecurity concepts, tools, networks, web and cloud security, vulnerability management, incident response and more. I can also check individual CVE records against the live NIST NVD and recent CISA exploited-vulnerability entries when those public services are available. What would you like to explore?</div>
     <div class="cl-ai-options">
-      <button type="button" data-question="How do I get started with Dark Matrix?">Getting started</button>
-      <button type="button" data-question="Explain the Dark Matrix cybersecurity tools.">Cybersecurity tools</button>
+      <button type="button" data-question="How do I get started with CyberLord?">Getting started</button>
+      <button type="button" data-question="Explain the CyberLord cybersecurity tools.">Cybersecurity tools</button>
       <button type="button" data-question="Explain Pro and Pro Plus subscriptions.">Plans &amp; subscriptions</button>
       <button type="button" data-question="How do I pay securely using Paystack?">Payment help</button>
       <button type="button" data-question="How do I download PDF reports and manage scan history?">Reports &amp; history</button>
@@ -123,7 +123,7 @@
       <button type="button" data-question="Create a beginner-friendly cybersecurity learning roadmap.">My learning roadmap</button>
     </div>
   </div>
-  <form class="cl-ai-compose" id="cl-ai-form"><input id="cl-ai-input" maxlength="1800" placeholder="Ask Dark Matrix anything…" autocomplete="off"><input type="file" id="cl-ai-image" accept="image/png,image/jpeg,image/webp,.pdf,.docx,.xlsx,.pptx,.csv,.md,.txt,.mp4,.mov,.webm,.mpeg,.mpg,.mp3,.wav,.m4a,.ogg" multiple hidden><button type="button" id="cl-ai-attach" aria-label="Attach a file" title="Attach an image, document, audio or video file">📎</button><button type="submit" aria-label="Send message">➤</button><button type="button" class="voice-toggle" data-voice-toggle aria-pressed="false" aria-label="Listen to the AI reply" title="Listen to the reply">🔈</button><button type="button" class="mic-btn" data-mic-btn aria-label="Start voice input" title="Tap to speak; tap again to stop">🎙</button></form>
+  <form class="cl-ai-compose" id="cl-ai-form"><input id="cl-ai-input" maxlength="1800" placeholder="Ask CyberLord anything…" autocomplete="off"><input type="file" id="cl-ai-image" accept="image/png,image/jpeg,image/webp,.pdf,.docx,.xlsx,.pptx,.csv,.md,.txt,.mp4,.mov,.webm,.mpeg,.mpg,.mp3,.wav,.m4a,.ogg" multiple hidden><button type="button" id="cl-ai-attach" aria-label="Attach a file" title="Attach an image, document, audio or video file">📎</button><button type="submit" aria-label="Send message">➤</button><button type="button" class="voice-toggle" data-voice-toggle aria-pressed="false" aria-label="Listen to the AI reply" title="Listen to the reply">🔈</button><button type="button" class="mic-btn" data-mic-btn aria-label="Start voice input" title="Tap to speak; tap again to stop">🎙</button></form>
   <div class="cl-ai-foot">Attach images, documents, audio or video. Ask naturally for document analysis, YouTube research, voice help, plans or image creation. Verify critical findings against trusted sources. Payment approvals are never handled by chat. <a href="mailto:workcyber556@gmail.com">Contact human support</a>.</div>
 </aside>
 

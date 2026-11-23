@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Training Terminal | Dark Matrix Academy{% endblock %}
+{% block title %}Training Terminal | CyberLord Academy{% endblock %}
 {% block content %}
 <section class="academy-page">
   <div class="page-head">
     <div>
       <span class="eyebrow">Academy section</span>
       <h1>Training Terminal</h1>
-      <p>Practice lab. This is a <strong>real in-browser Linux-style terminal</strong>: standard commands genuinely execute inside your own browser (xterm.js shell, Pyodide Python, in-browser virtual filesystem). Nothing you type is sent to the Dark Matrix server for execution. Your server never runs it. Type <code>help</code> to see what works.</p>
+      <p>Practice lab. This is a <strong>real in-browser Linux-style terminal</strong>: standard commands genuinely execute inside your own browser (xterm.js shell, Pyodide Python, in-browser virtual filesystem). Nothing you type is sent to the CyberLord server for execution. Your server never runs it. Type <code>help</code> to see what works.</p>
     </div>
     <div class="head-actions">
       <a class="button secondary" href="{{ url_for('academy') }}">Back to Academy</a>
@@ -50,7 +50,7 @@
     </div>
     <div class="info-card">
       <h2>What this is not</h2>
-      <p>Not a real Kali install and not a scanner. Everything executes on your own device in a sandboxed virtual filesystem, so it cannot touch the Dark Matrix server, your real files, or the network. Real scanning and OSINT belong on dedicated labs with legal permission.</p>
+      <p>Not a real Kali install and not a scanner. Everything executes on your own device in a sandboxed virtual filesystem, so it cannot touch the CyberLord server, your real files, or the network. Real scanning and OSINT belong on dedicated labs with legal permission.</p>
     </div>
   </div>
 </section>
@@ -97,7 +97,7 @@ code{color:#bfe3ff}
 (function(){
   // ---- in-browser virtual filesystem ----
   const VFS = {
-    "/home/user": {readme: "Welcome to the Dark Matrix practice lab.\nThis is a REAL in-browser terminal. Everything runs on your device.\nTry: ls -la, cat readme, python3 -c \"print('hi')\"\n"},
+    "/home/user": {readme: "Welcome to the CyberLord practice lab.\nThis is a REAL in-browser terminal. Everything runs on your device.\nTry: ls -la, cat readme, python3 -c \"print('hi')\"\n"},
     "/home/user/practice": {
       "scan-notes.txt": "Practice task 1: list files, cd into practice.\nPractice task 2: grep a word in this file, e.g. grep task scan-notes.txt\n",
       "dns-notes.txt": "Practice task: read this file with cat, count lines with wc.\n"
@@ -135,7 +135,7 @@ code{color:#bfe3ff}
   term.open(host);
   const fit = new FitAddon.FitAddon(); term.loadAddon(fit); fit.fit();
   window.addEventListener("resize", ()=>{ try{ fit.fit(); }catch(e){} });
-  term.writeln("Dark Matrix Academy Training Terminal - practice lab");
+  term.writeln("CyberLord Academy Training Terminal - practice lab");
   term.writeln("Real commands execute in your browser. Type help, then try ls / python3.");
 
   // ---- Pyodide (real Python, client-side) ----
@@ -371,7 +371,7 @@ code{color:#bfe3ff}
     aiStatus.textContent = "Asking…";
     const ctx = recent.length ? "\nRecent terminal commands:\n" + recent.map(c=>"$ " + c).join("\n") : "";
     try{
-      const r = await fetch("/api/ai-assistant", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({persona:"main", lesson_slug:"", messages:[{role:"user", content:"I am practicing in the Dark Matrix Academy in-browser Linux terminal. " + question + ctx + "\n\nGive me the exact command to run, or explain the error, in plain steps. Keep it short."}]})});
+      const r = await fetch("/api/ai-assistant", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({persona:"main", lesson_slug:"", messages:[{role:"user", content:"I am practicing in the CyberLord Academy in-browser Linux terminal. " + question + ctx + "\n\nGive me the exact command to run, or explain the error, in plain steps. Keep it short."}]})});
       const data = await r.json();
       aiOut.textContent = data.reply || data.error || "No reply yet. Try again.";
       aiStatus.textContent = "Main assistant (persona: " + (data.persona||"main") + ")";
