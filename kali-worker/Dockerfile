@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap \
@@ -15,10 +15,8 @@ RUN git clone --depth 1 https://github.com/testssl/testssl.sh.git /opt/testssl.s
     && ln -s /opt/testssl.sh/testssl.sh /usr/local/bin/testssl.sh
 
 WORKDIR /app
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
 COPY worker.py .
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180 worker:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8787} --workers 1 --threads 4 --timeout 180 worker:app"]

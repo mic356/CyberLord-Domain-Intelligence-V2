@@ -1,20 +1,57 @@
-# CyberLord restricted Kali worker
+# CyberLord Kali Worker
 
-This is an optional, separately hosted worker. Render does not include Kali Linux, so the main website cannot execute Kali commands inside its own service. Host this worker on a dedicated Kali VM/VPS. Do not expose port 8787 directly to the public internet. Prefer a private VPN (for example, a site-to-site VPN) or HTTPS reverse proxy with firewall restrictions, in addition to the bearer token.
+This is the complete, separately hosted worker used by the CyberLord website.
+It preserves the API paths and JSON fields used by the website:
 
-## Install on an authorized Kali VM
+- `GET /health`
+- `POST /scan`
+- `POST /phone-intel`
 
-```bash
-sudo apt update
-sudo apt install -y nmap whatweb testssl.sh python3-venv
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-export KALI_WORKER_TOKEN='use-a-long-random-secret'
-export KALI_ALLOWED_DOMAINS='yourdomain.com,anotherdomain.com'
-gunicorn --bind 127.0.0.1:8787 worker:app
-```
+## Render service setup
 
-Configure `KALI_WORKER_URL` and the same `KALI_WORKER_TOKEN` in the main Render service. `KALI_ALLOWED_DOMAINS` is a comma-separated list of domains you own or have written permission to test. The worker refuses targets outside this list and refuses non-public IP resolution. Phone Intelligence is a separate passive metadata endpoint (`POST /phone-intel`) protected by the same bearer token; it enriches numbering-plan information using libphonenumber and does not contact telecom networks or locate/identify subscribers. It runs only a low-intensity TCP top-100 service/version scan, basic WhatWeb fingerprinting and fast TLS checks. It does not run exploit scripts, brute force, credential attacks, stealth/evasion, or unrestricted port scans. Phone enrichment reports possible/valid format, region, number type, carrier hint and timezone hints only; carrier data may be stale and it cannot verify number ownership or provide live location.
+Deploy this folder as a separate **Web Service** using the included Dockerfile.
+If Render asks for a Root Directory, set it to `kali-worker` when deploying from
+the main repository. If you upload this folder as a standalone repository,
+leave Root Directory blank.
 
-The worker is not a replacement for a professional penetration test. Use it only within written scope and rate limits. Review local Kali package availability; package names can differ by Kali release.
+Do not configure the main website's Render service to run this worker.
+
+Set these environment variables on the **CyberLord Kali Worker** Render service:
+
+| Key | Value |
+|---|---|
+| `KALI_WORKER_TOKEN` | A long random secret. Use the same value as the main website service. |
+| `KALI_ALLOWED_DOMAINS` | `cyberlord.name.ng` |
+
+`KALI_ALLOWED_DOMAINS` accepts comma-, semicolon-, or newline-separated domains.
+The worker reads this variable when the process starts, so save changes and
+redeploy/restart the worker after editing it.
+
+On the **main CyberLord website** Render service, set:
+
+| Key | Value |
+|---|---|
+| `KALI_WORKER_URL` | The worker's Render URL, e.g. `https://your-worker-name.onrender.com` |
+| `KALI_WORKER_TOKEN` | The exact same secret used by the worker |
+
+Never paste the token into GitHub, chat, or source files.
+
+## GitHub folder replacement
+
+The archive contains one top-level directory named `kali-worker`.
+Use it to replace the repository's existing `kali-worker` directory. Keep the
+rest of the repository unchanged. GitHub's web interface may require deleting
+the old directory's tracked files and then uploading the new folder contents;
+Git does not track empty directories.
+
+## Safety
+
+The scan endpoint requires bearer-token authentication, an explicit
+authorization confirmation, a matching allowlisted domain, and public IP
+resolution. The Nmap profile is a low-intensity TCP top-100 service/version
+check. No exploit scripts, brute force, credential attacks, stealth/evasion,
+or UDP scans are run. Only test domains you own or have written permission to
+assess.
+
+Phone intelligence uses offline libphonenumber metadata. It does not query
+telecom networks, identify subscribers, verify ownership, or locate phones.
